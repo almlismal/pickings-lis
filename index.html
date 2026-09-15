@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pickings — LIS</title>
+<style>
+  :root{
+    --bg: #F7F5F1;
+    --panel: #FFFFFF;
+    --ink: #1B1B18;
+    --ink-soft: #6B6459;
+    --line: #DCD5C9;
+    --accent: #D9531E;      /* naranja almacén */
+    --accent-ink: #FFFFFF;
+    --ok: #0F5257;          /* verde-azulado, entregado/completo */
+    --warn-bg: #FCEFC7;
+    --warn-ink: #7A5B00;
+    --warn-edge: #E8B93B;
+    --mono: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  }
+
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body{ padding-bottom: 40px; }
+
+  /* ---- cabecera ---- */
+  header{
+    background: var(--ink);
+    color: #F7F5F1;
+    padding: 14px 18px;
+    display:flex; align-items:center; justify-content:space-between;
+    position: sticky; top:0; z-index:20;
+  }
+  header .brand{ display:flex; flex-direction:column; line-height:1.1; }
+  header .brand b{ font-size:17px; letter-spacing:0.2px; }
+  header .brand span{ font-size:11px; color:#B9B2A4; margin-top:2px; }
+  header .user{
+    font-family: var(--mono); font-size:13px;
+    background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.18);
+    padding:6px 10px; border-radius:3px; cursor:pointer; color:#F7F5F1;
+    max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+
+  main{ max-width: 480px; margin: 0 auto; padding: 18px; }
+
+  /* ---- pantalla inicio ---- */
+  .home-grid{ display:flex; flex-direction:column; gap:14px; margin-top:8px; }
+  .home-btn{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 6px solid var(--accent);
+    border-radius: 4px;
+    padding: 20px 18px;
+    text-align:left;
+    cursor:pointer;
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .home-btn.alt{ border-left-color: var(--ok); }
+  .home-btn b{ font-size:17px; }
+  .home-btn span{ font-size:13px; color:var(--ink-soft); }
+  .home-btn:active{ transform: scale(0.99); }
+
+  .pending-strip{
+    margin-top: 22px;
+  }
+  .pending-strip h3{
+    font-size:12px; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--ink-soft); margin: 0 0 8px 2px; font-weight:600;
+  }
+
+  /* ---- ficha de picking (tipo etiqueta de envío) ---- */
+  .ticket{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 14px 14px 12px;
+    margin-bottom: 10px;
+    position: relative;
+    cursor: pointer;
+  }
+  .ticket::before{
+    content:"";
+    position:absolute; left:0; top:10px; bottom:10px; width:3px;
+    background: var(--line);
+  }
+  .ticket.attn::before{ background: var(--warn-edge); }
+  .ticket-top{ display:flex; justify-content:space-between; align-items:baseline; }
+  .ticket-of{ font-family: var(--mono); font-size:15px; font-weight:600; }
+  .ticket-date{ font-size:11px; color:var(--ink-soft); }
+  .ticket-proj{ font-size:13px; color:var(--ink-soft); margin-top:2px; }
+  .ticket-meta{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .chip{
+    font-size:11px; padding:3px 8px; border-radius:3px;
+    border:1px solid var(--line); color:var(--ink-soft);
+  }
+  .chip.on{ border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .chip.attn{ background:var(--warn-bg); border-color:var(--warn-edge); color:var(--warn-ink); font-weight:600; }
+  .chip.done{ background:var(--ok); border-color:var(--ok); color:#fff; font-weight:600; }
+
+  .empty{
+    text-align:center; color:var(--ink-soft); font-size:13px;
+    padding: 24px 10px; border: 1px dashed var(--line); border-radius:4px;
+  }
+
+  /* ---- formularios ---- */
+  .screen-title{
+    display:flex; align-items:center; gap:10px; margin-bottom:16px;
+  }
+  .back{
+    font-family: var(--mono); font-size:20px; color:var(--ink-soft);
+    background:none; border:none; cursor:pointer; padding:4px 6px 4px 0;
+  }
+  .screen-title h2{ font-size:19px; margin:0; }
+
+  label{
+    display:block; font-size:12px; font-weight:600; color:var(--ink-soft);
+    text-transform:uppercase; letter-spacing:0.04em;
+    margin: 16px 0 6px;
+  }
+  input[type=text], input[type=number], textarea, select{
+    width:100%; padding:12px 12px; font-size:16px;
+    border:1px solid var(--line); border-radius:4px;
+    background: var(--panel); color:var(--ink); font-family: inherit;
+  }
+  input[type=text].mono{ font-family: var(--mono); }
+  textarea{ resize: vertical; min-height: 64px; }
+
+  .row2{ display:flex; gap:10px; }
+  .row2 > div{ flex:1; }
+
+  .check-row{
+    display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;
+  }
+  .check-pill{
+    flex:1 1 28%; text-align:center; padding:12px 6px; border-radius:4px;
+    border:1px solid var(--line); font-size:13px; font-weight:600;
+    color: var(--ink-soft); cursor:pointer; user-select:none;
+  }
+  .check-pill.active{
+    border-color: var(--accent); background: rgba(217,83,30,0.08); color: var(--accent);
+  }
+  .check-pill.add{
+    border-style: dashed; border-color: var(--accent); color: var(--accent);
+  }
+
+  .btn{
+    width:100%; padding:14px; font-size:15px; font-weight:600;
+    border-radius:4px; border:none; cursor:pointer; margin-top:22px;
+  }
+  .btn-primary{ background: var(--accent); color: var(--accent-ink); }
+  .btn-primary:active{ opacity:0.9; }
+  .btn-ok{ background: var(--ok); color: #fff; }
+  .btn-outline{
+    background: var(--panel); color: var(--ink); border:1px solid var(--line);
+  }
+  .btn-scan{
+    width:100%; padding:12px; font-size:13px; font-weight:600;
+    border-radius:4px; border:1px dashed var(--accent); background:#fff;
+    color: var(--accent); cursor:pointer; margin-top:6px;
+  }
+
+  .hint{ font-size:12px; color:var(--ink-soft); margin-top:6px; }
+
+  /* ---- detalle / entrega ---- */
+  .detail-block{
+    background:var(--panel); border:1px solid var(--line); border-radius:4px;
+    padding:16px; margin-bottom:14px;
+  }
+  .detail-of{ font-family:var(--mono); font-size:20px; font-weight:700; }
+  .detail-sub{ font-size:13px; color:var(--ink-soft); margin-top:2px; }
+  .detail-grid{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+
+  .attn-banner{
+    background: var(--warn-bg); border:1px solid var(--warn-edge);
+    color: var(--warn-ink); border-radius:4px; padding:12px 14px;
+    font-size:13px; font-weight:600; margin-bottom:14px;
+    display:flex; gap:8px; align-items:flex-start;
+  }
+  .attn-banner .dot{ font-size:16px; line-height:1; }
+
+  .sign-banner{
+    background: #FFF3EC; border:2px solid var(--accent);
+    color: #7A2E0E; border-radius:4px; padding:14px;
+    font-size:13px; font-weight:600; margin: 16px 0 4px;
+  }
+  .sign-banner label{
+    display:flex; gap:10px; align-items:flex-start; cursor:pointer;
+    margin:0; text-transform:none; font-size:13px; letter-spacing:normal; color:#7A2E0E;
+  }
+  .sign-banner input[type=checkbox]{
+    width:22px; height:22px; margin-top:1px; flex-shrink:0; accent-color: var(--accent);
+  }
+  .btn:disabled{ opacity:0.45; cursor:not-allowed; }
+
+  .done-banner{
+    background: #EAF4F1; border:1px solid var(--ok);
+    color: var(--ok); border-radius:4px; padding:12px 14px;
+    font-size:13px; font-weight:600; margin-bottom:14px;
+    display:flex; gap:8px; align-items:flex-start;
+  }
+  .done-banner .dot{ font-size:16px; line-height:1; }
+  .done-banner span.txt{ color: #103D38; font-weight:500; }
+  .done-banner b{ font-weight:700; }
+
+  .del-banner{
+    background: #FBEAEA; border:1px solid #C0392B;
+    color: #7A1F1F; border-radius:4px; padding:12px 14px;
+    font-size:13px; font-weight:600; margin-bottom:14px;
+    display:flex; gap:8px; align-items:flex-start;
+  }
+
+  .obs-box{
+    font-size:13px; color:var(--ink); background:#FAF8F4;
+    border:1px solid var(--line); border-radius:4px; padding:10px 12px; margin-top:10px;
+  }
+
+  .entrega-log{ margin-top:6px; }
+  .entrega-log .item{
+    font-size:12px; color:var(--ink-soft); padding:8px 0;
+    border-top:1px solid var(--line);
+  }
+  .entrega-log .item b{ color:var(--ink); }
+  .entrega-log .item .undo{
+    display:inline-block; margin-top:5px; font-size:11px; font-weight:700;
+    color: var(--accent); cursor:pointer;
+  }
+
+  .status-tag{
+    display:inline-block; font-size:11px; font-weight:700;
+    padding:3px 9px; border-radius:3px; text-transform:uppercase; letter-spacing:0.04em;
+  }
+  .status-tag.pend{ background:#F3EFE6; color:var(--ink-soft); }
+  .status-tag.done{ background:var(--ok); color:#fff; }
+
+  /* ---- modal simple ---- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(20,18,14,0.5);
+    display:flex; align-items:flex-end; justify-content:center; z-index:50;
+  }
+  .sheet{
+    background:var(--panel); width:100%; max-width:480px;
+    border-radius: 12px 12px 0 0; padding:20px;
+    max-height:85vh; overflow-y:auto;
+  }
+  .sheet h3{ margin:0 0 14px; font-size:17px; }
+
+  .name-pill{
+    display:inline-block; padding:9px 14px; border-radius:20px;
+    border:1px solid var(--line); font-size:14px; margin:0 6px 8px 0; cursor:pointer;
+  }
+  .name-pill.sel{ background:var(--ink); color:#fff; border-color:var(--ink); }
+
+  #reader{ width:100%; border-radius:4px; overflow:hidden; margin-top:8px; }
+
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background: var(--ink); color:#fff; padding:10px 18px; border-radius:20px;
+    font-size:13px; z-index:100; opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .toast.show{ opacity:1; }
+
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+
+  /* ---- adaptación a pantallas grandes (PC) ---- */
+  @media (min-width: 720px){
+    main{ max-width: 760px; padding: 28px 24px; }
+
+    .home-grid{ flex-direction: row; }
+    .home-btn{ flex:1; padding: 26px 20px; }
+
+    .pending-strip #pendingList,
+    #buscarResultado{
+      display:grid; grid-template-columns: 1fr 1fr; gap:12px;
+    }
+    .pending-strip #pendingList .ticket,
+    #buscarResultado .ticket{ margin-bottom:0; }
+
+    .overlay{ align-items:center; }
+    .sheet{ border-radius:12px; max-width:440px; margin:0 16px; }
+
+    .row2{ gap:16px; }
+
+    .detail-block{ padding:22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>Pickings LIS</b><span>Registro y entrega</span></div>
+  <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
+</header>
+
+<main>
+
+  <!-- ============ HOME ============ -->
+  <section class="screen active" id="screen-home">
+    <div class="home-grid">
+      <button class="home-btn" onclick="nuevoPicking()">
+        <b>📦 Registrar picking</b>
+        <span>Nuevo picking hecho: OF, cajas y qué lleva fuera</span>
+      </button>
+      <button class="home-btn alt" onclick="ir('buscar')">
+        <b>🔍 Buscar / Entregar</b>
+        <span>Buscar una OF y registrar su entrega</span>
+      </button>
+    </div>
+
+    <div class="pending-strip">
+      <h3>Pendientes de entrega</h3>
+      <div id="pendingList"></div>
+    </div>
+  </section>
+
+  <!-- ============ REGISTRO ============ -->
+  <section class="screen" id="screen-registro">
+    <div class="screen-title">
+      <button class="back" onclick="ir('home')">‹</button>
+      <h2 id="formTitle">Registrar picking</h2>
+    </div>
+
+    <button class="btn-scan" onclick="abrirScanner()">Escanear QR de la etiqueta</button>
+    <div class="hint" id="scanHint">Si no se puede leer (o no trae subproyecto), rellena a mano.</div>
+
+    <label>OF</label>
+    <input type="text" class="mono" id="f_of" placeholder="Ej. 20260912">
+
+    <div class="row2">
+      <div>
+        <label>Proyecto</label>
+        <input type="text" id="f_proyecto" placeholder="Ej. LIS4">
+      </div>
+      <div>
+        <label>Subproyecto</label>
+        <input type="text" id="f_subproyecto" placeholder="Opcional">
+      </div>
+    </div>
+
+    <label>Nº de cajas</label>
+    <input type="number" id="f_cajas" min="1" value="1" inputmode="numeric" oninput="renderUbicacionPills()">
+
+    <label>Lleva fuera de la caja</label>
+    <div class="check-row" id="fueraRow"></div>
+
+    <label>¿Dónde se ubica cada cosa?</label>
+    <div id="ubicacionesContainer"></div>
+
+    <label>Observaciones</label>
+    <textarea id="f_obs" placeholder="Cualquier detalle útil para quien entregue después"></textarea>
+
+    <button class="btn btn-primary" onclick="guardarPicking()" id="btnGuardarPicking">Registrar picking</button>
+  </section>
+
+  <!-- ============ BUSCAR ============ -->
+  <section class="screen" id="screen-buscar">
+    <div class="screen-title">
+      <button class="back" onclick="ir('home')">‹</button>
+      <h2>Buscar OF</h2>
+    </div>
+
+    <label>Nº de OF</label>
+    <input type="text" class="mono" id="buscarInput" placeholder="Ej. 20260912" inputmode="numeric">
+    <button class="btn btn-outline" onclick="buscarOF()">Buscar</button>
+
+    <div id="buscarResultado" style="margin-top:20px;"></div>
+  </section>
+
+  <!-- ============ DETALLE / ENTREGA ============ -->
+  <section class="screen" id="screen-detalle">
+    <div class="screen-title">
+      <button class="back" onclick="ir('buscar')">‹</button>
+      <h2>Detalle de la OF</h2>
+    </div>
+    <div id="detalleContenido"></div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script>
+/* =========================================================
+   MODELO DE DATOS (localStorage por ahora)
+   Estructura lista para sustituir por Google Sheets más
+   adelante: ver funciones guardarLocal()/cargarLocal() y
+   el bloque "SYNC A GOOGLE SHEETS (pendiente)" al final.
+   ========================================================= */
+
+const LS_KEY = 'pickings_lis_v1';
+const LS_USER = 'pickings_lis_usuario';
+const LS_NAMES = 'pickings_lis_nombres';
+const LS_EXTRAS = 'pickings_lis_extras_fuera';
+const FUERA_BASE = ['Plantillas','Perfiles','Cables'];
+const LS_EXTRAS_UBIC = 'pickings_lis_extras_ubicacion';
+const UBICACION_BASE = ['Carpa','Almacén','Estantería de perfiles','Estantería de plantillas','Sala limpia'];
+const LS_PINS = 'pickings_lis_pins';
+function hashPin(s){
+  let h = 5381;
+  for(let i=0; i<s.length; i++){ h = ((h*33) ^ s.charCodeAt(i)) >>> 0; }
+  return h.toString(16).padStart(8,'0');
+}
+function claveNombre(n){
+  return (n||'').trim().toLowerCase();
+}
+function normalizarNombre(s){
+  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+function puedeGestionar(p){
+  const yo = normalizarNombre(usuarioActual);
+  return yo === normalizarNombre(p.registradoPor) || yo === 'maria';
+}
+function cargarPins(){
+  try{ return JSON.parse(localStorage.getItem(LS_PINS)) || {}; }
+  catch(e){ return {}; }
+}
+function guardarPins(obj){
+  localStorage.setItem(LS_PINS, JSON.stringify(obj));
+}
+
+let DB = cargarLocal();
+let usuarioActual = localStorage.getItem(LS_USER) || '';
+let fueraSeleccion = {};
+let scanner = null;
+let ofEnDetalle = null;
+let editingId = null;
+let pendienteEdicion = null;
+let pendienteDeshacer = null;
+let ubicacionesSeleccion = {};
+let itemPendienteUbicacion = null;
+let adminUnlocked = false;
+
+function abrirConfigurarPin(){
+  if(!usuarioActual){ toast('Primero identifícate con tu nombre'); return; }
+  mostrarSheet(`
+    <h3>Configurar mi PIN</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
+      Es tu PIN personal, para ${usuarioActual}, en este dispositivo. Solo tú lo necesitas para ver el historial de cambios.
+    </p>
+    <input type="text" id="nuevoPinUsuario" inputmode="numeric" placeholder="Elige tu PIN" maxlength="8"
+      oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+    <button class="btn btn-primary" onclick="guardarPinUsuario()">Guardar PIN</button>
+  `);
+}
+function guardarPinUsuario(){
+  const val = document.getElementById('nuevoPinUsuario').value.trim();
+  if(!val){ toast('Escribe un PIN'); return; }
+  const pins = cargarPins();
+  pins[claveNombre(usuarioActual)] = hashPin(val);
+  guardarPins(pins);
+  cerrarSheet();
+  toast('PIN guardado');
+}
+
+function pedirPinAdmin(pid){
+  const pins = cargarPins();
+  const guardado = pins[claveNombre(usuarioActual)];
+  if(!guardado){
+    mostrarSheet(`
+      <h3>Aún no tienes PIN</h3>
+      <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
+        Configura tu PIN personal para poder ver el historial de cambios.
+      </p>
+      <button class="btn btn-primary" onclick="abrirConfigurarPin()">Configurar mi PIN</button>
+    `);
+    return;
+  }
+  mostrarSheet(`
+    <h3>Acceso admin</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Introduce tu PIN para ver los cambios posteriores y las entregas deshechas.</p>
+    <input type="text" id="pinAdmin" inputmode="numeric" placeholder="Tu PIN" maxlength="8"
+      oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+    <button class="btn btn-primary" onclick="validarPinAdmin('${pid}')">Entrar</button>
+  `);
+}
+function validarPinAdmin(pid){
+  const val = document.getElementById('pinAdmin').value.trim();
+  const pins = cargarPins();
+  const guardado = pins[claveNombre(usuarioActual)];
+  if(guardado && hashPin(val) === guardado){
+    adminUnlocked = true;
+    cerrarSheet();
+    abrirDetalle(pid);
+  } else {
+    toast('PIN incorrecto');
+  }
+}
+
+function cargarExtrasFuera(){
+  try{ return JSON.parse(localStorage.getItem(LS_EXTRAS)) || []; }
+  catch(e){ return []; }
+}
+function guardarExtrasFuera(lista){
+  localStorage.setItem(LS_EXTRAS, JSON.stringify(lista));
+}
+function cargarExtrasUbicacion(){
+  try{ return JSON.parse(localStorage.getItem(LS_EXTRAS_UBIC)) || []; }
+  catch(e){ return []; }
+}
+function guardarExtrasUbicacion(lista){
+  localStorage.setItem(LS_EXTRAS_UBIC, JSON.stringify(lista));
+}
+
+function cargarLocal(){
+  try{ return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
+  catch(e){ return []; }
+}
+function guardarLocal(){
+  localStorage.setItem(LS_KEY, JSON.stringify(DB));
+  // SYNC A GOOGLE SHEETS (pendiente) -> ver nota al final del archivo
+}
+
+function cargarNombres(){
+  try{ return JSON.parse(localStorage.getItem(LS_NAMES)) || []; }
+  catch(e){ return []; }
+}
+function guardarNombres(lista){
+  localStorage.setItem(LS_NAMES, JSON.stringify(lista));
+}
+
+/* ---------- navegación ---------- */
+function ir(pantalla){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+pantalla).classList.add('active');
+  if(pantalla==='home') renderPendientes();
+  if(scanner && pantalla!=='registro'){ pararScanner(); }
+}
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------- usuario ---------- */
+function actualizarChipUsuario(){
+  const chip = document.getElementById('userChip');
+  chip.textContent = usuarioActual ? usuarioActual : 'Identificarse';
+}
+function abrirCambioUsuario(){
+  const nombres = cargarNombres();
+  let html = `<h3>¿Quién eres?</h3><div>`;
+  nombres.forEach(n=>{
+    html += `<span class="name-pill ${n===usuarioActual?'sel':''}" onclick="elegirUsuario('${n.replace(/'/g,"\\'")}')">${n}</span>`;
+  });
+  html += `</div>
+    <label>Añadir nombre nuevo</label>
+    <input type="text" id="nuevoNombre" placeholder="Nombre y apellido">
+    <button class="btn btn-primary" onclick="anadirNombre()">Guardar y usar</button>
+    <button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>`;
+  mostrarSheet(html);
+}
+function elegirUsuario(n){
+  usuarioActual = n;
+  localStorage.setItem(LS_USER, n);
+  actualizarChipUsuario();
+  cerrarSheet();
+  toast('Identificado como ' + n);
+}
+function anadirNombre(){
+  const val = document.getElementById('nuevoNombre').value.trim();
+  if(!val) return;
+  const nombres = cargarNombres();
+  if(!nombres.includes(val)) nombres.push(val);
+  guardarNombres(nombres);
+  elegirUsuario(val);
+}
+
+/* ---------- sheet modal genérico ---------- */
+function mostrarSheet(html){
+  cerrarSheet();
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.id = 'sheetOverlay';
+  ov.onclick = (e)=>{ if(e.target===ov) cerrarSheet(); };
+  ov.innerHTML = `<div class="sheet" onclick="event.stopPropagation()">${html}</div>`;
+  document.body.appendChild(ov);
+}
+function cerrarSheet(){
+  const ov = document.getElementById('sheetOverlay');
+  if(ov) ov.remove();
+}
+
+/* ---------- registro de picking ---------- */
+function toggleFuera(el){
+  const key = el.dataset.key;
+  fueraSeleccion[key] = !fueraSeleccion[key];
+  el.classList.toggle('active');
+  renderUbicacionPills();
+}
+function renderFueraPills(){
+  const todas = FUERA_BASE.concat(cargarExtrasFuera());
+  const row = document.getElementById('fueraRow');
+  row.innerHTML = todas.map(label=>{
+    const active = fueraSeleccion[label] ? 'active' : '';
+    return `<div class="check-pill ${active}" data-key="${label}" onclick="toggleFuera(this)">${label}</div>`;
+  }).join('') + `<div class="check-pill add" onclick="abrirAnadirFuera()">+ Añadir</div>`;
+}
+function abrirAnadirFuera(){
+  mostrarSheet(`<h3>Añadir tipo de componente</h3>
+    <label>Nombre</label>
+    <input type="text" id="nuevaFuera" placeholder="Ej. Tornillería">
+    <button class="btn btn-primary" onclick="confirmarAnadirFuera()">Añadir y marcar</button>`);
+}
+function confirmarAnadirFuera(){
+  const val = document.getElementById('nuevaFuera').value.trim();
+  if(!val) return;
+  const extras = cargarExtrasFuera();
+  if(!extras.includes(val) && !FUERA_BASE.includes(val)) extras.push(val);
+  guardarExtrasFuera(extras);
+  fueraSeleccion[val] = true;
+  cerrarSheet();
+  renderFueraPills();
+  renderUbicacionPills();
+  toast('Añadido: ' + val);
+}
+
+function renderUbicacionPills(){
+  const cont = document.getElementById('ubicacionesContainer');
+  const items = itemsParaUbicar();
+  const opciones = UBICACION_BASE.concat(cargarExtrasUbicacion());
+  const cajas = parseInt(document.getElementById('f_cajas').value) || 1;
+  cont.innerHTML = items.map(item=>{
+    const pills = opciones.map(op=>{
+      const active = ubicacionesSeleccion[item] === op ? 'active' : '';
+      return `<div class="check-pill ${active}" data-item="${item}" data-label="${op}" onclick="toggleUbicacionItem(this)">${op}</div>`;
+    }).join('') + `<div class="check-pill add" onclick="abrirAnadirUbicacion('${item}')">+ Añadir</div>`;
+    const titulo = item === 'Cajas' ? `Cajas de picking (${cajas})` : item;
+    return `<div style="margin-top:12px;">
+      <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;">${titulo}</div>
+      <div class="check-row">${pills}</div>
+    </div>`;
+  }).join('');
+}
+function itemsParaUbicar(){
+  const items = ['Cajas'];
+  Object.keys(fueraSeleccion).forEach(k=>{ if(fueraSeleccion[k]) items.push(k); });
+  return items;
+}
+function toggleUbicacionItem(el){
+  const item = el.dataset.item;
+  const label = el.dataset.label;
+  ubicacionesSeleccion[item] = label;
+  document.querySelectorAll(`#ubicacionesContainer .check-pill[data-item="${item}"]`).forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+}
+function abrirAnadirUbicacion(item){
+  itemPendienteUbicacion = item;
+  mostrarSheet(`<h3>Añadir ubicación para "${item}"</h3>
+    <label>Nombre</label>
+    <input type="text" id="nuevaUbicacion" placeholder="Ej. Sala limpia — zona 2">
+    <button class="btn btn-primary" onclick="confirmarAnadirUbicacion()">Añadir y elegir</button>`);
+}
+function confirmarAnadirUbicacion(){
+  const val = document.getElementById('nuevaUbicacion').value.trim();
+  if(!val || !itemPendienteUbicacion) return;
+  const extras = cargarExtrasUbicacion();
+  if(!extras.includes(val) && !UBICACION_BASE.includes(val)) extras.push(val);
+  guardarExtrasUbicacion(extras);
+  ubicacionesSeleccion[itemPendienteUbicacion] = val;
+  cerrarSheet();
+  renderUbicacionPills();
+  toast('Añadido: ' + val);
+}
+function resetFormRegistro(){
+  document.getElementById('f_of').value = '';
+  document.getElementById('f_proyecto').value = '';
+  document.getElementById('f_subproyecto').value = '';
+  document.getElementById('f_cajas').value = 1;
+  document.getElementById('f_obs').value = '';
+  fueraSeleccion = {};
+  renderFueraPills();
+  ubicacionesSeleccion = {};
+  renderUbicacionPills();
+  document.getElementById('scanHint').textContent = 'Si no se puede leer (o no trae subproyecto), rellena a mano.';
+}
+
+function nuevoPicking(){
+  editingId = null;
+  ir('registro');
+  resetFormRegistro();
+  document.getElementById('formTitle').textContent = 'Registrar picking';
+  document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+}
+
+function abrirEdicion(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p) return;
+  if(!puedeGestionar(p)){ toast('Solo quien registró este picking o María pueden editarlo'); return; }
+  editingId = id;
+  ir('registro');
+  document.getElementById('f_of').value = p.of;
+  document.getElementById('f_proyecto').value = p.proyecto;
+  document.getElementById('f_subproyecto').value = p.subproyecto;
+  document.getElementById('f_cajas').value = p.cajas;
+  document.getElementById('f_obs').value = p.observaciones;
+  fueraSeleccion = {...p.fuera};
+  renderFueraPills();
+  ubicacionesSeleccion = {...(p.ubicaciones||{})};
+  renderUbicacionPills();
+  document.getElementById('scanHint').textContent = 'Editando un picking ya registrado.';
+  document.getElementById('formTitle').textContent = 'Editar picking';
+  document.getElementById('btnGuardarPicking').textContent = 'Guardar cambios';
+}
+
+function guardarPicking(){
+  if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
+  const of = document.getElementById('f_of').value.trim();
+  const proyecto = document.getElementById('f_proyecto').value.trim();
+  const subproyecto = document.getElementById('f_subproyecto').value.trim();
+  const cajas = parseInt(document.getElementById('f_cajas').value) || 1;
+  const obs = document.getElementById('f_obs').value.trim();
+
+  if(!of){ toast('Falta el número de OF'); return; }
+  const itemsFaltan = itemsParaUbicar().filter(it=>!ubicacionesSeleccion[it]);
+  if(itemsFaltan.length){ toast('Falta elegir dónde va: ' + itemsFaltan.join(', ')); return; }
+
+  const ubicacionesFinal = {};
+  itemsParaUbicar().forEach(it=> ubicacionesFinal[it] = ubicacionesSeleccion[it]);
+
+  if(editingId){
+    pedirMotivoEdicion({ of, proyecto, subproyecto, cajas, obs, fuera: {...fueraSeleccion}, ubicaciones: ubicacionesFinal });
+    return;
+  }
+
+  const registro = {
+    id: 'pk_' + Date.now(),
+    of, proyecto, subproyecto, cajas,
+    fuera: {...fueraSeleccion},
+    ubicaciones: ubicacionesFinal,
+    observaciones: obs,
+    registradoPor: usuarioActual,
+    fecha: new Date().toISOString(),
+    estado: 'pendiente',
+    entregas: [],
+    ediciones: []
+  };
+  DB.push(registro);
+  guardarLocal();
+  toast('Picking registrado');
+  ir('home');
+}
+
+function diffCambios(p, nuevo){
+  const cambios = [];
+  if(p.of !== nuevo.of) cambios.push(`OF: ${p.of} → ${nuevo.of}`);
+  if((p.proyecto||'') !== nuevo.proyecto) cambios.push(`Proyecto: ${p.proyecto||'—'} → ${nuevo.proyecto||'—'}`);
+  if((p.subproyecto||'') !== nuevo.subproyecto) cambios.push(`Subproyecto: ${p.subproyecto||'—'} → ${nuevo.subproyecto||'—'}`);
+  if(p.cajas !== nuevo.cajas) cambios.push(`Cajas: ${p.cajas} → ${nuevo.cajas}`);
+  if((p.observaciones||'') !== nuevo.obs) cambios.push('Observaciones actualizadas');
+  const ubicAntes = p.ubicaciones || {};
+  const ubicDespues = nuevo.ubicaciones || {};
+  Array.from(new Set([...Object.keys(ubicAntes), ...Object.keys(ubicDespues)])).forEach(k=>{
+    if((ubicAntes[k]||'—') !== (ubicDespues[k]||'—')) cambios.push(`Ubicación ${k}: ${ubicAntes[k]||'—'} → ${ubicDespues[k]||'—'}`);
+  });
+  const antes = Object.keys(p.fuera||{}).filter(k=>p.fuera[k]);
+  const despues = Object.keys(nuevo.fuera||{}).filter(k=>nuevo.fuera[k]);
+  const añadidos = despues.filter(k=>!antes.includes(k));
+  const quitados = antes.filter(k=>!despues.includes(k));
+  if(añadidos.length) cambios.push(`+ Añadido: ${añadidos.join(', ')}`);
+  if(quitados.length) cambios.push(`− Quitado: ${quitados.join(', ')}`);
+  return cambios;
+}
+
+function pedirMotivoEdicion(nuevo){
+  pendienteEdicion = nuevo;
+  mostrarSheet(`
+    <h3>Motivo del cambio</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
+      Para que quede claro por qué se editó — lo verá quien consulte este picking después.
+    </p>
+    <textarea id="motivoEdicion" placeholder="Ej. Me olvidé de marcar que llevaba varillas roscadas"></textarea>
+    <button class="btn btn-primary" onclick="confirmarEdicion()">Guardar cambios</button>
+  `);
+}
+
+function confirmarEdicion(){
+  const p = DB.find(x=>x.id===editingId);
+  if(!p || !pendienteEdicion) return;
+  const motivo = document.getElementById('motivoEdicion').value.trim();
+  const cambios = diffCambios(p, pendienteEdicion);
+
+  p.of = pendienteEdicion.of;
+  p.proyecto = pendienteEdicion.proyecto;
+  p.subproyecto = pendienteEdicion.subproyecto;
+  p.cajas = pendienteEdicion.cajas;
+  p.fuera = pendienteEdicion.fuera;
+  p.ubicaciones = pendienteEdicion.ubicaciones;
+  p.observaciones = pendienteEdicion.obs;
+
+  if(!p.ediciones) p.ediciones = [];
+  p.ediciones.push({
+    fecha: new Date().toISOString(),
+    editadoPor: usuarioActual,
+    motivo,
+    cambios
+  });
+
+  guardarLocal();
+  cerrarSheet();
+  pendienteEdicion = null;
+  toast('Cambios guardados');
+  abrirDetalle(p.id);
+}
+
+/* ---------- scanner QR ---------- */
+function abrirScanner(){
+  document.getElementById('scanHint').textContent = 'Apunta al QR de la etiqueta…';
+  const readerHtml = `<div id="reader"></div>
+    <div class="hint" style="margin-top:10px;">Si no lee, cierra y rellena el formulario a mano.</div>
+    <button class="btn btn-outline" onclick="pararScannerYcerrar()">Cerrar cámara</button>`;
+  mostrarSheet(`<h3>Escanear etiqueta</h3>${readerHtml}`);
+
+  scanner = new Html5Qrcode("reader");
+  scanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 220 },
+    (decodedText)=>{
+      procesarQR(decodedText);
+      pararScannerYcerrar();
+    },
+    ()=>{ /* frame sin detección, ignorar */ }
+  ).catch(()=>{
+    toast('No se pudo abrir la cámara');
+    cerrarSheet();
+  });
+}
+function pararScanner(){
+  if(scanner){
+    scanner.stop().catch(()=>{});
+    scanner = null;
+  }
+}
+function pararScannerYcerrar(){
+  pararScanner();
+  cerrarSheet();
+}
+
+// Formato esperado (como en la etiqueta de picking de Almacén):
+// codigo;OF;proyecto[;subproyecto];sello_fecha-hora
+function procesarQR(texto){
+  const partes = texto.split(';');
+  if(partes.length >= 2) document.getElementById('f_of').value = partes[1] || '';
+  if(partes.length >= 3) document.getElementById('f_proyecto').value = partes[2] || '';
+  if(partes.length >= 4 && !/^\d{8}_\d{6}$/.test(partes[3])){
+    document.getElementById('f_subproyecto').value = partes[3];
+    document.getElementById('scanHint').textContent = 'Datos leídos del QR. Revisa antes de guardar.';
+  } else {
+    document.getElementById('scanHint').textContent = 'QR leído, pero sin subproyecto — complétalo a mano si aplica.';
+  }
+  toast('QR leído');
+}
+
+/* ---------- pendientes en home ---------- */
+function renderPendientes(){
+  const cont = document.getElementById('pendingList');
+  const pendientes = DB.filter(p=>p.estado!=='completado' && !p.eliminado).sort((a,b)=> new Date(b.fecha)-new Date(a.fecha));
+  if(pendientes.length===0){
+    cont.innerHTML = `<div class="empty">No hay pickings pendientes de entrega</div>`;
+    return;
+  }
+  cont.innerHTML = pendientes.map(p=>ticketHtml(p)).join('');
+}
+
+function fueraActivas(p){
+  return Object.keys(p.fuera||{}).filter(k=>p.fuera[k]);
+}
+function tieneAtencion(p){
+  return p.cajas > 1 || fueraActivas(p).length > 0 || !!p.observaciones;
+}
+
+function ticketHtml(p){
+  const entregado = p.estado==='completado';
+  const attn = !entregado && !p.eliminado && tieneAtencion(p);
+  const chips = [];
+  if(p.eliminado){
+    chips.push(`<span class="chip" style="background:#FBEAEA;border-color:#C0392B;color:#7A1F1F;">🗑️ Eliminado</span>`);
+  }
+  if(p.cajas>1) chips.push(`<span class="chip attn">${p.cajas} cajas</span>`);
+  else chips.push(`<span class="chip">${p.cajas} caja</span>`);
+  fueraActivas(p).forEach(k=> chips.push(`<span class="chip on">${k}</span>`));
+  Object.entries(p.ubicaciones||{}).forEach(([k,v])=>{
+    const etiqueta = k==='Cajas' ? `Cajas de picking (${p.cajas})` : k;
+    chips.push(`<span class="chip">📍 ${etiqueta}: ${v}</span>`);
+  });
+  if(adminUnlocked && p.ediciones && p.ediciones.length) chips.push(`<span class="chip">✏️ Editado</span>`);
+  if(adminUnlocked && p.deshechas && p.deshechas.length) chips.push(`<span class="chip attn">↩️ Entrega deshecha</span>`);
+  if(entregado) chips.push(`<span class="chip done">Entregado</span>`);
+  else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega parcial</span>`);
+
+  return `<div class="ticket ${attn?'attn':''}" style="${p.eliminado?'opacity:0.55;':''}" onclick="abrirDetalle('${p.id}')">
+    <div class="ticket-top">
+      <span class="ticket-of">OF ${p.of}</span>
+      <span class="ticket-date">${fechaCorta(p.fecha)}</span>
+    </div>
+    <div class="ticket-proj">${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''}</div>
+    <div class="ticket-meta">${chips.join('')}</div>
+  </div>`;
+}
+
+function fechaCorta(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-ES', {day:'2-digit', month:'2-digit'}) + ' ' +
+         d.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
+}
+
+/* ---------- buscar ---------- */
+function buscarOF(){
+  const val = document.getElementById('buscarInput').value.trim();
+  const cont = document.getElementById('buscarResultado');
+  if(!val){ cont.innerHTML=''; return; }
+  const resultados = DB.filter(p=>p.of.toLowerCase().includes(val.toLowerCase()))
+                        .sort((a,b)=> new Date(b.fecha)-new Date(a.fecha));
+  if(resultados.length===0){
+    cont.innerHTML = `<div class="empty">No hay ningún picking con esa OF</div>`;
+    return;
+  }
+  cont.innerHTML = resultados.map(p=>ticketHtml(p)).join('');
+}
+
+/* ---------- detalle + entrega ---------- */
+function abrirDetalle(id){
+  ofEnDetalle = id;
+  const p = DB.find(x=>x.id===id);
+  if(!p) return;
+  ir('detalle');
+  document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
+}
+
+function detalleHtml(p){
+  const entregado = p.estado==='completado';
+  const attn = !entregado && !p.eliminado && tieneAtencion(p);
+  let banner = '';
+  if(attn){
+    const motivos = [];
+    if(p.cajas>1) motivos.push(`${p.cajas} cajas — recoger todas juntas`);
+    fueraActivas(p).forEach(k=> motivos.push(`lleva ${k.toLowerCase()} fuera de la caja`));
+    if(p.observaciones) motivos.push(p.observaciones);
+    banner = `<div class="attn-banner"><span class="dot">⚠️</span><span>${motivos.join(' · ')}</span></div>`;
+  }
+
+  let doneBanner = '';
+  if(entregado && !p.eliminado){
+    const cierre = [...p.entregas].reverse().find(e=>e.tipo==='completa') || p.entregas[p.entregas.length-1];
+    doneBanner = `<div class="done-banner"><span class="dot">✅</span><span class="txt">
+      Esta OF ya se entregó completa — no hace falta volver a entregar nada.<br>
+      <b>${cierre.entregadoPor}</b> se la entregó a <b>${cierre.entregadoA}</b> el ${fechaCorta(cierre.fecha)}.
+    </span></div>`;
+  }
+
+  let delBanner = '';
+  if(p.eliminado){
+    delBanner = `<div class="del-banner"><span class="dot">🗑️</span><span>Este picking fue eliminado — ya no está activo.</span></div>`;
+  }
+
+  const entregasHtml = p.entregas.length ? `
+    <div class="entrega-log">
+      ${p.entregas.map((e,i)=>`<div class="item">
+        <b>${e.tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</b> — ${fechaCorta(e.fecha)}<br>
+        ${e.entregadoPor} entregó a ${e.entregadoA}${e.nota ? ': '+e.nota : ''}
+        ${(puedeGestionar(p) && !p.eliminado) ? `<br><span class="undo" onclick="deshacerEntrega('${p.id}', ${i})">Deshacer esta entrega</span>` : ''}
+      </div>`).join('')}
+    </div>` : '';
+
+  const acciones = (p.estado==='completado' || p.eliminado) ? '' : `
+    <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
+    <button class="btn btn-outline" onclick="entregar('parcial')">Entrega parcial</button>
+  `;
+
+  const gestionBtns = p.eliminado ? '' : (puedeGestionar(p)
+    ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">✏️ Editar datos del picking</button>
+       <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">🗑️ Borrar este picking</button>`
+    : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor} o María pueden editar o borrar este picking.</div>`);
+
+  return `
+    <div class="detail-block">
+      <div class="detail-of">OF ${p.of}</div>
+      <div class="detail-sub">${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''}</div>
+      <div class="detail-grid">
+        <span class="chip">${p.cajas} caja${p.cajas>1?'s':''}</span>
+        ${fueraActivas(p).map(k=>`<span class="chip on">${k} fuera</span>`).join('')}
+        <span class="status-tag ${entregado?'done':'pend'}">${entregado?'Entregado':'Pendiente'}</span>
+      </div>
+      ${Object.keys(p.ubicaciones||{}).length ? `<div class="obs-box" style="margin-top:10px;">
+        ${Object.entries(p.ubicaciones).map(([k,v])=>`📍 <b>${k==='Cajas' ? 'Cajas de picking ('+p.cajas+')' : k}</b> → ${v}`).join('<br>')}
+      </div>` : ''}
+      ${p.observaciones ? `<div class="obs-box">${p.observaciones}</div>` : ''}
+      <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
+      ${gestionBtns}
+    </div>
+    ${delBanner}
+    ${doneBanner}
+    ${banner}
+    ${entregasHtml}
+    ${historialAdminHtml(p)}
+    ${acciones}
+  `;
+}
+
+function edicionesHtmlOf(p){
+  if(!p.ediciones || !p.ediciones.length) return '';
+  return `<div class="entrega-log">
+    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Cambios después del registro</div>
+    ${p.ediciones.map(e=>`<div class="item">
+      <b>Editado por ${e.editadoPor}</b> — ${fechaCorta(e.fecha)}<br>
+      ${e.cambios && e.cambios.length ? e.cambios.join(' · ') : 'Guardado sin cambios en los campos'}
+      ${e.motivo ? `<br>"${e.motivo}"` : ''}
+    </div>`).join('')}
+  </div>`;
+}
+function deshechasHtmlOf(p){
+  if(!p.deshechas || !p.deshechas.length) return '';
+  return `<div class="entrega-log">
+    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Entregas deshechas</div>
+    ${p.deshechas.map(d=>{
+      const o = d.entregaOriginal || {};
+      return `<div class="item">
+        <b>Deshecho por ${d.hechoPor}</b> — ${fechaCorta(d.fecha)}<br>
+        Era: ${o.tipo==='completa' ? 'entrega completa' : 'entrega parcial'} de ${o.entregadoPor||'—'} a ${o.entregadoA||'—'}${o.fecha ? ' ('+fechaCorta(o.fecha)+')' : ''}
+        ${d.motivo ? `<br>"${d.motivo}"` : ''}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+function historialAdminHtml(p){
+  const hay = (p.ediciones && p.ediciones.length) || (p.deshechas && p.deshechas.length) || p.eliminado;
+  if(!hay) return '';
+  if(!adminUnlocked){
+    return `<button class="btn btn-outline" onclick="pedirPinAdmin('${p.id}')" style="margin-top:14px;">🔒 Ver historial de cambios (admin)</button>`;
+  }
+  return edicionesHtmlOf(p) + deshechasHtmlOf(p) + eliminadoInfoHtmlOf(p);
+}
+function eliminadoInfoHtmlOf(p){
+  if(!p.eliminado || !p.eliminadoInfo) return '';
+  const info = p.eliminadoInfo;
+  return `<div class="entrega-log">
+    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Motivo de la eliminación</div>
+    <div class="item"><b>${info.por}</b> — ${fechaCorta(info.fecha)}<br>"${info.motivo}"</div>
+  </div>`;
+}
+
+function entregar(tipo){
+  const nombres = cargarNombres();
+  let pillsPor = nombres.map(n=>`<span class="name-pill" data-role="por" onclick="seleccionarPill(this)">${n}</span>`).join('');
+  let html = `
+    <h3>${tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</h3>
+    <label>¿Quién entrega?</label>
+    <div id="pillsPor">${pillsPor}</div>
+    <input type="text" id="entregaPorManual" placeholder="O escribe el nombre">
+
+    <label>¿A quién de DHV se entrega?</label>
+    <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" oninput="actualizarTextoFirma()">
+
+    ${tipo==='parcial' ? `<label>¿Qué se lleva ahora?</label>
+    <textarea id="entregaNota" placeholder="Ej. 2 plantillas y las cajas, quedan los cables"></textarea>` : ''}
+
+    <div class="sign-banner">
+      <label>
+        <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()">
+        <span>✍️ Confirmo que <b id="signLabelName">la persona de DHV</b> firmará la hoja de picking antes de irme</span>
+      </label>
+    </div>
+
+    <button class="btn btn-primary" id="btnConfirmarEntrega" onclick="confirmarEntrega('${tipo}')" disabled>Confirmar entrega</button>
+  `;
+  mostrarSheet(html);
+}
+function toggleBtnEntrega(){
+  const chk = document.getElementById('confirmFirma');
+  const btn = document.getElementById('btnConfirmarEntrega');
+  if(chk && btn) btn.disabled = !chk.checked;
+}
+function actualizarTextoFirma(){
+  const nombre = document.getElementById('entregaA').value.trim();
+  const span = document.getElementById('signLabelName');
+  if(span) span.textContent = nombre || 'la persona de DHV';
+}
+
+function seleccionarPill(el){
+  document.querySelectorAll('#pillsPor .name-pill').forEach(p=>p.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('entregaPorManual').value = el.textContent;
+}
+
+function confirmarEntrega(tipo){
+  const p = DB.find(x=>x.id===ofEnDetalle);
+  if(!p) return;
+  const por = document.getElementById('entregaPorManual').value.trim() || usuarioActual;
+  const a = document.getElementById('entregaA').value.trim();
+  const nota = tipo==='parcial' ? document.getElementById('entregaNota').value.trim() : '';
+  const firmaConfirmada = document.getElementById('confirmFirma').checked;
+
+  if(!por){ toast('Falta quién entrega'); return; }
+  if(!a){ toast('Falta a quién se entrega'); return; }
+  if(tipo==='parcial' && !nota){ toast('Describe qué se lleva'); return; }
+  if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
+
+  p.entregas.push({
+    tipo, entregadoPor: por, entregadoA: a, nota,
+    fecha: new Date().toISOString()
+  });
+  if(tipo==='completa') p.estado = 'completado';
+
+  guardarLocal();
+  cerrarSheet();
+  toast('Entrega registrada — recuerda la firma en la hoja');
+  abrirDetalle(p.id);
+}
+
+function deshacerEntrega(pid, idx){
+  const p = DB.find(x=>x.id===pid);
+  if(!p) return;
+  if(!puedeGestionar(p)){ toast('Solo quien registró este picking o María pueden deshacer su entrega'); return; }
+  pendienteDeshacer = { pid, idx };
+  mostrarSheet(`
+    <h3>¿Deshacer esta entrega?</h3>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
+      Se borra este registro de entrega. Si era la entrega completa, la OF vuelve a quedar pendiente.
+    </p>
+    <label>¿Por qué se deshace?</label>
+    <textarea id="motivoDeshacer" placeholder="Ej. Me dijeron que se lo llevaban y al final no fue así"></textarea>
+    <button class="btn btn-primary" onclick="confirmarDeshacerEntrega()">Sí, deshacer</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+}
+function confirmarDeshacerEntrega(){
+  if(!pendienteDeshacer) return;
+  const { pid, idx } = pendienteDeshacer;
+  const p = DB.find(x=>x.id===pid);
+  if(!p) return;
+  const motivo = document.getElementById('motivoDeshacer').value.trim();
+  if(!motivo){ toast('Escribe el motivo'); return; }
+
+  const eliminada = p.entregas[idx];
+  p.entregas.splice(idx, 1);
+  if(eliminada && eliminada.tipo==='completa'){
+    p.estado = 'pendiente';
+  }
+
+  if(!p.deshechas) p.deshechas = [];
+  p.deshechas.push({
+    fecha: new Date().toISOString(),
+    hechoPor: usuarioActual,
+    motivo,
+    entregaOriginal: eliminada
+  });
+
+  guardarLocal();
+  cerrarSheet();
+  pendienteDeshacer = null;
+  toast('Entrega deshecha');
+  abrirDetalle(p.id);
+}
+
+function abrirBorrarPicking(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p) return;
+  if(!puedeGestionar(p)){ toast('Solo quien registró este picking o María pueden borrarlo'); return; }
+  mostrarSheet(`
+    <h3>¿Borrar este picking?</h3>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
+      No desaparece del todo: queda marcado como eliminado (para que nadie lo confunda con uno activo si busca esa OF), y el motivo solo lo verá quien tenga acceso admin.
+    </p>
+    <label>¿Por qué se borra?</label>
+    <textarea id="motivoBorrado" placeholder="Ej. Se registró por error, era otra OF"></textarea>
+    <button class="btn btn-primary" style="background:#B33A3A;" onclick="confirmarBorrarPicking('${id}')">Sí, borrar</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+}
+function confirmarBorrarPicking(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p) return;
+  if(!puedeGestionar(p)){ toast('No tienes permiso para borrar este picking'); return; }
+  const motivo = document.getElementById('motivoBorrado').value.trim();
+  if(!motivo){ toast('Escribe el motivo'); return; }
+
+  p.eliminado = true;
+  p.eliminadoInfo = { motivo, por: usuarioActual, fecha: new Date().toISOString() };
+
+  guardarLocal();
+  cerrarSheet();
+  toast('Picking eliminado');
+  ir('home');
+}
+
+/* ---------- init ---------- */
+actualizarChipUsuario();
+renderPendientes();
+if(!usuarioActual){ setTimeout(abrirCambioUsuario, 400); }
+
+/* =========================================================
+   SYNC A GOOGLE SHEETS (pendiente)
+   Cuando tengamos la Sheet y el Apps Script (igual que en
+   Fungibles), aquí va una función enviarASheet(registro) que
+   se llama desde guardarLocal() y desde confirmarEntrega().
+   De momento todo vive solo en este dispositivo (localStorage).
+   ========================================================= */
+</script>
+</body>
+</html>
