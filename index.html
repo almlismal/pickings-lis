@@ -391,16 +391,26 @@
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyqtIAwqXrpPTqgiPCiSs_rkpYgLMSEY_NPpNMBVozrqz8UvpWF37Kx8VFflRxVyMu1wQ/exec';
 const LS_USER = 'pickings_lis_usuario';
 
+async function fetchConLimite(url, opciones, msLimite){
+  const controller = new AbortController();
+  const timeoutId = setTimeout(()=>controller.abort(), msLimite || 15000);
+  try{
+    const res = await fetch(url, { ...(opciones||{}), signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 async function llamarBackend(accion, datos){
-  const res = await fetch(GAS_URL, {
+  const res = await fetchConLimite(GAS_URL, {
     method: 'POST',
     headers: {'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion, datos })
-  });
+  }, 15000);
   return res.json();
 }
 async function cargarDesdeSheet(){
-  const res = await fetch(GAS_URL);
+  const res = await fetchConLimite(GAS_URL, {}, 15000);
   return res.json();
 }
 
@@ -509,12 +519,6 @@ async function sincronizar(){
   refrescarPantalla();
 }
 
-// Usar cuando una acción de guardado YA trajo los datos frescos en su
-// propia respuesta (ver doPost en el script): evita pedirlos dos veces.
-function aplicarResultado(resultado){
-  if(!procesarDatos(resultado)) return;
-  refrescarPantalla();
-}
 const LS_EXTRAS = 'pickings_lis_extras_fuera';
 const FUERA_BASE = ['Plantillas','Perfiles','Cables'];
 const LS_EXTRAS_UBIC = 'pickings_lis_extras_ubicacion';
@@ -570,19 +574,27 @@ function abrirConfigurarPinObligatorio(){
     <button class="btn btn-primary" id="btnGuardarPin" onclick="guardarPinUsuario(true)">Guardar y continuar</button>
   `, true);
 }
+function idTemporal(){
+  return 'tmp_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+}
+
 async function guardarPinUsuario(obligatorio){
   const val = document.getElementById('nuevoPinUsuario').value.trim();
   if(val.length !== 4){ toast('El PIN debe tener 4 números'); return; }
-  const btn = document.getElementById('btnGuardarPin');
-  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  // Se aplica ya mismo en local, sin esperar a Google — el guardado real
+  // sigue por detrás, sin bloquear a la persona.
+  usuariosRemotos = usuariosRemotos.filter(u=>claveNombre(u['Nombre'])!==claveNombre(usuarioActual));
+  usuariosRemotos.push({ 'Nombre': usuarioActual, 'PIN': val });
+
+  cerrarSheet();
+  toast(obligatorio ? 'Listo, ya puedes usar la app' : 'PIN guardado');
+
   try{
     const resultado = await llamarBackend('guardarUsuario', { nombre: usuarioActual, pin: val, por: usuarioActual });
-    procesarDatos(resultado);
-    cerrarSheet();
-    toast(obligatorio ? 'Listo, ya puedes usar la app' : 'PIN guardado');
+    if(resultado && resultado.usuarios) usuariosRemotos = resultado.usuarios;
   } catch(err){
-    toast('No se pudo guardar — revisa tu conexión');
-    if(btn){ btn.disabled = false; btn.textContent = obligatorio ? 'Guardar y continuar' : 'Guardar PIN'; }
+    // si falla de verdad, la sincronización periódica ya lo reintentará
   }
 }
 
@@ -897,17 +909,30 @@ async function confirmarRegistroDuplicado(){
 }
 
 async function ejecutarCrearPicking(datos){
-  const btn = document.getElementById('btnGuardarPicking');
-  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+  // Aparece en Inicio al instante; el guardado real va por detrás.
+  const optimista = {
+    id: idTemporal(),
+    of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto,
+    cajas: datos.cajas,
+    fuera: parseFuera(datos.fuera),
+    ubicaciones: parseUbicaciones(datos.ubicaciones),
+    observaciones: datos.observaciones,
+    registradoPor: datos.registradoPor,
+    fecha: datos.fecha,
+    estado: 'pendiente',
+    eliminado: false, eliminadoInfo: null,
+    entregas: [], ediciones: [], deshechas: []
+  };
+  DB.unshift(optimista);
+  toast('Picking registrado');
+  ir('home');
+
   try{
-    const resultado = await llamarBackend('crearPicking', datos);
-    procesarDatos(resultado);
-    toast('Picking registrado');
-    ir('home');
+    await llamarBackend('crearPicking', datos);
   } catch(err){
-    toast('No se pudo guardar — revisa tu conexión');
-    if(btn){ btn.disabled = false; btn.textContent = 'Registrar picking'; }
+    // no molestamos aquí; la sincronización de fondo ya se encarga
   }
+  sincronizar().catch(()=>{});
 }
 
 function diffCambios(p, nuevo){
@@ -949,31 +974,40 @@ async function confirmarEdicion(){
   const motivo = document.getElementById('motivoEdicion').value.trim();
   const cambios = diffCambios(p, pendienteEdicion);
 
-  const btn = document.getElementById('btnGuardarEdicion');
-  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const datosEnvio = {
+    id: p.id,
+    of: pendienteEdicion.of,
+    proyecto: pendienteEdicion.proyecto,
+    subproyecto: pendienteEdicion.subproyecto,
+    cajas: pendienteEdicion.cajas,
+    fuera: formatFuera(pendienteEdicion.fuera),
+    ubicaciones: formatUbicaciones(pendienteEdicion.ubicaciones),
+    observaciones: pendienteEdicion.obs,
+    editadoPor: usuarioActual,
+    motivo,
+    cambios
+  };
+
+  // aplicar ya mismo en local
+  p.of = pendienteEdicion.of;
+  p.proyecto = pendienteEdicion.proyecto;
+  p.subproyecto = pendienteEdicion.subproyecto;
+  p.cajas = pendienteEdicion.cajas;
+  p.fuera = pendienteEdicion.fuera;
+  p.ubicaciones = pendienteEdicion.ubicaciones;
+  p.observaciones = pendienteEdicion.obs;
+  if(!p.ediciones) p.ediciones = [];
+  p.ediciones.push({ editadoPor: usuarioActual, fecha: new Date().toISOString(), motivo, cambios });
+
+  cerrarSheet();
+  pendienteEdicion = null;
+  toast('Cambios guardados');
+  abrirDetalle(p.id);
+
   try{
-    const resultado = await llamarBackend('editarPicking', {
-      id: p.id,
-      of: pendienteEdicion.of,
-      proyecto: pendienteEdicion.proyecto,
-      subproyecto: pendienteEdicion.subproyecto,
-      cajas: pendienteEdicion.cajas,
-      fuera: formatFuera(pendienteEdicion.fuera),
-      ubicaciones: formatUbicaciones(pendienteEdicion.ubicaciones),
-      observaciones: pendienteEdicion.obs,
-      editadoPor: usuarioActual,
-      motivo,
-      cambios
-    });
-    procesarDatos(resultado);
-    cerrarSheet();
-    pendienteEdicion = null;
-    toast('Cambios guardados');
-    abrirDetalle(p.id);
-  } catch(err){
-    toast('No se pudo guardar — revisa tu conexión');
-    if(btn){ btn.disabled = false; btn.textContent = 'Guardar cambios'; }
-  }
+    await llamarBackend('editarPicking', datosEnvio);
+  } catch(err){}
+  sincronizar().catch(()=>{});
 }
 
 /* ---------- pendientes en home ---------- */
@@ -1217,18 +1251,18 @@ async function confirmarEntrega(tipo){
   if(tipo==='parcial' && !nota){ toast('Describe qué se lleva'); return; }
   if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
 
-  const btn = document.getElementById('btnConfirmarEntrega');
-  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const entregaLocal = { tipo, entregadoPor: por, entregadoA: a, nota, fecha: new Date().toISOString() };
+  p.entregas.push(entregaLocal);
+  if(tipo==='completa') p.estado = 'completado';
+
+  cerrarSheet();
+  toast('Entrega registrada — recuerda la firma en la hoja');
+  abrirDetalle(p.id);
+
   try{
-    const resultado = await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
-    procesarDatos(resultado);
-    cerrarSheet();
-    toast('Entrega registrada — recuerda la firma en la hoja');
-    abrirDetalle(p.id);
-  } catch(err){
-    toast('No se pudo guardar — revisa tu conexión');
-    if(btn){ btn.disabled = false; btn.textContent = 'Confirmar entrega'; }
-  }
+    await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
+  } catch(err){}
+  sincronizar().catch(()=>{});
 }
 
 function deshacerEntrega(pid, idx){
@@ -1258,25 +1292,31 @@ async function confirmarDeshacerEntrega(){
   const eliminada = p.entregas[idx];
   if(!eliminada) return;
 
-  const btn = document.getElementById('btnConfirmarDeshacer');
-  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+  p.entregas.splice(idx, 1);
+  if(eliminada.tipo==='completa') p.estado = 'pendiente';
+  if(!p.deshechas) p.deshechas = [];
+  p.deshechas.push({
+    hechoPor: usuarioActual,
+    fecha: new Date().toISOString(),
+    motivo,
+    detalleTexto: `Era: ${eliminada.tipo==='completa' ? 'entrega completa' : 'entrega parcial'} de ${eliminada.entregadoPor} a ${eliminada.entregadoA}`
+  });
+
+  cerrarSheet();
+  pendienteDeshacer = null;
+  toast('Entrega deshecha');
+  abrirDetalle(p.id);
+
   try{
-    const resultado = await llamarBackend('deshacerEntrega', {
+    await llamarBackend('deshacerEntrega', {
       pickingId: pid,
       tipoOriginal: eliminada.tipo,
       fechaOriginal: eliminada.fecha,
       hechoPor: usuarioActual,
       motivo
     });
-    procesarDatos(resultado);
-    cerrarSheet();
-    pendienteDeshacer = null;
-    toast('Entrega deshecha');
-    abrirDetalle(p.id);
-  } catch(err){
-    toast('No se pudo guardar — revisa tu conexión');
-    if(btn){ btn.disabled = false; btn.textContent = 'Sí, deshacer'; }
-  }
+  } catch(err){}
+  sincronizar().catch(()=>{});
 }
 
 function abrirBorrarPicking(id){
@@ -1301,18 +1341,17 @@ async function confirmarBorrarPicking(id){
   const motivo = document.getElementById('motivoBorrado').value.trim();
   if(!motivo){ toast('Escribe el motivo'); return; }
 
-  const btn = document.getElementById('btnConfirmarBorrar');
-  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+  p.eliminado = true;
+  p.eliminadoInfo = { motivo, por: usuarioActual, fecha: new Date().toISOString() };
+
+  cerrarSheet();
+  toast('Picking eliminado');
+  ir('home');
+
   try{
-    const resultado = await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
-    procesarDatos(resultado);
-    cerrarSheet();
-    toast('Picking eliminado');
-    ir('home');
-  } catch(err){
-    toast('No se pudo guardar — revisa tu conexión');
-    if(btn){ btn.disabled = false; btn.textContent = 'Sí, borrar'; }
-  }
+    await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
+  } catch(err){}
+  sincronizar().catch(()=>{});
 }
 
 /* ---------- init ---------- */
