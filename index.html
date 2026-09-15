@@ -538,19 +538,30 @@ function abrirConfigurarPin(){
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
       Es tu PIN personal, para ${usuarioActual}, guardado en la hoja compartida — servirá en cualquier móvil.
     </p>
-    <input type="text" id="nuevoPinUsuario" inputmode="numeric" placeholder="Elige tu PIN" maxlength="8"
-      oninput="this.value=this.value.replace(/[^0-9]/g,'')">
-    <button class="btn btn-primary" onclick="guardarPinUsuario()">Guardar PIN</button>
+    <input type="text" id="nuevoPinUsuario" inputmode="numeric" placeholder="4 números" maxlength="4"
+      oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
+    <button class="btn btn-primary" onclick="guardarPinUsuario(false)">Guardar PIN</button>
   `);
 }
-async function guardarPinUsuario(){
+function abrirConfigurarPinObligatorio(){
+  mostrarSheet(`
+    <h3>Elige tu PIN</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
+      Antes de seguir, elige un PIN de 4 números para <b>${usuarioActual}</b>. Solo te lo pedirá esta vez — luego sirve en cualquier móvil.
+    </p>
+    <input type="text" id="nuevoPinUsuario" inputmode="numeric" placeholder="4 números" maxlength="4"
+      oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
+    <button class="btn btn-primary" onclick="guardarPinUsuario(true)">Guardar y continuar</button>
+  `, true);
+}
+async function guardarPinUsuario(obligatorio){
   const val = document.getElementById('nuevoPinUsuario').value.trim();
-  if(!val){ toast('Escribe un PIN'); return; }
+  if(val.length !== 4){ toast('El PIN debe tener 4 números'); return; }
   toast('Guardando...');
   await llamarBackend('guardarUsuario', { nombre: usuarioActual, pin: val, por: usuarioActual });
   await sincronizar();
   cerrarSheet();
-  toast('PIN guardado');
+  toast(obligatorio ? 'Listo, ya puedes usar la app' : 'PIN guardado');
 }
 
 function pedirPinAdmin(pid){
@@ -568,8 +579,8 @@ function pedirPinAdmin(pid){
   mostrarSheet(`
     <h3>Acceso admin</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Introduce tu PIN para ver los cambios posteriores y las entregas deshechas.</p>
-    <input type="text" id="pinAdmin" inputmode="numeric" placeholder="Tu PIN" maxlength="8"
-      oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+    <input type="text" id="pinAdmin" inputmode="numeric" placeholder="Tu PIN" maxlength="4"
+      oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
     <button class="btn btn-primary" onclick="validarPinAdmin('${pid}')">Entrar</button>
   `);
 }
@@ -638,15 +649,29 @@ function abrirCambioUsuario(){
     <label>Añadir nombre nuevo</label>
     <input type="text" id="nuevoNombre" placeholder="Nombre y apellido">
     <button class="btn btn-primary" onclick="anadirNombre()">Guardar y usar</button>
-    <button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>`;
+    <button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>
+    ${usuarioActual ? `<button class="btn btn-outline" onclick="cerrarSesion()" style="color:#B33A3A; border-color:#B33A3A;">Cerrar sesión</button>` : ''}`;
   mostrarSheet(html);
+}
+function cerrarSesion(){
+  usuarioActual = '';
+  localStorage.removeItem(LS_USER);
+  adminUnlocked = false;
+  actualizarChipUsuario();
+  cerrarSheet();
+  toast('Sesión cerrada');
+  setTimeout(abrirCambioUsuario, 300);
 }
 function elegirUsuario(n){
   usuarioActual = n;
   localStorage.setItem(LS_USER, n);
   actualizarChipUsuario();
   cerrarSheet();
-  toast('Identificado como ' + n);
+  if(!pinDeUsuario(n)){
+    setTimeout(abrirConfigurarPinObligatorio, 200);
+  } else {
+    toast('Identificado como ' + n);
+  }
 }
 function anadirNombre(){
   const val = document.getElementById('nuevoNombre').value.trim();
@@ -658,12 +683,14 @@ function anadirNombre(){
 }
 
 /* ---------- sheet modal genérico ---------- */
-function mostrarSheet(html){
+function mostrarSheet(html, bloqueante){
   cerrarSheet();
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.id = 'sheetOverlay';
-  ov.onclick = (e)=>{ if(e.target===ov) cerrarSheet(); };
+  if(!bloqueante){
+    ov.onclick = (e)=>{ if(e.target===ov) cerrarSheet(); };
+  }
   ov.innerHTML = `<div class="sheet" onclick="event.stopPropagation()">${html}</div>`;
   document.body.appendChild(ov);
 }
