@@ -163,11 +163,6 @@
   .btn-outline{
     background: var(--panel); color: var(--ink); border:1px solid var(--line);
   }
-  .btn-scan{
-    width:100%; padding:12px; font-size:13px; font-weight:600;
-    border-radius:4px; border:1px dashed var(--accent); background:#fff;
-    color: var(--accent); cursor:pointer; margin-top:6px;
-  }
 
   .hint{ font-size:12px; color:var(--ink-soft); margin-top:6px; }
 
@@ -260,7 +255,6 @@
   }
   .name-pill.sel{ background:var(--ink); color:#fff; border-color:var(--ink); }
 
-  #reader{ width:100%; border-radius:4px; overflow:hidden; margin-top:8px; }
 
   .toast{
     position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
@@ -330,9 +324,6 @@
       <h2 id="formTitle">Registrar picking</h2>
     </div>
 
-    <button class="btn-scan" onclick="abrirScanner()">Escanear QR de la etiqueta</button>
-    <div class="hint" id="scanHint">Si no se puede leer (o no trae subproyecto), rellena a mano.</div>
-
     <label>OF</label>
     <input type="text" class="mono" id="f_of" placeholder="Ej. 20260912">
 
@@ -389,7 +380,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <script>
 /* =========================================================
    MODELO DE DATOS — conectado a Google Sheets vía Apps Script.
@@ -481,8 +471,7 @@ function construirDB(datos){
   });
 }
 
-async function sincronizar(){
-  const datos = await cargarDesdeSheet();
+function procesarDatos(datos){
   usuariosRemotos = datos.usuarios || [];
   DB = construirDB(datos);
 
@@ -494,9 +483,12 @@ async function sincronizar(){
     cerrarSheet();
     toast('Tu usuario ya no existe en la hoja');
     setTimeout(()=>abrirCambioUsuario(true), 300);
-    return;
+    return false;
   }
+  return true;
+}
 
+function refrescarPantalla(){
   const activa = document.querySelector('.screen.active');
   if(!activa) return;
   if(activa.id === 'screen-home') renderPendientes();
@@ -508,6 +500,20 @@ async function sincronizar(){
     const p = DB.find(x=>x.id===ofEnDetalle);
     if(p) document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
   }
+}
+
+// Usar cuando NO hay datos ya frescos a mano: pide todo de nuevo a la Sheet.
+async function sincronizar(){
+  const datos = await cargarDesdeSheet();
+  if(!procesarDatos(datos)) return;
+  refrescarPantalla();
+}
+
+// Usar cuando una acción de guardado YA trajo los datos frescos en su
+// propia respuesta (ver doPost en el script): evita pedirlos dos veces.
+function aplicarResultado(resultado){
+  if(!procesarDatos(resultado)) return;
+  refrescarPantalla();
 }
 const LS_EXTRAS = 'pickings_lis_extras_fuera';
 const FUERA_BASE = ['Plantillas','Perfiles','Cables'];
@@ -533,7 +539,6 @@ let DB = [];
 let usuariosRemotos = [];
 let usuarioActual = localStorage.getItem(LS_USER) || '';
 let fueraSeleccion = {};
-let scanner = null;
 let ofEnDetalle = null;
 let editingId = null;
 let pendienteEdicion = null;
@@ -571,8 +576,8 @@ async function guardarPinUsuario(obligatorio){
   const btn = document.getElementById('btnGuardarPin');
   if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
   try{
-    await llamarBackend('guardarUsuario', { nombre: usuarioActual, pin: val, por: usuarioActual });
-    await sincronizar();
+    const resultado = await llamarBackend('guardarUsuario', { nombre: usuarioActual, pin: val, por: usuarioActual });
+    procesarDatos(resultado);
     cerrarSheet();
     toast(obligatorio ? 'Listo, ya puedes usar la app' : 'PIN guardado');
   } catch(err){
@@ -637,7 +642,6 @@ function ir(pantalla){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+pantalla).classList.add('active');
   if(pantalla==='home') renderPendientes();
-  if(scanner && pantalla!=='registro'){ pararScanner(); }
 }
 
 function toast(msg){
@@ -802,7 +806,6 @@ function resetFormRegistro(){
   renderFueraPills();
   ubicacionesSeleccion = {};
   renderUbicacionPills();
-  document.getElementById('scanHint').textContent = 'Si no se puede leer (o no trae subproyecto), rellena a mano.';
 }
 
 function nuevoPicking(){
@@ -828,7 +831,6 @@ function abrirEdicion(id){
   renderFueraPills();
   ubicacionesSeleccion = {...(p.ubicaciones||{})};
   renderUbicacionPills();
-  document.getElementById('scanHint').textContent = 'Editando un picking ya registrado.';
   document.getElementById('formTitle').textContent = 'Editar picking';
   document.getElementById('btnGuardarPicking').textContent = 'Guardar cambios';
 }
@@ -864,16 +866,18 @@ async function guardarPicking(){
     fecha: new Date().toISOString()
   };
 
-  const existente = DB.find(p=>!p.eliminado && p.of===of);
+  const ofNormalizada = of.trim().toLowerCase();
+  const existente = DB.find(p=>!p.eliminado && p.of.trim().toLowerCase()===ofNormalizada);
   if(existente){
     pendienteRegistro = datosNuevos;
     mostrarSheet(`
-      <h3>Esta OF ya está registrada</h3>
+      <h3>⚠️ Esta OF ya está registrada</h3>
       <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
         <b>${existente.registradoPor}</b> ya registró un picking con la OF <b>${of}</b> el ${fechaCorta(existente.fecha)}${existente.estado==='completado' ? ' (ya entregada)' : ''}.
-        ¿Seguro que quieres registrar otro picking con esta misma OF?
       </p>
-      <button class="btn btn-primary" style="background:#B33A3A;" onclick="confirmarRegistroDuplicado()">Sí, registrar otro</button>
+      <label>¿Por qué necesitas registrarla otra vez?</label>
+      <textarea id="motivoDuplicado" placeholder="Ej. Es una reposición aparte de la misma OF" oninput="document.getElementById('btnConfirmarDuplicado').disabled = !this.value.trim()"></textarea>
+      <button class="btn btn-primary" id="btnConfirmarDuplicado" style="background:#B33A3A;" onclick="confirmarRegistroDuplicado()" disabled>Sí, registrar otro</button>
       <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
     `);
     return;
@@ -884,6 +888,9 @@ async function guardarPicking(){
 
 async function confirmarRegistroDuplicado(){
   if(!pendienteRegistro) return;
+  const motivo = document.getElementById('motivoDuplicado').value.trim();
+  if(!motivo) return;
+  pendienteRegistro.observaciones = `[OF repetida — ${motivo}] ${pendienteRegistro.observaciones || ''}`.trim();
   cerrarSheet();
   await ejecutarCrearPicking(pendienteRegistro);
   pendienteRegistro = null;
@@ -893,8 +900,8 @@ async function ejecutarCrearPicking(datos){
   const btn = document.getElementById('btnGuardarPicking');
   if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
   try{
-    await llamarBackend('crearPicking', datos);
-    await sincronizar();
+    const resultado = await llamarBackend('crearPicking', datos);
+    procesarDatos(resultado);
     toast('Picking registrado');
     ir('home');
   } catch(err){
@@ -945,7 +952,7 @@ async function confirmarEdicion(){
   const btn = document.getElementById('btnGuardarEdicion');
   if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
   try{
-    await llamarBackend('editarPicking', {
+    const resultado = await llamarBackend('editarPicking', {
       id: p.id,
       of: pendienteEdicion.of,
       proyecto: pendienteEdicion.proyecto,
@@ -958,7 +965,7 @@ async function confirmarEdicion(){
       motivo,
       cambios
     });
-    await sincronizar();
+    procesarDatos(resultado);
     cerrarSheet();
     pendienteEdicion = null;
     toast('Cambios guardados');
@@ -967,54 +974,6 @@ async function confirmarEdicion(){
     toast('No se pudo guardar — revisa tu conexión');
     if(btn){ btn.disabled = false; btn.textContent = 'Guardar cambios'; }
   }
-}
-
-/* ---------- scanner QR ---------- */
-function abrirScanner(){
-  document.getElementById('scanHint').textContent = 'Apunta al QR de la etiqueta…';
-  const readerHtml = `<div id="reader"></div>
-    <div class="hint" style="margin-top:10px;">Si no lee, cierra y rellena el formulario a mano.</div>
-    <button class="btn btn-outline" onclick="pararScannerYcerrar()">Cerrar cámara</button>`;
-  mostrarSheet(`<h3>Escanear etiqueta</h3>${readerHtml}`);
-
-  scanner = new Html5Qrcode("reader");
-  scanner.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: 220 },
-    (decodedText)=>{
-      procesarQR(decodedText);
-      pararScannerYcerrar();
-    },
-    ()=>{ /* frame sin detección, ignorar */ }
-  ).catch(()=>{
-    toast('No se pudo abrir la cámara');
-    cerrarSheet();
-  });
-}
-function pararScanner(){
-  if(scanner){
-    scanner.stop().catch(()=>{});
-    scanner = null;
-  }
-}
-function pararScannerYcerrar(){
-  pararScanner();
-  cerrarSheet();
-}
-
-// Formato esperado (como en la etiqueta de picking de Almacén):
-// codigo;OF;proyecto[;subproyecto];sello_fecha-hora
-function procesarQR(texto){
-  const partes = texto.split(';');
-  if(partes.length >= 2) document.getElementById('f_of').value = partes[1] || '';
-  if(partes.length >= 3) document.getElementById('f_proyecto').value = partes[2] || '';
-  if(partes.length >= 4 && !/^\d{8}_\d{6}$/.test(partes[3])){
-    document.getElementById('f_subproyecto').value = partes[3];
-    document.getElementById('scanHint').textContent = 'Datos leídos del QR. Revisa antes de guardar.';
-  } else {
-    document.getElementById('scanHint').textContent = 'QR leído, pero sin subproyecto — complétalo a mano si aplica.';
-  }
-  toast('QR leído');
 }
 
 /* ---------- pendientes en home ---------- */
@@ -1261,8 +1220,8 @@ async function confirmarEntrega(tipo){
   const btn = document.getElementById('btnConfirmarEntrega');
   if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
   try{
-    await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
-    await sincronizar();
+    const resultado = await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
+    procesarDatos(resultado);
     cerrarSheet();
     toast('Entrega registrada — recuerda la firma en la hoja');
     abrirDetalle(p.id);
@@ -1302,14 +1261,14 @@ async function confirmarDeshacerEntrega(){
   const btn = document.getElementById('btnConfirmarDeshacer');
   if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
   try{
-    await llamarBackend('deshacerEntrega', {
+    const resultado = await llamarBackend('deshacerEntrega', {
       pickingId: pid,
       tipoOriginal: eliminada.tipo,
       fechaOriginal: eliminada.fecha,
       hechoPor: usuarioActual,
       motivo
     });
-    await sincronizar();
+    procesarDatos(resultado);
     cerrarSheet();
     pendienteDeshacer = null;
     toast('Entrega deshecha');
@@ -1345,8 +1304,8 @@ async function confirmarBorrarPicking(id){
   const btn = document.getElementById('btnConfirmarBorrar');
   if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
   try{
-    await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
-    await sincronizar();
+    const resultado = await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
+    procesarDatos(resultado);
     cerrarSheet();
     toast('Picking eliminado');
     ir('home');
@@ -1366,6 +1325,18 @@ async function iniciar(){
     document.getElementById('pendingList').innerHTML = '<div class="empty">No se pudo conectar con la hoja. Revisa tu conexión y recarga la página.</div>';
   }
   if(!usuarioActual){ setTimeout(()=>abrirCambioUsuario(true), 400); }
+
+  // Refresco en segundo plano: para que lo que otra persona borre o cambie
+  // directamente en la Sheet (fuera de la app) se refleje sin tener que
+  // hacer nada. No interrumpe si hay un formulario o ventana abiertos.
+  setInterval(()=>{
+    if(document.getElementById('sheetOverlay')) return;
+    if(document.querySelector('.screen.active')?.id === 'screen-registro') return;
+    sincronizar().catch(()=>{});
+  }, 20000);
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible'){ sincronizar().catch(()=>{}); }
+  });
 }
 iniciar();
 </script>
