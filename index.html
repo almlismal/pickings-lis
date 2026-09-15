@@ -392,25 +392,117 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <script>
 /* =========================================================
-   MODELO DE DATOS (localStorage por ahora)
-   Estructura lista para sustituir por Google Sheets más
-   adelante: ver funciones guardarLocal()/cargarLocal() y
-   el bloque "SYNC A GOOGLE SHEETS (pendiente)" al final.
+   MODELO DE DATOS — conectado a Google Sheets vía Apps Script.
+   Fuente de verdad: la Sheet. sincronizar() la lee entera y
+   reconstruye DB; cada acción de escritura llama a
+   llamarBackend() y luego vuelve a sincronizar().
    ========================================================= */
 
-const LS_KEY = 'pickings_lis_v1';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyqtIAwqXrpPTqgiPCiSs_rkpYgLMSEY_NPpNMBVozrqz8UvpWF37Kx8VFflRxVyMu1wQ/exec';
 const LS_USER = 'pickings_lis_usuario';
+
+async function llamarBackend(accion, datos){
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    headers: {'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({ accion, datos })
+  });
+  return res.json();
+}
+async function cargarDesdeSheet(){
+  const res = await fetch(GAS_URL);
+  return res.json();
+}
+
+function formatFuera(obj){
+  return Object.keys(obj||{}).filter(k=>obj[k]).join(', ');
+}
+function parseFuera(str){
+  const out = {};
+  (str||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(k=> out[k]=true);
+  return out;
+}
+function formatUbicaciones(obj){
+  return Object.entries(obj||{}).map(([k,v])=>`${k}: ${v}`).join(', ');
+}
+function parseUbicaciones(str){
+  const out = {};
+  (str||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(part=>{
+    const idx = part.indexOf(':');
+    if(idx===-1) return;
+    const k = part.slice(0,idx).trim();
+    const v = part.slice(idx+1).trim();
+    if(k) out[k]=v;
+  });
+  return out;
+}
+
+function construirDB(datos){
+  const entregas = datos.entregas || [];
+  const historial = datos.historial || [];
+  return (datos.pickings || []).map(row=>{
+    const id = row['ID'];
+    const entregasDe = entregas.filter(e=>e['ID del picking']===id).map(e=>({
+      tipo: e['Tipo'], entregadoPor: e['Entregado por'], entregadoA: e['Entregado a'],
+      nota: e['Nota'] || '', fecha: e['Fecha']
+    }));
+    const historialDe = historial.filter(h=>h['ID del picking']===id);
+    const ediciones = historialDe.filter(h=>h['Tipo']==='edicion').map(h=>({
+      editadoPor: h['Autor'], fecha: h['Fecha'], motivo: h['Motivo'] || '',
+      cambios: h['Detalle'] ? h['Detalle'].split(' · ').filter(Boolean) : []
+    }));
+    const deshechas = historialDe.filter(h=>h['Tipo']==='deshacer').map(h=>({
+      hechoPor: h['Autor'], fecha: h['Fecha'], motivo: h['Motivo'] || '',
+      detalleTexto: h['Detalle'] || ''
+    }));
+    const eliminado = row['Eliminado'] === 'sí';
+    return {
+      id,
+      of: String(row['OF'] || ''),
+      proyecto: row['Proyecto'] || '',
+      subproyecto: row['Subproyecto'] || '',
+      cajas: Number(row['Cajas']) || 1,
+      fuera: parseFuera(row['Fuera de la caja']),
+      ubicaciones: parseUbicaciones(row['Ubicaciones']),
+      observaciones: row['Observaciones'] || '',
+      registradoPor: row['Registrado por'] || '',
+      fecha: row['Fecha'],
+      estado: row['Estado'] || 'pendiente',
+      eliminado,
+      eliminadoInfo: eliminado ? {
+        motivo: row['Motivo de eliminación'] || '',
+        por: row['Eliminado por'] || '',
+        fecha: row['Fecha de eliminación'] || ''
+      } : null,
+      entregas: entregasDe,
+      ediciones,
+      deshechas
+    };
+  });
+}
+
+async function sincronizar(){
+  const datos = await cargarDesdeSheet();
+  usuariosRemotos = datos.usuarios || [];
+  DB = construirDB(datos);
+  const activa = document.querySelector('.screen.active');
+  if(!activa) return;
+  if(activa.id === 'screen-home') renderPendientes();
+  if(activa.id === 'screen-buscar'){
+    const v = document.getElementById('buscarInput').value;
+    if(v) buscarOF();
+  }
+  if(activa.id === 'screen-detalle' && ofEnDetalle){
+    const p = DB.find(x=>x.id===ofEnDetalle);
+    if(p) document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
+  }
+}
 const LS_NAMES = 'pickings_lis_nombres';
 const LS_EXTRAS = 'pickings_lis_extras_fuera';
 const FUERA_BASE = ['Plantillas','Perfiles','Cables'];
 const LS_EXTRAS_UBIC = 'pickings_lis_extras_ubicacion';
 const UBICACION_BASE = ['Carpa','Almacén','Estantería de perfiles','Estantería de plantillas','Sala limpia'];
-const LS_PINS = 'pickings_lis_pins';
-function hashPin(s){
-  let h = 5381;
-  for(let i=0; i<s.length; i++){ h = ((h*33) ^ s.charCodeAt(i)) >>> 0; }
-  return h.toString(16).padStart(8,'0');
-}
+
 function claveNombre(n){
   return (n||'').trim().toLowerCase();
 }
@@ -421,15 +513,13 @@ function puedeGestionar(p){
   const yo = normalizarNombre(usuarioActual);
   return yo === normalizarNombre(p.registradoPor) || yo === 'maria';
 }
-function cargarPins(){
-  try{ return JSON.parse(localStorage.getItem(LS_PINS)) || {}; }
-  catch(e){ return {}; }
-}
-function guardarPins(obj){
-  localStorage.setItem(LS_PINS, JSON.stringify(obj));
+function pinDeUsuario(nombre){
+  const u = usuariosRemotos.find(x=>claveNombre(x['Nombre'])===claveNombre(nombre));
+  return u ? String(u['PIN']||'') : '';
 }
 
-let DB = cargarLocal();
+let DB = [];
+let usuariosRemotos = [];
 let usuarioActual = localStorage.getItem(LS_USER) || '';
 let fueraSeleccion = {};
 let scanner = null;
@@ -446,26 +536,25 @@ function abrirConfigurarPin(){
   mostrarSheet(`
     <h3>Configurar mi PIN</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Es tu PIN personal, para ${usuarioActual}, en este dispositivo. Solo tú lo necesitas para ver el historial de cambios.
+      Es tu PIN personal, para ${usuarioActual}, guardado en la hoja compartida — servirá en cualquier móvil.
     </p>
     <input type="text" id="nuevoPinUsuario" inputmode="numeric" placeholder="Elige tu PIN" maxlength="8"
       oninput="this.value=this.value.replace(/[^0-9]/g,'')">
     <button class="btn btn-primary" onclick="guardarPinUsuario()">Guardar PIN</button>
   `);
 }
-function guardarPinUsuario(){
+async function guardarPinUsuario(){
   const val = document.getElementById('nuevoPinUsuario').value.trim();
   if(!val){ toast('Escribe un PIN'); return; }
-  const pins = cargarPins();
-  pins[claveNombre(usuarioActual)] = hashPin(val);
-  guardarPins(pins);
+  toast('Guardando...');
+  await llamarBackend('guardarUsuario', { nombre: usuarioActual, pin: val, por: usuarioActual });
+  await sincronizar();
   cerrarSheet();
   toast('PIN guardado');
 }
 
 function pedirPinAdmin(pid){
-  const pins = cargarPins();
-  const guardado = pins[claveNombre(usuarioActual)];
+  const guardado = pinDeUsuario(usuarioActual);
   if(!guardado){
     mostrarSheet(`
       <h3>Aún no tienes PIN</h3>
@@ -486,9 +575,8 @@ function pedirPinAdmin(pid){
 }
 function validarPinAdmin(pid){
   const val = document.getElementById('pinAdmin').value.trim();
-  const pins = cargarPins();
-  const guardado = pins[claveNombre(usuarioActual)];
-  if(guardado && hashPin(val) === guardado){
+  const guardado = pinDeUsuario(usuarioActual);
+  if(guardado && val === guardado){
     adminUnlocked = true;
     cerrarSheet();
     abrirDetalle(pid);
@@ -510,15 +598,6 @@ function cargarExtrasUbicacion(){
 }
 function guardarExtrasUbicacion(lista){
   localStorage.setItem(LS_EXTRAS_UBIC, JSON.stringify(lista));
-}
-
-function cargarLocal(){
-  try{ return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
-  catch(e){ return []; }
-}
-function guardarLocal(){
-  localStorage.setItem(LS_KEY, JSON.stringify(DB));
-  // SYNC A GOOGLE SHEETS (pendiente) -> ver nota al final del archivo
 }
 
 function cargarNombres(){
@@ -715,7 +794,7 @@ function abrirEdicion(id){
   document.getElementById('btnGuardarPicking').textContent = 'Guardar cambios';
 }
 
-function guardarPicking(){
+async function guardarPicking(){
   if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
   const of = document.getElementById('f_of').value.trim();
   const proyecto = document.getElementById('f_proyecto').value.trim();
@@ -735,20 +814,16 @@ function guardarPicking(){
     return;
   }
 
-  const registro = {
-    id: 'pk_' + Date.now(),
+  toast('Guardando...');
+  await llamarBackend('crearPicking', {
     of, proyecto, subproyecto, cajas,
-    fuera: {...fueraSeleccion},
-    ubicaciones: ubicacionesFinal,
+    fuera: formatFuera(fueraSeleccion),
+    ubicaciones: formatUbicaciones(ubicacionesFinal),
     observaciones: obs,
     registradoPor: usuarioActual,
-    fecha: new Date().toISOString(),
-    estado: 'pendiente',
-    entregas: [],
-    ediciones: []
-  };
-  DB.push(registro);
-  guardarLocal();
+    fecha: new Date().toISOString()
+  });
+  await sincronizar();
   toast('Picking registrado');
   ir('home');
 }
@@ -786,29 +861,27 @@ function pedirMotivoEdicion(nuevo){
   `);
 }
 
-function confirmarEdicion(){
+async function confirmarEdicion(){
   const p = DB.find(x=>x.id===editingId);
   if(!p || !pendienteEdicion) return;
   const motivo = document.getElementById('motivoEdicion').value.trim();
   const cambios = diffCambios(p, pendienteEdicion);
 
-  p.of = pendienteEdicion.of;
-  p.proyecto = pendienteEdicion.proyecto;
-  p.subproyecto = pendienteEdicion.subproyecto;
-  p.cajas = pendienteEdicion.cajas;
-  p.fuera = pendienteEdicion.fuera;
-  p.ubicaciones = pendienteEdicion.ubicaciones;
-  p.observaciones = pendienteEdicion.obs;
-
-  if(!p.ediciones) p.ediciones = [];
-  p.ediciones.push({
-    fecha: new Date().toISOString(),
+  toast('Guardando...');
+  await llamarBackend('editarPicking', {
+    id: p.id,
+    of: pendienteEdicion.of,
+    proyecto: pendienteEdicion.proyecto,
+    subproyecto: pendienteEdicion.subproyecto,
+    cajas: pendienteEdicion.cajas,
+    fuera: formatFuera(pendienteEdicion.fuera),
+    ubicaciones: formatUbicaciones(pendienteEdicion.ubicaciones),
+    observaciones: pendienteEdicion.obs,
     editadoPor: usuarioActual,
     motivo,
     cambios
   });
-
-  guardarLocal();
+  await sincronizar();
   cerrarSheet();
   pendienteEdicion = null;
   toast('Cambios guardados');
@@ -1024,14 +1097,11 @@ function deshechasHtmlOf(p){
   if(!p.deshechas || !p.deshechas.length) return '';
   return `<div class="entrega-log">
     <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Entregas deshechas</div>
-    ${p.deshechas.map(d=>{
-      const o = d.entregaOriginal || {};
-      return `<div class="item">
-        <b>Deshecho por ${d.hechoPor}</b> — ${fechaCorta(d.fecha)}<br>
-        Era: ${o.tipo==='completa' ? 'entrega completa' : 'entrega parcial'} de ${o.entregadoPor||'—'} a ${o.entregadoA||'—'}${o.fecha ? ' ('+fechaCorta(o.fecha)+')' : ''}
-        ${d.motivo ? `<br>"${d.motivo}"` : ''}
-      </div>`;
-    }).join('')}
+    ${p.deshechas.map(d=>`<div class="item">
+      <b>Deshecho por ${d.hechoPor}</b> — ${fechaCorta(d.fecha)}<br>
+      ${d.detalleTexto || ''}
+      ${d.motivo ? `<br>"${d.motivo}"` : ''}
+    </div>`).join('')}
   </div>`;
 }
 function historialAdminHtml(p){
@@ -1094,7 +1164,7 @@ function seleccionarPill(el){
   document.getElementById('entregaPorManual').value = el.textContent;
 }
 
-function confirmarEntrega(tipo){
+async function confirmarEntrega(tipo){
   const p = DB.find(x=>x.id===ofEnDetalle);
   if(!p) return;
   const por = document.getElementById('entregaPorManual').value.trim() || usuarioActual;
@@ -1107,13 +1177,9 @@ function confirmarEntrega(tipo){
   if(tipo==='parcial' && !nota){ toast('Describe qué se lleva'); return; }
   if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
 
-  p.entregas.push({
-    tipo, entregadoPor: por, entregadoA: a, nota,
-    fecha: new Date().toISOString()
-  });
-  if(tipo==='completa') p.estado = 'completado';
-
-  guardarLocal();
+  toast('Guardando...');
+  await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
+  await sincronizar();
   cerrarSheet();
   toast('Entrega registrada — recuerda la firma en la hoja');
   abrirDetalle(p.id);
@@ -1135,7 +1201,7 @@ function deshacerEntrega(pid, idx){
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `);
 }
-function confirmarDeshacerEntrega(){
+async function confirmarDeshacerEntrega(){
   if(!pendienteDeshacer) return;
   const { pid, idx } = pendienteDeshacer;
   const p = DB.find(x=>x.id===pid);
@@ -1144,20 +1210,17 @@ function confirmarDeshacerEntrega(){
   if(!motivo){ toast('Escribe el motivo'); return; }
 
   const eliminada = p.entregas[idx];
-  p.entregas.splice(idx, 1);
-  if(eliminada && eliminada.tipo==='completa'){
-    p.estado = 'pendiente';
-  }
+  if(!eliminada) return;
 
-  if(!p.deshechas) p.deshechas = [];
-  p.deshechas.push({
-    fecha: new Date().toISOString(),
+  toast('Guardando...');
+  await llamarBackend('deshacerEntrega', {
+    pickingId: pid,
+    tipoOriginal: eliminada.tipo,
+    fechaOriginal: eliminada.fecha,
     hechoPor: usuarioActual,
-    motivo,
-    entregaOriginal: eliminada
+    motivo
   });
-
-  guardarLocal();
+  await sincronizar();
   cerrarSheet();
   pendienteDeshacer = null;
   toast('Entrega deshecha');
@@ -1179,34 +1242,33 @@ function abrirBorrarPicking(id){
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `);
 }
-function confirmarBorrarPicking(id){
+async function confirmarBorrarPicking(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
   if(!puedeGestionar(p)){ toast('No tienes permiso para borrar este picking'); return; }
   const motivo = document.getElementById('motivoBorrado').value.trim();
   if(!motivo){ toast('Escribe el motivo'); return; }
 
-  p.eliminado = true;
-  p.eliminadoInfo = { motivo, por: usuarioActual, fecha: new Date().toISOString() };
-
-  guardarLocal();
+  toast('Guardando...');
+  await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
+  await sincronizar();
   cerrarSheet();
   toast('Picking eliminado');
   ir('home');
 }
 
 /* ---------- init ---------- */
-actualizarChipUsuario();
-renderPendientes();
-if(!usuarioActual){ setTimeout(abrirCambioUsuario, 400); }
-
-/* =========================================================
-   SYNC A GOOGLE SHEETS (pendiente)
-   Cuando tengamos la Sheet y el Apps Script (igual que en
-   Fungibles), aquí va una función enviarASheet(registro) que
-   se llama desde guardarLocal() y desde confirmarEntrega().
-   De momento todo vive solo en este dispositivo (localStorage).
-   ========================================================= */
+async function iniciar(){
+  actualizarChipUsuario();
+  document.getElementById('pendingList').innerHTML = '<div class="empty">Cargando…</div>';
+  try{
+    await sincronizar();
+  } catch(err){
+    document.getElementById('pendingList').innerHTML = '<div class="empty">No se pudo conectar con la hoja. Revisa tu conexión y recarga la página.</div>';
+  }
+  if(!usuarioActual){ setTimeout(abrirCambioUsuario, 400); }
+}
+iniciar();
 </script>
 </body>
 </html>
