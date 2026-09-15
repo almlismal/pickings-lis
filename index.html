@@ -485,6 +485,18 @@ async function sincronizar(){
   const datos = await cargarDesdeSheet();
   usuariosRemotos = datos.usuarios || [];
   DB = construirDB(datos);
+
+  if(usuarioActual && !usuariosRemotos.some(u=>normalizarNombre(u['Nombre'])===normalizarNombre(usuarioActual))){
+    usuarioActual = '';
+    localStorage.removeItem(LS_USER);
+    adminUnlocked = false;
+    actualizarChipUsuario();
+    cerrarSheet();
+    toast('Tu usuario ya no existe en la hoja');
+    setTimeout(()=>abrirCambioUsuario(true), 300);
+    return;
+  }
+
   const activa = document.querySelector('.screen.active');
   if(!activa) return;
   if(activa.id === 'screen-home') renderPendientes();
@@ -497,7 +509,6 @@ async function sincronizar(){
     if(p) document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
   }
 }
-const LS_NAMES = 'pickings_lis_nombres';
 const LS_EXTRAS = 'pickings_lis_extras_fuera';
 const FUERA_BASE = ['Plantillas','Perfiles','Cables'];
 const LS_EXTRAS_UBIC = 'pickings_lis_extras_ubicacion';
@@ -612,11 +623,7 @@ function guardarExtrasUbicacion(lista){
 }
 
 function cargarNombres(){
-  try{ return JSON.parse(localStorage.getItem(LS_NAMES)) || []; }
-  catch(e){ return []; }
-}
-function guardarNombres(lista){
-  localStorage.setItem(LS_NAMES, JSON.stringify(lista));
+  return usuariosRemotos.map(u=>u['Nombre']).filter(Boolean);
 }
 
 /* ---------- navegación ---------- */
@@ -639,9 +646,11 @@ function actualizarChipUsuario(){
   const chip = document.getElementById('userChip');
   chip.textContent = usuarioActual ? usuarioActual : 'Identificarse';
 }
-function abrirCambioUsuario(){
+function abrirCambioUsuario(forzado){
   const nombres = cargarNombres();
-  let html = `<h3>¿Quién eres?</h3><div>`;
+  let html = `<h3>¿Quién eres?</h3>`;
+  if(forzado) html += `<p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Identifícate para poder usar la app.</p>`;
+  html += `<div>`;
   nombres.forEach(n=>{
     html += `<span class="name-pill ${n===usuarioActual?'sel':''}" onclick="elegirUsuario('${n.replace(/'/g,"\\'")}')">${n}</span>`;
   });
@@ -649,9 +658,9 @@ function abrirCambioUsuario(){
     <label>Añadir nombre nuevo</label>
     <input type="text" id="nuevoNombre" placeholder="Nombre y apellido">
     <button class="btn btn-primary" onclick="anadirNombre()">Guardar y usar</button>
-    <button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>
-    ${usuarioActual ? `<button class="btn btn-outline" onclick="cerrarSesion()" style="color:#B33A3A; border-color:#B33A3A;">Cerrar sesión</button>` : ''}`;
-  mostrarSheet(html);
+    ${!forzado ? `<button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>` : ''}
+    ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="cerrarSesion()" style="color:#B33A3A; border-color:#B33A3A;">Cerrar sesión</button>` : ''}`;
+  mostrarSheet(html, !!forzado);
 }
 function cerrarSesion(){
   usuarioActual = '';
@@ -660,7 +669,7 @@ function cerrarSesion(){
   actualizarChipUsuario();
   cerrarSheet();
   toast('Sesión cerrada');
-  setTimeout(abrirCambioUsuario, 300);
+  setTimeout(()=>abrirCambioUsuario(true), 300);
 }
 function elegirUsuario(n){
   usuarioActual = n;
@@ -676,9 +685,6 @@ function elegirUsuario(n){
 function anadirNombre(){
   const val = document.getElementById('nuevoNombre').value.trim();
   if(!val) return;
-  const nombres = cargarNombres();
-  if(!nombres.includes(val)) nombres.push(val);
-  guardarNombres(nombres);
   elegirUsuario(val);
 }
 
@@ -1293,7 +1299,7 @@ async function iniciar(){
   } catch(err){
     document.getElementById('pendingList').innerHTML = '<div class="empty">No se pudo conectar con la hoja. Revisa tu conexión y recarga la página.</div>';
   }
-  if(!usuarioActual){ setTimeout(abrirCambioUsuario, 400); }
+  if(!usuarioActual){ setTimeout(()=>abrirCambioUsuario(true), 400); }
 }
 iniciar();
 </script>
