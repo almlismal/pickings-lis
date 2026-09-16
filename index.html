@@ -1391,7 +1391,7 @@ function entregar(tipo){
       </label>
     </div>
 
-    <button class="btn btn-primary" id="btnConfirmarEntrega" onclick="confirmarEntrega('${tipo}')" disabled>Confirmar entrega</button>
+    <button class="btn btn-primary" id="btnConfirmarEntrega" onclick="confirmarEntrega('${tipo}')" style="opacity:0.5;">Confirmar entrega</button>
   `;
   mostrarSheet(html);
   if(tipo==='parcial' && p) renderEntregaItems();
@@ -1440,7 +1440,7 @@ function confirmarAnadirComponenteEntrega(){
 function toggleBtnEntrega(){
   const chk = document.getElementById('confirmFirma');
   const btn = document.getElementById('btnConfirmarEntrega');
-  if(chk && btn) btn.disabled = !chk.checked;
+  if(chk && btn) btn.style.opacity = chk.checked ? '1' : '0.5';
 }
 function actualizarTextoFirma(){
   const nombre = document.getElementById('entregaA').value.trim();
@@ -1455,38 +1455,44 @@ function seleccionarPill(el){
 }
 
 async function confirmarEntrega(tipo){
-  const p = DB.find(x=>x.id===ofEnDetalle);
-  if(!p) return;
-  const por = document.getElementById('entregaPorManual').value.trim() || usuarioActual;
-  const a = document.getElementById('entregaA').value.trim();
-  let nota = tipo==='parcial' ? document.getElementById('entregaNota').value.trim() : '';
-  const firmaConfirmada = document.getElementById('confirmFirma').checked;
-
-  if(!por){ toast('Falta quién entrega'); return; }
-  if(!a){ toast('Falta a quién se entrega'); return; }
-  if(tipo==='parcial' && !nota){ toast('Describe qué se lleva'); return; }
-  if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
-
-  if(tipo==='parcial'){
-    const marcados = Object.entries(entregaItemsEstado).filter(([,estado])=>estado!=='sin');
-    if(marcados.length) nota = `[${marcados.map(([n,e])=>`${n}:${e}`).join('|')}] ${nota}`;
-  }
-
-  const entregaLocal = { tipo, entregadoPor: por, entregadoA: a, nota, fecha: new Date().toISOString() };
-  p.entregas.push(entregaLocal);
-  if(tipo==='completa') p.estado = 'completado';
-
-  cerrarSheet();
-  toast('Entrega registrada — recuerda la firma en la hoja');
-  abrirDetalle(p.id);
-
   try{
-    const resultado = await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
-    if(resultado && resultado.ok === false){
-      toast('⚠️ ' + (resultado.error || 'No se pudo confirmar la entrega — revisando'));
+    const p = DB.find(x=>x.id===ofEnDetalle);
+    if(!p){ toast('No se encontró la OF, vuelve a abrirla'); return; }
+    const por = document.getElementById('entregaPorManual').value.trim() || usuarioActual;
+    const a = document.getElementById('entregaA').value.trim();
+    let nota = tipo==='parcial' ? document.getElementById('entregaNota').value.trim() : '';
+    const firmaConfirmada = document.getElementById('confirmFirma').checked;
+
+    if(!por){ toast('Falta quién entrega'); return; }
+    if(!a){ toast('Falta a quién se entrega'); return; }
+    if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
+
+    let items = [];
+    if(tipo==='parcial'){
+      items = Object.entries(entregaItemsEstado).filter(([,estado])=>estado!=='sin');
+      if(!nota && items.length===0){ toast('Marca qué se lleva o escribe una observación'); return; }
     }
-  } catch(err){}
-  sincronizar().catch(()=>{});
+
+    if(items.length) nota = `[${items.map(([n,e])=>`${n}:${e}`).join('|')}] ${nota}`;
+
+    const entregaLocal = { tipo, entregadoPor: por, entregadoA: a, nota, fecha: new Date().toISOString() };
+    p.entregas.push(entregaLocal);
+    if(tipo==='completa') p.estado = 'completado';
+
+    cerrarSheet();
+    toast('Entrega registrada — recuerda la firma en la hoja');
+    abrirDetalle(p.id);
+
+    try{
+      const resultado = await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
+      if(resultado && resultado.ok === false){
+        toast('⚠️ ' + (resultado.error || 'No se pudo confirmar la entrega — revisando'));
+      }
+    } catch(err){}
+    sincronizar().catch(()=>{});
+  } catch(errGeneral){
+    toast('Algo falló al confirmar — inténtalo de nuevo');
+  }
 }
 
 function deshacerEntrega(pid, idx){
