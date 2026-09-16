@@ -238,13 +238,6 @@
   .done-banner span.txt{ color: #103D38; font-weight:500; }
   .done-banner b{ font-weight:700; }
 
-  .del-banner{
-    background: #FBEAEA; border:1px solid #C0392B;
-    color: #7A1F1F; border-radius:4px; padding:12px 14px;
-    font-size:13px; font-weight:600; margin-bottom:14px;
-    display:flex; gap:8px; align-items:flex-start;
-  }
-
   .obs-box{
     font-size:13px; color:var(--ink); background:#FAF8F4;
     border:1px solid var(--line); border-radius:4px; padding:10px 12px; margin-top:10px;
@@ -486,7 +479,6 @@ function construirDB(datos){
       hechoPor: h['Autor'], fecha: h['Fecha'], motivo: h['Motivo'] || '',
       detalleTexto: h['Detalle'] || ''
     }));
-    const eliminado = row['Eliminado'] === 'sí';
     return {
       id,
       of: String(row['OF'] || ''),
@@ -499,12 +491,6 @@ function construirDB(datos){
       registradoPor: row['Registrado por'] || '',
       fecha: row['Fecha'],
       estado: row['Estado'] || 'pendiente',
-      eliminado,
-      eliminadoInfo: eliminado ? {
-        motivo: row['Motivo de eliminación'] || '',
-        por: row['Eliminado por'] || '',
-        fecha: row['Fecha de eliminación'] || ''
-      } : null,
       entregas: entregasDe,
       ediciones,
       deshechas
@@ -960,7 +946,7 @@ function confirmarPasoRegistro(){
   cerrarSheet();
 
   const ofNormalizada = datos.of.trim().toLowerCase();
-  const existente = DB.find(p=>!p.eliminado && p.of.trim().toLowerCase()===ofNormalizada);
+  const existente = DB.find(p=>p.of.trim().toLowerCase()===ofNormalizada);
   if(existente){
     mostrarSheet(`
       <h3>⚠️ Esta OF ya está registrada</h3>
@@ -1001,7 +987,6 @@ async function ejecutarCrearPicking(datos){
     registradoPor: datos.registradoPor,
     fecha: datos.fecha,
     estado: 'pendiente',
-    eliminado: false, eliminadoInfo: null,
     entregas: [], ediciones: [], deshechas: []
   };
   DB.unshift(optimista);
@@ -1094,7 +1079,7 @@ async function confirmarEdicion(){
 /* ---------- pendientes en home ---------- */
 function renderPendientes(){
   const cont = document.getElementById('pendingList');
-  const pendientes = DB.filter(p=>p.estado!=='completado' && !p.eliminado).sort((a,b)=> new Date(b.fecha)-new Date(a.fecha));
+  const pendientes = DB.filter(p=>p.estado!=='completado').sort((a,b)=> new Date(b.fecha)-new Date(a.fecha));
   if(pendientes.length===0){
     cont.innerHTML = `<div class="empty">No hay pickings pendientes de entrega</div>`;
     return;
@@ -1111,11 +1096,8 @@ function tieneAtencion(p){
 
 function ticketHtml(p){
   const entregado = p.estado==='completado';
-  const attn = !entregado && !p.eliminado && tieneAtencion(p);
+  const attn = !entregado && tieneAtencion(p);
   const chips = [];
-  if(p.eliminado){
-    chips.push(`<span class="chip" style="background:#FBEAEA;border-color:#C0392B;color:#7A1F1F;">🗑️ Eliminado</span>`);
-  }
   if(p.cajas>1) chips.push(`<span class="chip attn">${p.cajas} cajas</span>`);
   else chips.push(`<span class="chip">${p.cajas} caja</span>`);
   fueraActivas(p).forEach(k=> chips.push(`<span class="chip on">${k}</span>`));
@@ -1128,7 +1110,7 @@ function ticketHtml(p){
   if(entregado) chips.push(`<span class="chip done">Entregado</span>`);
   else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega parcial</span>`);
 
-  return `<div class="ticket ${attn?'attn':''}" style="${p.eliminado?'opacity:0.55;':''}" onclick="abrirDetalle('${p.id}')">
+  return `<div class="ticket ${attn?'attn':''}" onclick="abrirDetalle('${p.id}')">
     <div class="ticket-top">
       <span class="ticket-of">OF ${p.of}</span>
       <span class="ticket-date">${fechaCorta(p.fecha)}</span>
@@ -1183,7 +1165,7 @@ function abrirDetalle(id){
 
 function detalleHtml(p){
   const entregado = p.estado==='completado';
-  const attn = !entregado && !p.eliminado && tieneAtencion(p);
+  const attn = !entregado && tieneAtencion(p);
   let banner = '';
   if(attn){
     const motivos = [];
@@ -1194,7 +1176,7 @@ function detalleHtml(p){
   }
 
   let doneBanner = '';
-  if(entregado && !p.eliminado){
+  if(entregado){
     const cierre = [...p.entregas].reverse().find(e=>e.tipo==='completa') || p.entregas[p.entregas.length-1];
     doneBanner = `<div class="done-banner"><span class="dot">✅</span><span class="txt">
       Esta OF ya se entregó completa — no hace falta volver a entregar nada.<br>
@@ -1202,29 +1184,24 @@ function detalleHtml(p){
     </span></div>`;
   }
 
-  let delBanner = '';
-  if(p.eliminado){
-    delBanner = `<div class="del-banner"><span class="dot">🗑️</span><span>Este picking fue eliminado — ya no está activo.</span></div>`;
-  }
-
   const entregasHtml = p.entregas.length ? `
     <div class="entrega-log">
       ${p.entregas.map((e,i)=>`<div class="item">
         <b>${e.tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</b> — ${fechaCorta(e.fecha)}<br>
         ${e.entregadoPor} entregó a ${e.entregadoA}${e.nota ? ': '+e.nota : ''}
-        ${(puedeGestionar(p) && !p.eliminado) ? `<br><span class="undo" onclick="deshacerEntrega('${p.id}', ${i})">Deshacer esta entrega</span>` : ''}
+        ${puedeGestionar(p) ? `<br><span class="undo" onclick="deshacerEntrega('${p.id}', ${i})">Deshacer esta entrega</span>` : ''}
       </div>`).join('')}
     </div>` : '';
 
-  const acciones = (p.estado==='completado' || p.eliminado) ? '' : `
+  const acciones = p.estado==='completado' ? '' : `
     <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
     <button class="btn btn-outline" onclick="entregar('parcial')">Entrega parcial</button>
   `;
 
-  const gestionBtns = p.eliminado ? '' : (puedeGestionar(p)
+  const gestionBtns = puedeGestionar(p)
     ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">✏️ Editar datos del picking</button>
        <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">🗑️ Borrar este picking</button>`
-    : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor} o María pueden editar o borrar este picking.</div>`);
+    : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor} o María pueden editar o borrar este picking.</div>`;
 
   return `
     <div class="detail-block">
@@ -1242,7 +1219,6 @@ function detalleHtml(p){
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
       ${gestionBtns}
     </div>
-    ${delBanner}
     ${doneBanner}
     ${banner}
     ${entregasHtml}
@@ -1274,20 +1250,12 @@ function deshechasHtmlOf(p){
   </div>`;
 }
 function historialAdminHtml(p){
-  const hay = (p.ediciones && p.ediciones.length) || (p.deshechas && p.deshechas.length) || p.eliminado;
+  const hay = (p.ediciones && p.ediciones.length) || (p.deshechas && p.deshechas.length);
   if(!hay) return '';
   if(!adminUnlocked){
     return `<button class="btn btn-outline" onclick="pedirPinAdmin('${p.id}')" style="margin-top:14px;">🔒 Ver historial de cambios (admin)</button>`;
   }
-  return edicionesHtmlOf(p) + deshechasHtmlOf(p) + eliminadoInfoHtmlOf(p);
-}
-function eliminadoInfoHtmlOf(p){
-  if(!p.eliminado || !p.eliminadoInfo) return '';
-  const info = p.eliminadoInfo;
-  return `<div class="entrega-log">
-    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Motivo de la eliminación</div>
-    <div class="item"><b>${info.por}</b> — ${fechaCorta(info.fecha)}<br>"${info.motivo}"</div>
-  </div>`;
+  return edicionesHtmlOf(p) + deshechasHtmlOf(p);
 }
 
 function entregar(tipo){
@@ -1427,7 +1395,7 @@ function abrirBorrarPicking(id){
   mostrarSheet(`
     <h3>¿Borrar este picking?</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
-      No desaparece del todo: queda marcado como eliminado (para que nadie lo confunda con uno activo si busca esa OF), y el motivo solo lo verá quien tenga acceso admin.
+      Se borra de verdad: desaparece de la app para todo el mundo. Queda una copia con el motivo en la hoja "Eliminados" del Excel, por si hace falta consultarla ahí.
     </p>
     <label>¿Por qué se borra?</label>
     <textarea id="motivoBorrado" placeholder="Ej. Se registró por error, era otra OF"></textarea>
@@ -1442,8 +1410,8 @@ async function confirmarBorrarPicking(id){
   const motivo = document.getElementById('motivoBorrado').value.trim();
   if(!motivo){ toast('Escribe el motivo'); return; }
 
-  p.eliminado = true;
-  p.eliminadoInfo = { motivo, por: usuarioActual, fecha: new Date().toISOString() };
+  // se quita de verdad de la app al instante (no solo se marca)
+  DB = DB.filter(x=>x.id!==id);
 
   cerrarSheet();
   toast('Picking eliminado');
@@ -1453,7 +1421,9 @@ async function confirmarBorrarPicking(id){
     await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
   } catch(err){}
   sincronizar().catch(()=>{});
-}/* ---------- init ---------- */
+}
+
+/* ---------- init ---------- */
 async function iniciar(){
   actualizarChipUsuario();
 
