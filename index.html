@@ -160,13 +160,28 @@
   }
 
   .ubic-item{
-    margin-top: 18px; padding-top: 14px;
-    border-top: 1px solid var(--line);
+    margin-top: 12px; padding: 14px 14px 12px;
+    background: #FAF8F4; border: 1px solid var(--line); border-radius: 8px;
   }
-  .ubic-item:first-child{ border-top: none; padding-top: 0; margin-top: 4px; }
   .ubic-nombre{
-    font-size: 16px; font-weight: 700; color: var(--ink);
-    display:block; margin-bottom: 8px;
+    font-size: 14px; font-weight: 700; color: var(--ink);
+    display:block; margin-bottom: 10px;
+  }
+  .ubic-grid{
+    display:grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .loc-chip{
+    padding: 11px 8px; border-radius: 20px; border: 1.5px solid var(--line);
+    background: #fff; font-size: 13px; font-weight: 600; color: var(--ink-soft);
+    text-align:center; cursor:pointer; user-select:none; line-height:1.25;
+  }
+  .loc-chip.active{
+    border-color: var(--ink); border-width: 2px; color: var(--ink); font-weight:700; background:#fff;
+  }
+  .loc-chip.active::before{ content: "✓ "; }
+  .loc-chip.add{
+    grid-column: 1 / -1;
+    border-style: dashed; border-color: var(--accent); color: var(--accent); font-weight:600;
   }
 
   .btn{
@@ -355,7 +370,7 @@
     <label>Lleva fuera de la caja</label>
     <div class="check-row" id="fueraRow"></div>
 
-    <label>¿Dónde se ubica cada cosa?</label>
+    <label>Ubicación</label>
     <div id="ubicacionesContainer"></div>
 
     <label>Observaciones</label>
@@ -794,14 +809,14 @@ function renderUbicacionPills(){
   const opciones = UBICACION_BASE.concat(cargarExtrasUbicacion());
   const cajas = parseInt(document.getElementById('f_cajas').value) || 1;
   cont.innerHTML = items.map(item=>{
-    const pills = opciones.map(op=>{
+    const chips = opciones.map(op=>{
       const active = ubicacionesSeleccion[item] === op ? 'active' : '';
-      return `<div class="check-pill ${active}" data-item="${item}" data-label="${op}" onclick="toggleUbicacionItem(this)">${op}</div>`;
-    }).join('') + `<div class="check-pill add" onclick="abrirAnadirUbicacion('${item}')">+ Añadir</div>`;
+      return `<div class="loc-chip ${active}" data-item="${item}" data-label="${op}" onclick="toggleUbicacionItem(this)">${op}</div>`;
+    }).join('') + `<div class="loc-chip add" onclick="abrirAnadirUbicacion('${item}')">+ Añadir otra</div>`;
     const titulo = item === 'Cajas' ? `Cajas de picking (${cajas})` : item;
     return `<div class="ubic-item">
       <span class="ubic-nombre">${titulo}</span>
-      <div class="check-row">${pills}</div>
+      <div class="ubic-grid">${chips}</div>
     </div>`;
   }).join('');
 }
@@ -814,7 +829,7 @@ function toggleUbicacionItem(el){
   const item = el.dataset.item;
   const label = el.dataset.label;
   ubicacionesSeleccion[item] = label;
-  document.querySelectorAll(`#ubicacionesContainer .check-pill[data-item="${item}"]`).forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll(`#ubicacionesContainer .loc-chip[data-item="${item}"]`).forEach(p=>p.classList.remove('active'));
   el.classList.add('active');
 }
 function abrirAnadirUbicacion(item){
