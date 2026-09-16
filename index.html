@@ -310,11 +310,6 @@
         <span>Buscar una OF y registrar su entrega</span>
       </button>
     </div>
-
-    <div class="pending-strip">
-      <h3>Pendientes de entrega</h3>
-      <div id="pendingList"></div>
-    </div>
   </section>
 
   <!-- ============ REGISTRO ============ -->
@@ -330,7 +325,7 @@
     <div class="row2">
       <div>
         <label>Proyecto</label>
-        <input type="text" id="f_proyecto" placeholder="Ej. LIS4">
+        <input type="text" id="f_proyecto" placeholder="Ej. 2024-275">
       </div>
       <div>
         <label>Subproyecto</label>
@@ -365,6 +360,11 @@
     <button class="btn btn-outline" onclick="buscarOF()">Buscar</button>
 
     <div id="buscarResultado" style="margin-top:20px;"></div>
+
+    <div class="pending-strip">
+      <h3>Pendientes de entrega</h3>
+      <div id="pendingList"></div>
+    </div>
   </section>
 
   <!-- ============ DETALLE / ENTREGA ============ -->
@@ -501,8 +501,8 @@ function procesarDatos(datos){
 function refrescarPantalla(){
   const activa = document.querySelector('.screen.active');
   if(!activa) return;
-  if(activa.id === 'screen-home') renderPendientes();
   if(activa.id === 'screen-buscar'){
+    renderPendientes();
     const v = document.getElementById('buscarInput').value;
     if(v) buscarOF();
   }
@@ -653,7 +653,7 @@ function cargarNombres(){
 function ir(pantalla){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+pantalla).classList.add('active');
-  if(pantalla==='home') renderPendientes();
+  if(pantalla==='buscar') entrarABuscar();
 }
 
 function toast(msg){
@@ -826,6 +826,20 @@ function nuevoPicking(){
   resetFormRegistro();
   document.getElementById('formTitle').textContent = 'Registrar picking';
   document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+  // Se sincroniza por detrás mientras se rellena el formulario, así el
+  // aviso de OF duplicada usa datos frescos sin haber hecho esperar al abrir.
+  sincronizar().catch(()=>{});
+}
+
+async function entrarABuscar(){
+  const cont = document.getElementById('pendingList');
+  cont.innerHTML = '<div class="empty">Cargando…</div>';
+  try{
+    await sincronizar();
+  } catch(err){
+    renderPendientes();
+    toast('No se pudo actualizar — mostrando lo último guardado');
+  }
 }
 
 function abrirEdicion(id){
@@ -1089,12 +1103,26 @@ function fechaCorta(iso){
 }
 
 /* ---------- buscar ---------- */
-function buscarOF(){
+async function buscarOF(){
   const val = document.getElementById('buscarInput').value.trim();
   const cont = document.getElementById('buscarResultado');
   if(!val){ cont.innerHTML=''; return; }
-  const resultados = DB.filter(p=>p.of.toLowerCase().includes(val.toLowerCase()))
+
+  const buscar = ()=> DB.filter(p=>p.of.toLowerCase().includes(val.toLowerCase()))
                         .sort((a,b)=> new Date(b.fecha)-new Date(a.fecha));
+
+  let resultados = buscar();
+  if(resultados.length===0){
+    // puede que se haya registrado hace un instante en otro móvil y aún no
+    // haya llegado por la sincronización normal — se prueba una vez más.
+    cont.innerHTML = `<div class="empty">Buscando…</div>`;
+    try{
+      const datos = await cargarDesdeSheet();
+      procesarDatos(datos);
+    } catch(err){}
+    resultados = buscar();
+  }
+
   if(resultados.length===0){
     cont.innerHTML = `<div class="empty">No hay ningún picking con esa OF</div>`;
     return;
@@ -1285,7 +1313,10 @@ async function confirmarEntrega(tipo){
   abrirDetalle(p.id);
 
   try{
-    await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
+    const resultado = await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
+    if(resultado && resultado.ok === false){
+      toast('⚠️ ' + (resultado.error || 'No se pudo confirmar la entrega — revisando'));
+    }
   } catch(err){}
   sincronizar().catch(()=>{});
 }
@@ -1333,13 +1364,16 @@ async function confirmarDeshacerEntrega(){
   abrirDetalle(p.id);
 
   try{
-    await llamarBackend('deshacerEntrega', {
+    const resultado = await llamarBackend('deshacerEntrega', {
       pickingId: pid,
       tipoOriginal: eliminada.tipo,
       fechaOriginal: eliminada.fecha,
       hechoPor: usuarioActual,
       motivo
     });
+    if(resultado && resultado.ok === false){
+      toast('⚠️ ' + (resultado.error || 'No se pudo deshacer — revisando'));
+    }
   } catch(err){}
   sincronizar().catch(()=>{});
 }
@@ -1377,18 +1411,19 @@ async function confirmarBorrarPicking(id){
     await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
   } catch(err){}
   sincronizar().catch(()=>{});
-}
-
-/* ---------- init ---------- */
+}/* ---------- init ---------- */
 async function iniciar(){
   actualizarChipUsuario();
-  document.getElementById('pendingList').innerHTML = '<div class="empty">Cargando…</div>';
-  try{
-    await sincronizar();
-  } catch(err){
-    document.getElementById('pendingList').innerHTML = '<div class="empty">No se pudo conectar con la hoja. Revisa tu conexión y recarga la página.</div>';
+
+  // Inicio ya no depende de ningún dato: se ve al instante siempre.
+  // Solo esperamos a tener datos si hace falta mostrar la pantalla de
+  // identificación (necesita saber qué usuarios existen ya).
+  if(!usuarioActual){
+    try{ await sincronizar(); } catch(err){}
+    setTimeout(()=>abrirCambioUsuario(true), 300);
+  } else {
+    sincronizar().catch(()=>{});
   }
-  if(!usuarioActual){ setTimeout(()=>abrirCambioUsuario(true), 400); }
 
   // Refresco en segundo plano: para que lo que otra persona borre o cambie
   // directamente en la Sheet (fuera de la app) se refleje sin tener que
