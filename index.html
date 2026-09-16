@@ -10,8 +10,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Picking LIS-DHV">
+<meta name="color-scheme" content="light">
 <style>
   :root{
+    color-scheme: light;
     --bg: #F7F5F1;
     --panel: #FFFFFF;
     --ink: #1B1B18;
@@ -117,19 +119,19 @@
     display:flex; align-items:center; gap:10px; margin-bottom:16px;
   }
   .back{
-    font-family: var(--mono); font-size:20px; color:var(--ink-soft);
-    background:none; border:none; cursor:pointer; padding:4px 6px 4px 0;
+    font-size:26px; font-weight:700; color:var(--ink);
+    background:none; border:none; cursor:pointer; padding:4px 10px 4px 0; line-height:1;
   }
   .screen-title h2{ font-size:19px; margin:0; }
 
   label{
-    display:block; font-size:12px; font-weight:600; color:var(--ink-soft);
+    display:block; font-size:12px; font-weight:700; color: var(--ink);
     text-transform:uppercase; letter-spacing:0.04em;
     margin: 16px 0 6px;
   }
   input[type=text], input[type=number], textarea, select{
     width:100%; padding:12px 12px; font-size:16px;
-    border:1px solid var(--line); border-radius:4px;
+    border:1.5px solid #C7BFB0; border-radius:4px;
     background: var(--panel); color:var(--ink); font-family: inherit;
   }
   input[type=text].mono{ font-family: var(--mono); }
@@ -143,14 +145,28 @@
   }
   .check-pill{
     flex:1 1 28%; text-align:center; padding:12px 6px; border-radius:4px;
-    border:1px solid var(--line); font-size:13px; font-weight:600;
+    border:1px solid var(--line); font-size:14px; font-weight:600;
     color: var(--ink-soft); cursor:pointer; user-select:none;
   }
   .check-pill.active{
-    border-color: var(--accent); background: rgba(217,83,30,0.08); color: var(--accent);
+    border-color: var(--ink); border-width: 2px; background: var(--panel); color: var(--ink); font-weight:700;
   }
+  .check-pill.active::before{ content: "✓ "; }
   .check-pill.add{
     border-style: dashed; border-color: var(--accent); color: var(--accent);
+  }
+  .quitar-extra{
+    display:inline-block; margin-left:6px; color:#B33A3A; font-weight:700;
+  }
+
+  .ubic-item{
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .ubic-item:first-child{ border-top: none; padding-top: 0; margin-top: 4px; }
+  .ubic-nombre{
+    font-size: 16px; font-weight: 700; color: var(--ink);
+    display:block; margin-bottom: 8px;
   }
 
   .btn{
@@ -315,7 +331,7 @@
   <!-- ============ REGISTRO ============ -->
   <section class="screen" id="screen-registro">
     <div class="screen-title">
-      <button class="back" onclick="ir('home')">‹</button>
+      <button class="back" onclick="ir('home')">←</button>
       <h2 id="formTitle">Registrar picking</h2>
     </div>
 
@@ -351,7 +367,7 @@
   <!-- ============ BUSCAR ============ -->
   <section class="screen" id="screen-buscar">
     <div class="screen-title">
-      <button class="back" onclick="ir('home')">‹</button>
+      <button class="back" onclick="ir('home')">←</button>
       <h2>Buscar OF</h2>
     </div>
 
@@ -370,7 +386,7 @@
   <!-- ============ DETALLE / ENTREGA ============ -->
   <section class="screen" id="screen-detalle">
     <div class="screen-title">
-      <button class="back" onclick="ir('buscar')">‹</button>
+      <button class="back" onclick="ir('buscar')">←</button>
       <h2>Detalle de la OF</h2>
     </div>
     <div id="detalleContenido"></div>
@@ -735,12 +751,23 @@ function toggleFuera(el){
   renderUbicacionPills();
 }
 function renderFueraPills(){
-  const todas = FUERA_BASE.concat(cargarExtrasFuera());
+  const extras = cargarExtrasFuera();
+  const todas = FUERA_BASE.concat(extras);
   const row = document.getElementById('fueraRow');
   row.innerHTML = todas.map(label=>{
     const active = fueraSeleccion[label] ? 'active' : '';
-    return `<div class="check-pill ${active}" data-key="${label}" onclick="toggleFuera(this)">${label}</div>`;
+    const esExtra = extras.includes(label);
+    return `<div class="check-pill ${active}" data-key="${label}" onclick="toggleFuera(this)">
+      ${label}${esExtra ? `<span class="quitar-extra" onclick="event.stopPropagation(); quitarExtraFuera('${label}')">✕</span>` : ''}
+    </div>`;
   }).join('') + `<div class="check-pill add" onclick="abrirAnadirFuera()">+ Añadir</div>`;
+}
+function quitarExtraFuera(label){
+  const extras = cargarExtrasFuera().filter(x=>x!==label);
+  guardarExtrasFuera(extras);
+  delete fueraSeleccion[label];
+  renderFueraPills();
+  renderUbicacionPills();
 }
 function abrirAnadirFuera(){
   mostrarSheet(`<h3>Añadir tipo de componente</h3>
@@ -772,8 +799,8 @@ function renderUbicacionPills(){
       return `<div class="check-pill ${active}" data-item="${item}" data-label="${op}" onclick="toggleUbicacionItem(this)">${op}</div>`;
     }).join('') + `<div class="check-pill add" onclick="abrirAnadirUbicacion('${item}')">+ Añadir</div>`;
     const titulo = item === 'Cajas' ? `Cajas de picking (${cajas})` : item;
-    return `<div style="margin-top:12px;">
-      <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;">${titulo}</div>
+    return `<div class="ubic-item">
+      <span class="ubic-nombre">${titulo}</span>
       <div class="check-row">${pills}</div>
     </div>`;
   }).join('');
