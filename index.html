@@ -385,8 +385,8 @@
 
     <div id="buscarResultado" style="margin-top:20px;"></div>
 
+    <button class="btn btn-outline" onclick="verPendientes()" style="margin-top:28px;">📋 Ver pendientes de entrega</button>
     <div class="pending-strip">
-      <h3>Pendientes de entrega</h3>
       <div id="pendingList"></div>
     </div>
   </section>
@@ -471,11 +471,11 @@ function construirDB(datos){
       nota: e['Nota'] || '', fecha: e['Fecha']
     }));
     const historialDe = historial.filter(h=>h['ID del picking']===id);
-    const ediciones = historialDe.filter(h=>h['Tipo']==='edicion').map(h=>({
+    const ediciones = historialDe.filter(h=>h['Tipo']==='Edición').map(h=>({
       editadoPor: h['Autor'], fecha: h['Fecha'], motivo: h['Motivo'] || '',
       cambios: h['Detalle'] ? h['Detalle'].split(' · ').filter(Boolean) : []
     }));
-    const deshechas = historialDe.filter(h=>h['Tipo']==='deshacer').map(h=>({
+    const deshechas = historialDe.filter(h=>h['Tipo']==='Entrega deshecha').map(h=>({
       hechoPor: h['Autor'], fecha: h['Fecha'], motivo: h['Motivo'] || '',
       detalleTexto: h['Detalle'] || ''
     }));
@@ -515,11 +515,13 @@ function procesarDatos(datos){
   return true;
 }
 
+let pendientesVisibles = false;
+
 function refrescarPantalla(){
   const activa = document.querySelector('.screen.active');
   if(!activa) return;
   if(activa.id === 'screen-buscar'){
-    renderPendientes();
+    if(pendientesVisibles) renderPendientes();
     const v = document.getElementById('buscarInput').value;
     if(v) buscarOF();
   }
@@ -547,9 +549,12 @@ function claveNombre(n){
 function normalizarNombre(s){
   return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
 }
+function esAdminSheet(nombre){
+  const u = usuariosRemotos.find(x=>claveNombre(x['Nombre'])===claveNombre(nombre));
+  return !!(u && String(u['Admin']||'').trim());
+}
 function puedeGestionar(p){
-  const yo = normalizarNombre(usuarioActual);
-  return yo === normalizarNombre(p.registradoPor) || yo === 'maria';
+  return esAdminSheet(usuarioActual) || normalizarNombre(usuarioActual) === normalizarNombre(p.registradoPor);
 }
 function pinDeUsuario(nombre){
   const u = usuariosRemotos.find(x=>claveNombre(x['Nombre'])===claveNombre(nombre));
@@ -628,7 +633,7 @@ function pedirPinAdmin(pid){
     return;
   }
   mostrarSheet(`
-    <h3>Acceso admin</h3>
+    <h3>Verifica tu PIN</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Introduce tu PIN para ver los cambios posteriores y las entregas deshechas.</p>
     <input type="text" id="pinAdmin" inputmode="numeric" placeholder="Tu PIN" maxlength="4"
       oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
@@ -697,7 +702,7 @@ function abrirCambioUsuario(forzado){
     <label>Añadir nombre nuevo</label>
     <input type="text" id="nuevoNombre" placeholder="Nombre y apellido">
     <button class="btn btn-primary" onclick="anadirNombre()">Guardar y usar</button>
-    ${!forzado ? `<button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>` : ''}
+    ${(usuarioActual && !forzado && esAdminSheet(usuarioActual)) ? `<button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>` : ''}
     ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="cerrarSesion()" style="color:#B33A3A; border-color:#B33A3A;">Cerrar sesión</button>` : ''}`;
   mostrarSheet(html, !!forzado);
 }
@@ -715,7 +720,7 @@ function elegirUsuario(n){
   localStorage.setItem(LS_USER, n);
   actualizarChipUsuario();
   cerrarSheet();
-  if(!pinDeUsuario(n)){
+  if(esAdminSheet(n) && !pinDeUsuario(n)){
     setTimeout(abrirConfigurarPinObligatorio, 200);
   } else {
     toast('Sesión iniciada como ' + n);
@@ -859,9 +864,17 @@ function nuevoPicking(){
   sincronizar().catch(()=>{});
 }
 
-async function entrarABuscar(){
+function entrarABuscar(){
+  pendientesVisibles = false;
+  document.getElementById('buscarInput').value = '';
+  document.getElementById('buscarResultado').innerHTML = '';
+  document.getElementById('pendingList').innerHTML = '';
+}
+
+async function verPendientes(){
+  pendientesVisibles = true;
   const cont = document.getElementById('pendingList');
-  cont.innerHTML = '<div class="empty">Cargando…</div>';
+  cont.innerHTML = '<div class="empty">Actualizando…</div>';
   try{
     await sincronizar();
   } catch(err){
@@ -873,7 +886,7 @@ async function entrarABuscar(){
 function abrirEdicion(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
-  if(!puedeGestionar(p)){ toast('Solo quien registró este picking o María pueden editarlo'); return; }
+  if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden editarlo'); return; }
   editingId = id;
   ir('registro');
   document.getElementById('f_of').value = p.of;
@@ -1079,7 +1092,7 @@ async function confirmarEdicion(){
 /* ---------- pendientes en home ---------- */
 function renderPendientes(){
   const cont = document.getElementById('pendingList');
-  const pendientes = DB.filter(p=>p.estado!=='completado').sort((a,b)=> new Date(b.fecha)-new Date(a.fecha));
+  const pendientes = DB.filter(p=>p.estado!=='completado').sort((a,b)=> a.proyecto.localeCompare(b.proyecto, 'es', {numeric:true}));
   if(pendientes.length===0){
     cont.innerHTML = `<div class="empty">No hay pickings pendientes de entrega</div>`;
     return;
@@ -1139,7 +1152,7 @@ async function buscarOF(){
   if(resultados.length===0){
     // puede que se haya registrado hace un instante en otro móvil y aún no
     // haya llegado por la sincronización normal — se prueba una vez más.
-    cont.innerHTML = `<div class="empty">Buscando…</div>`;
+    cont.innerHTML = `<div class="empty">Actualizando…</div>`;
     try{
       const datos = await cargarDesdeSheet();
       procesarDatos(datos);
@@ -1184,6 +1197,15 @@ function detalleHtml(p){
     </span></div>`;
   }
 
+  let parcialBanner = '';
+  if(!entregado && p.entregas.length>0){
+    const ultima = [...p.entregas].reverse()[0];
+    parcialBanner = `<div class="attn-banner"><span class="dot">📦</span><span>
+      <b>Entrega parcial ya hecha</b> — ${ultima.entregadoPor} a ${ultima.entregadoA}, ${fechaCorta(ultima.fecha)}.<br>
+      ${ultima.nota || ''}
+    </span></div>`;
+  }
+
   const entregasHtml = p.entregas.length ? `
     <div class="entrega-log">
       ${p.entregas.map((e,i)=>`<div class="item">
@@ -1201,7 +1223,7 @@ function detalleHtml(p){
   const gestionBtns = puedeGestionar(p)
     ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">✏️ Editar datos del picking</button>
        <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">🗑️ Borrar este picking</button>`
-    : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor} o María pueden editar o borrar este picking.</div>`;
+    : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor}, o un administrador, pueden editar o borrar este picking.</div>`;
 
   return `
     <div class="detail-block">
@@ -1220,6 +1242,7 @@ function detalleHtml(p){
       ${gestionBtns}
     </div>
     ${doneBanner}
+    ${parcialBanner}
     ${banner}
     ${entregasHtml}
     ${historialAdminHtml(p)}
@@ -1250,17 +1273,30 @@ function deshechasHtmlOf(p){
   </div>`;
 }
 function historialAdminHtml(p){
+  if(!esAdminSheet(usuarioActual)) return '';
   const hay = (p.ediciones && p.ediciones.length) || (p.deshechas && p.deshechas.length);
   if(!hay) return '';
   if(!adminUnlocked){
-    return `<button class="btn btn-outline" onclick="pedirPinAdmin('${p.id}')" style="margin-top:14px;">🔒 Ver historial de cambios (admin)</button>`;
+    return `<button class="btn btn-outline" onclick="pedirPinAdmin('${p.id}')" style="margin-top:14px;">🔒 Ver historial de cambios</button>`;
   }
   return edicionesHtmlOf(p) + deshechasHtmlOf(p);
 }
 
 function entregar(tipo){
+  const p = DB.find(x=>x.id===ofEnDetalle);
   const nombres = cargarNombres();
   let pillsPor = nombres.map(n=>`<span class="name-pill" data-role="por" onclick="seleccionarPill(this)">${n}</span>`).join('');
+
+  let bloqueItems = '';
+  if(tipo==='parcial' && p){
+    const items = ['Cajas', ...fueraActivas(p)];
+    bloqueItems = `
+    <label>¿Qué incluye esta entrega?</label>
+    <div class="check-row" id="entregaItemsRow">
+      ${items.map(it=>`<div class="check-pill" data-item="${it}" onclick="this.classList.toggle('active')">${it}</div>`).join('')}
+    </div>`;
+  }
+
   let html = `
     <h3>${tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</h3>
     <label>¿Quién entrega?</label>
@@ -1270,8 +1306,10 @@ function entregar(tipo){
     <label>¿A quién de DHV se entrega?</label>
     <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" oninput="actualizarTextoFirma()">
 
-    ${tipo==='parcial' ? `<label>¿Qué se lleva ahora?</label>
-    <textarea id="entregaNota" placeholder="Ej. 2 plantillas y las cajas, quedan los cables"></textarea>` : ''}
+    ${bloqueItems}
+
+    ${tipo==='parcial' ? `<label>Observaciones</label>
+    <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar"></textarea>` : ''}
 
     <div class="sign-banner">
       <label>
@@ -1306,13 +1344,18 @@ async function confirmarEntrega(tipo){
   if(!p) return;
   const por = document.getElementById('entregaPorManual').value.trim() || usuarioActual;
   const a = document.getElementById('entregaA').value.trim();
-  const nota = tipo==='parcial' ? document.getElementById('entregaNota').value.trim() : '';
+  let nota = tipo==='parcial' ? document.getElementById('entregaNota').value.trim() : '';
   const firmaConfirmada = document.getElementById('confirmFirma').checked;
 
   if(!por){ toast('Falta quién entrega'); return; }
   if(!a){ toast('Falta a quién se entrega'); return; }
   if(tipo==='parcial' && !nota){ toast('Describe qué se lleva'); return; }
   if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
+
+  if(tipo==='parcial'){
+    const items = [...document.querySelectorAll('#entregaItemsRow .check-pill.active')].map(el=>el.dataset.item);
+    if(items.length) nota = `[${items.join(', ')}] ${nota}`;
+  }
 
   const entregaLocal = { tipo, entregadoPor: por, entregadoA: a, nota, fecha: new Date().toISOString() };
   p.entregas.push(entregaLocal);
@@ -1334,7 +1377,7 @@ async function confirmarEntrega(tipo){
 function deshacerEntrega(pid, idx){
   const p = DB.find(x=>x.id===pid);
   if(!p) return;
-  if(!puedeGestionar(p)){ toast('Solo quien registró este picking o María pueden deshacer su entrega'); return; }
+  if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden deshacer su entrega'); return; }
   pendienteDeshacer = { pid, idx };
   mostrarSheet(`
     <h3>¿Deshacer esta entrega?</h3>
@@ -1391,7 +1434,7 @@ async function confirmarDeshacerEntrega(){
 function abrirBorrarPicking(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
-  if(!puedeGestionar(p)){ toast('Solo quien registró este picking o María pueden borrarlo'); return; }
+  if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden borrarlo'); return; }
   mostrarSheet(`
     <h3>¿Borrar este picking?</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
