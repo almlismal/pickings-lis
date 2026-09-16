@@ -397,7 +397,16 @@
 
     <div id="buscarResultado" style="margin-top:20px;"></div>
 
-    <button class="btn btn-outline" onclick="verPendientes()" style="margin-top:28px;">📋 Ver pendientes de entrega</button>
+    <button class="btn btn-outline" onclick="ir('pendientes')" style="margin-top:28px;">📋 Ver pendientes de entrega</button>
+  </section>
+
+  <!-- ============ PENDIENTES ============ -->
+  <section class="screen" id="screen-pendientes">
+    <div class="screen-title">
+      <button class="back" onclick="ir('buscar')">←</button>
+      <h2>Pendientes de entrega</h2>
+    </div>
+    <button class="btn btn-outline" onclick="actualizarPendientes()" id="btnActualizarPendientes">🔄 Actualizar</button>
     <div class="pending-strip">
       <div id="pendingList"></div>
     </div>
@@ -527,16 +536,14 @@ function procesarDatos(datos){
   return true;
 }
 
-let pendientesVisibles = false;
-
 function refrescarPantalla(){
   const activa = document.querySelector('.screen.active');
   if(!activa) return;
   if(activa.id === 'screen-buscar'){
-    if(pendientesVisibles) renderPendientes();
     const v = document.getElementById('buscarInput').value;
     if(v) buscarOF();
   }
+  if(activa.id === 'screen-pendientes') renderPendientes();
   if(activa.id === 'screen-detalle' && ofEnDetalle){
     const p = DB.find(x=>x.id===ofEnDetalle);
     if(p) document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
@@ -688,6 +695,7 @@ function ir(pantalla){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+pantalla).classList.add('active');
   if(pantalla==='buscar') entrarABuscar();
+  if(pantalla==='pendientes') entrarAPendientes();
 }
 
 function toast(msg){
@@ -877,22 +885,23 @@ function nuevoPicking(){
 }
 
 function entrarABuscar(){
-  pendientesVisibles = false;
   document.getElementById('buscarInput').value = '';
   document.getElementById('buscarResultado').innerHTML = '';
-  document.getElementById('pendingList').innerHTML = '';
 }
 
-async function verPendientes(){
-  pendientesVisibles = true;
-  const cont = document.getElementById('pendingList');
-  cont.innerHTML = '<div class="empty">Actualizando…</div>';
+function entrarAPendientes(){
+  renderPendientes();
+}
+
+async function actualizarPendientes(){
+  const btn = document.getElementById('btnActualizarPendientes');
+  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
   try{
     await sincronizar();
   } catch(err){
-    renderPendientes();
     toast('No se pudo actualizar — mostrando lo último guardado');
   }
+  if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
 }
 
 function abrirEdicion(id){
@@ -1102,9 +1111,16 @@ async function confirmarEdicion(){
 }
 
 /* ---------- pendientes en home ---------- */
+function compararPendientes(a,b){
+  const porProyecto = (a.proyecto||'').localeCompare(b.proyecto||'', 'es', {numeric:true, sensitivity:'base'});
+  if(porProyecto !== 0) return porProyecto;
+  const porOF = (a.of||'').localeCompare(b.of||'', 'es', {numeric:true, sensitivity:'base'});
+  if(porOF !== 0) return porOF;
+  return (a.subproyecto||'').localeCompare(b.subproyecto||'', 'es', {numeric:true, sensitivity:'base'});
+}
 function renderPendientes(){
   const cont = document.getElementById('pendingList');
-  const pendientes = DB.filter(p=>p.estado!=='completado').sort((a,b)=> a.proyecto.localeCompare(b.proyecto, 'es', {numeric:true}));
+  const pendientes = DB.filter(p=>p.estado!=='completado').sort(compararPendientes);
   if(pendientes.length===0){
     cont.innerHTML = `<div class="empty">No hay pickings pendientes de entrega</div>`;
     return;
@@ -1138,7 +1154,7 @@ function resumenSemaforo(p){
   const partes = claves.map(nombre=>{
     const estado = estados[nombre];
     const icono = estado ? iconos[estado] : '⚪';
-    const etiqueta = estado==='completado' ? 'completado' : estado==='pendiente' ? 'queda pendiente' : 'sin tocar';
+    const etiqueta = estado==='completado' ? 'todo entregado' : estado==='pendiente' ? 'entregado parcial' : 'sin tocar';
     return `${icono} ${nombre} (${etiqueta})`;
   });
   return `<div class="obs-box" style="margin-top:10px;"><b>Estado por componente</b><br>${partes.join(' · ')}</div>`;
@@ -1345,9 +1361,13 @@ function entregar(tipo){
     items.forEach(it=> entregaItemsEstado[it] = 'sin');
     bloqueItems = `
     <label>¿Qué incluye esta entrega?</label>
-    <div class="hint" style="margin:0 0 10px;">Toca cada ítem para marcar si queda pendiente o se completa.</div>
+    <div class="hint" style="margin:0 0 10px;">Toca cada ítem para marcar si queda entregado parcial o todo entregado.</div>
     <div id="entregaItemsRow"></div>
-    <button type="button" class="check-pill add" style="margin-top:10px; display:inline-block; width:auto; padding:10px 16px;" onclick="abrirAnadirComponenteEntrega()">+ Añadir componente</button>`;
+    <div id="nuevoComponenteBox" style="display:none; margin-top:10px;">
+      <input type="text" id="nuevoComponenteEntrega" placeholder="Nombre del componente">
+      <button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="confirmarAnadirComponenteEntrega()">Añadir a la lista</button>
+    </div>
+    <button type="button" class="check-pill add" style="margin-top:10px; display:inline-block; width:auto; padding:10px 16px;" onclick="mostrarCajaNuevoComponente()">+ Añadir componente</button>`;
   }
 
   let html = `
@@ -1382,8 +1402,8 @@ function renderEntregaItems(){
   if(!cont) return;
   const cfg = {
     sin:        { texto: '⚪',  etiqueta: 'Sin marcar', clase: '' },
-    pendiente:  { texto: '🟠',  etiqueta: 'Queda pendiente', clase: 'item-pend' },
-    completado: { texto: '🟢',  etiqueta: 'Se completa', clase: 'item-ok' }
+    pendiente:  { texto: '🟠',  etiqueta: 'Entregado parcial', clase: 'item-pend' },
+    completado: { texto: '🟢',  etiqueta: 'Todo entregado', clase: 'item-ok' }
   };
   cont.innerHTML = Object.keys(entregaItemsEstado).map(nombre=>{
     const estado = entregaItemsEstado[nombre];
@@ -1400,17 +1420,21 @@ function ciclarEstadoItem(nombre){
   entregaItemsEstado[nombre] = orden[(orden.indexOf(actual)+1) % orden.length];
   renderEntregaItems();
 }
-function abrirAnadirComponenteEntrega(){
-  mostrarSheet(`<h3>Añadir componente</h3>
-    <label>Nombre</label>
-    <input type="text" id="nuevoComponenteEntrega" placeholder="Ej. Tornillería, cable suelto...">
-    <button class="btn btn-primary" onclick="confirmarAnadirComponenteEntrega()">Añadir</button>`, true);
+function mostrarCajaNuevoComponente(){
+  const box = document.getElementById('nuevoComponenteBox');
+  if(!box) return;
+  box.style.display = 'block';
+  const input = document.getElementById('nuevoComponenteEntrega');
+  if(input) input.focus();
 }
 function confirmarAnadirComponenteEntrega(){
-  const val = document.getElementById('nuevoComponenteEntrega').value.trim();
+  const input = document.getElementById('nuevoComponenteEntrega');
+  const val = input.value.trim();
   if(!val) return;
   entregaItemsEstado[val] = 'pendiente';
-  entregar('parcial');
+  input.value = '';
+  document.getElementById('nuevoComponenteBox').style.display = 'none';
+  renderEntregaItems();
 }
 
 function toggleBtnEntrega(){
