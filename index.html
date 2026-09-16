@@ -159,6 +159,18 @@
     display:inline-block; margin-left:6px; color:#B33A3A; font-weight:700;
   }
 
+  .entrega-item-toggle{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:12px 14px; margin-top:8px;
+    border:1.5px solid var(--line); border-radius:6px; background:var(--panel);
+    font-size:14px; font-weight:600; color:var(--ink); cursor:pointer; user-select:none;
+  }
+  .entrega-item-estado{ font-size:13px; font-weight:700; color: var(--ink-soft); }
+  .entrega-item-toggle.item-pend{ border-color:#D98A1E; background:#FFF6E8; }
+  .entrega-item-toggle.item-pend .entrega-item-estado{ color:#9A5B00; }
+  .entrega-item-toggle.item-ok{ border-color:#1F7A52; background:#EAF6EF; }
+  .entrega-item-toggle.item-ok .entrega-item-estado{ color:#155C3D; }
+
   .ubic-item{
     margin-top: 12px; padding: 14px 14px 12px;
     background: #FAF8F4; border: 1px solid var(--line); border-radius: 8px;
@@ -1100,6 +1112,38 @@ function renderPendientes(){
   cont.innerHTML = pendientes.map(p=>ticketHtml(p)).join('');
 }
 
+function parsearItemsEntrega(nota){
+  const m = (nota||'').match(/^\[(.*?)\]\s*/);
+  if(!m) return { items: [], notaLimpia: nota||'' };
+  const items = m[1].split('|').map(par=>{
+    const [nombre, estado] = par.split(':');
+    return { nombre: (nombre||'').trim(), estado: (estado||'').trim() };
+  }).filter(x=>x.nombre);
+  return { items, notaLimpia: (nota||'').slice(m[0].length) };
+}
+function chipsEstadoItems(items){
+  const iconos = { pendiente:'🟠', completado:'🟢' };
+  return items.map(it=>`<span class="chip ${it.estado==='completado'?'on':'attn'}">${iconos[it.estado]||''} ${it.nombre}</span>`).join('');
+}
+function resumenSemaforo(p){
+  const estados = {};
+  fueraActivas(p).forEach(nombre=> estados[nombre] = null); // registrados, aún sin tocar
+  p.entregas.forEach(e=>{
+    const { items } = parsearItemsEntrega(e.nota);
+    items.forEach(it=> estados[it.nombre] = it.estado);
+  });
+  const claves = Object.keys(estados);
+  if(!claves.length) return '';
+  const iconos = { pendiente:'🟠', completado:'🟢' };
+  const partes = claves.map(nombre=>{
+    const estado = estados[nombre];
+    const icono = estado ? iconos[estado] : '⚪';
+    const etiqueta = estado==='completado' ? 'completado' : estado==='pendiente' ? 'queda pendiente' : 'sin tocar';
+    return `${icono} ${nombre} (${etiqueta})`;
+  });
+  return `<div class="obs-box" style="margin-top:10px;"><b>Estado por componente</b><br>${partes.join(' · ')}</div>`;
+}
+
 function fueraActivas(p){
   return Object.keys(p.fuera||{}).filter(k=>p.fuera[k]);
 }
@@ -1200,19 +1244,24 @@ function detalleHtml(p){
   let parcialBanner = '';
   if(!entregado && p.entregas.length>0){
     const ultima = [...p.entregas].reverse()[0];
+    const { items, notaLimpia } = parsearItemsEntrega(ultima.nota);
     parcialBanner = `<div class="attn-banner"><span class="dot">📦</span><span>
       <b>Entrega parcial ya hecha</b> — ${ultima.entregadoPor} a ${ultima.entregadoA}, ${fechaCorta(ultima.fecha)}.<br>
-      ${ultima.nota || ''}
-    </span></div>`;
+      ${items.length ? chipsEstadoItems(items)+'<br>' : ''}${notaLimpia || ''}
+    </span></div>${resumenSemaforo(p)}`;
   }
 
   const entregasHtml = p.entregas.length ? `
     <div class="entrega-log">
-      ${p.entregas.map((e,i)=>`<div class="item">
+      ${p.entregas.map((e,i)=>{
+        const { items, notaLimpia } = parsearItemsEntrega(e.nota);
+        return `<div class="item">
         <b>${e.tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</b> — ${fechaCorta(e.fecha)}<br>
-        ${e.entregadoPor} entregó a ${e.entregadoA}${e.nota ? ': '+e.nota : ''}
+        ${e.entregadoPor} entregó a ${e.entregadoA}
+        ${items.length ? `<br>${chipsEstadoItems(items)}` : ''}
+        ${notaLimpia ? '<br>'+notaLimpia : ''}
         ${puedeGestionar(p) ? `<br><span class="undo" onclick="deshacerEntrega('${p.id}', ${i})">Deshacer esta entrega</span>` : ''}
-      </div>`).join('')}
+      </div>`;}).join('')}
     </div>` : '';
 
   const acciones = p.estado==='completado' ? '' : `
@@ -1282,6 +1331,8 @@ function historialAdminHtml(p){
   return edicionesHtmlOf(p) + deshechasHtmlOf(p);
 }
 
+let entregaItemsEstado = {};
+
 function entregar(tipo){
   const p = DB.find(x=>x.id===ofEnDetalle);
   const nombres = cargarNombres();
@@ -1289,12 +1340,14 @@ function entregar(tipo){
 
   let bloqueItems = '';
   if(tipo==='parcial' && p){
+    entregaItemsEstado = {};
     const items = ['Cajas', ...fueraActivas(p)];
+    items.forEach(it=> entregaItemsEstado[it] = 'sin');
     bloqueItems = `
     <label>¿Qué incluye esta entrega?</label>
-    <div class="check-row" id="entregaItemsRow">
-      ${items.map(it=>`<div class="check-pill" data-item="${it}" onclick="this.classList.toggle('active')">${it}</div>`).join('')}
-    </div>`;
+    <div class="hint" style="margin:0 0 10px;">Toca cada ítem para marcar si queda pendiente o se completa.</div>
+    <div id="entregaItemsRow"></div>
+    <button type="button" class="check-pill add" style="margin-top:10px; display:inline-block; width:auto; padding:10px 16px;" onclick="abrirAnadirComponenteEntrega()">+ Añadir componente</button>`;
   }
 
   let html = `
@@ -1321,7 +1374,45 @@ function entregar(tipo){
     <button class="btn btn-primary" id="btnConfirmarEntrega" onclick="confirmarEntrega('${tipo}')" disabled>Confirmar entrega</button>
   `;
   mostrarSheet(html);
+  if(tipo==='parcial' && p) renderEntregaItems();
 }
+
+function renderEntregaItems(){
+  const cont = document.getElementById('entregaItemsRow');
+  if(!cont) return;
+  const cfg = {
+    sin:        { texto: '⚪',  etiqueta: 'Sin marcar', clase: '' },
+    pendiente:  { texto: '🟠',  etiqueta: 'Queda pendiente', clase: 'item-pend' },
+    completado: { texto: '🟢',  etiqueta: 'Se completa', clase: 'item-ok' }
+  };
+  cont.innerHTML = Object.keys(entregaItemsEstado).map(nombre=>{
+    const estado = entregaItemsEstado[nombre];
+    const c = cfg[estado];
+    return `<div class="entrega-item-toggle ${c.clase}" onclick="ciclarEstadoItem('${nombre.replace(/'/g,"\\'")}')">
+      <span>${nombre}</span>
+      <span class="entrega-item-estado">${c.texto} ${c.etiqueta}</span>
+    </div>`;
+  }).join('');
+}
+function ciclarEstadoItem(nombre){
+  const orden = ['sin','pendiente','completado'];
+  const actual = entregaItemsEstado[nombre] || 'sin';
+  entregaItemsEstado[nombre] = orden[(orden.indexOf(actual)+1) % orden.length];
+  renderEntregaItems();
+}
+function abrirAnadirComponenteEntrega(){
+  mostrarSheet(`<h3>Añadir componente</h3>
+    <label>Nombre</label>
+    <input type="text" id="nuevoComponenteEntrega" placeholder="Ej. Tornillería, cable suelto...">
+    <button class="btn btn-primary" onclick="confirmarAnadirComponenteEntrega()">Añadir</button>`, true);
+}
+function confirmarAnadirComponenteEntrega(){
+  const val = document.getElementById('nuevoComponenteEntrega').value.trim();
+  if(!val) return;
+  entregaItemsEstado[val] = 'pendiente';
+  entregar('parcial');
+}
+
 function toggleBtnEntrega(){
   const chk = document.getElementById('confirmFirma');
   const btn = document.getElementById('btnConfirmarEntrega');
@@ -1353,8 +1444,8 @@ async function confirmarEntrega(tipo){
   if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
 
   if(tipo==='parcial'){
-    const items = [...document.querySelectorAll('#entregaItemsRow .check-pill.active')].map(el=>el.dataset.item);
-    if(items.length) nota = `[${items.join(', ')}] ${nota}`;
+    const marcados = Object.entries(entregaItemsEstado).filter(([,estado])=>estado!=='sin');
+    if(marcados.length) nota = `[${marcados.map(([n,e])=>`${n}:${e}`).join('|')}] ${nota}`;
   }
 
   const entregaLocal = { tipo, entregadoPor: por, entregadoA: a, nota, fecha: new Date().toISOString() };
