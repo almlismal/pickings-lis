@@ -525,6 +525,14 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
 function noEsEliminado(row){
   return String(row['Eliminado']||'').trim().toLowerCase() !== 'sí';
 }
+async function cargarLigeroYActualizarDB(){
+  const res = await fetchConLimite(GAS_URL + '?ligero=1', {}, 25000);
+  const datos = await res.json();
+  const entregas = datos.entregas || [];
+  const anteriores = {};
+  DB.forEach(p=>{ anteriores[p.id] = p; });
+  DB = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
+}
 function construirDB(datos){
   const entregas = datos.entregas || [];
   const historial = datos.historial || [];
@@ -909,12 +917,7 @@ async function actualizarPendientes(){
   const btn = document.getElementById('btnActualizarPendientes');
   if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
   try{
-    const res = await fetchConLimite(GAS_URL + '?ligero=1', {}, 25000);
-    const datos = await res.json();
-    const entregas = datos.entregas || [];
-    const anteriores = {};
-    DB.forEach(p=>{ anteriores[p.id] = p; });
-    DB = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
+    await cargarLigeroYActualizarDB();
     renderPendientes();
   } catch(err){
     toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
@@ -1230,16 +1233,36 @@ async function buscarOF(){
   let resultados = buscar();
   if(resultados.length===0){
     // puede que se haya registrado hace un instante en otro móvil y aún no
-    // haya llegado por la sincronización normal — se prueba una vez más.
+    // haya llegado por la sincronización normal — se prueba una vez más,
+    // pidiendo solo lo mínimo (Pickings + Entregas), igual que en Pendientes.
     cont.innerHTML = `<div class="empty">Actualizando…</div>`;
-    try{
-      const datos = await cargarDesdeSheet();
-      procesarDatos(datos);
-    } catch(err){}
+    try{ await cargarLigeroYActualizarDB(); } catch(err){}
     resultados = buscar();
   }
 
   if(resultados.length===0){
+    cont.innerHTML = `<div class="empty">Buscando en entregados…</div>`;
+    try{
+      const res = await fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(val), {}, 25000);
+      const datos = await res.json();
+      const entregados = datos.entregados || [];
+      if(entregados.length){
+        cont.innerHTML = entregados.map(r=>`
+          <div class="ticket">
+            <div class="ticket-top">
+              <span class="ticket-of">OF ${r['OF']}</span>
+              <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
+            </div>
+            <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
+            <div class="ticket-meta">
+              <span class="chip done">Entregado</span>
+            </div>
+            <div class="hint" style="margin-top:8px;">${r['Entregado por']} se lo entregó a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
+          </div>
+        `).join('');
+        return;
+      }
+    } catch(err){}
     cont.innerHTML = `<div class="empty">No hay ningún picking con esa OF</div>`;
     return;
   }
