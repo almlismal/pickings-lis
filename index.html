@@ -482,41 +482,50 @@ function parseUbicaciones(str){
   return out;
 }
 
-function construirDB(datos){
-  const entregas = datos.entregas || [];
-  const historial = datos.historial || [];
-  return (datos.pickings || []).map(row=>{
-    const id = row['ID'];
-    const entregasDe = entregas.filter(e=>e['ID del picking']===id).map(e=>({
-      tipo: e['Tipo'], entregadoPor: e['Entregado por'], entregadoA: e['Entregado a'],
-      nota: e['Nota'] || '', fecha: e['Fecha']
-    }));
+function construirPickingDesdeRow(row, entregas, historial, previo){
+  const id = row['ID'];
+  const entregasDe = entregas.filter(e=>e['ID del picking']===id).map(e=>({
+    tipo: e['Tipo'], entregadoPor: e['Entregado por'], entregadoA: e['Entregado a'],
+    nota: e['Nota'] || '', fecha: e['Fecha']
+  }));
+  let ediciones, deshechas;
+  if(historial){
     const historialDe = historial.filter(h=>h['ID del picking']===id);
-    const ediciones = historialDe.filter(h=>h['Tipo']==='Edición').map(h=>({
+    ediciones = historialDe.filter(h=>h['Tipo']==='Edición').map(h=>({
       editadoPor: h['Autor'], fecha: h['Fecha'], motivo: h['Motivo'] || '',
       cambios: h['Detalle'] ? h['Detalle'].split(' · ').filter(Boolean) : []
     }));
-    const deshechas = historialDe.filter(h=>h['Tipo']==='Entrega deshecha').map(h=>({
+    deshechas = historialDe.filter(h=>h['Tipo']==='Entrega deshecha').map(h=>({
       hechoPor: h['Autor'], fecha: h['Fecha'], motivo: h['Motivo'] || '',
       detalleTexto: h['Detalle'] || ''
     }));
-    return {
-      id,
-      of: String(row['OF'] || ''),
-      proyecto: row['Proyecto'] || '',
-      subproyecto: row['Subproyecto'] || '',
-      cajas: Number(row['Cajas']) || 1,
-      fuera: parseFuera(row['Fuera de la caja']),
-      ubicaciones: parseUbicaciones(row['Ubicaciones']),
-      observaciones: row['Observaciones'] || '',
-      registradoPor: row['Registrado por'] || '',
-      fecha: row['Fecha'],
-      estado: row['Estado'] || 'pendiente',
-      entregas: entregasDe,
-      ediciones,
-      deshechas
-    };
-  });
+  } else {
+    // carga ligera: no se pidió Historial — se conserva lo que ya había en memoria
+    ediciones = previo ? previo.ediciones : [];
+    deshechas = previo ? previo.deshechas : [];
+  }
+  return {
+    id,
+    of: String(row['OF'] || ''),
+    proyecto: String(row['Proyecto'] || ''),
+    subproyecto: String(row['Subproyecto'] || ''),
+    cajas: Number(row['Cajas']) || 1,
+    fuera: parseFuera(row['Fuera de la caja']),
+    ubicaciones: parseUbicaciones(row['Ubicaciones']),
+    observaciones: row['Observaciones'] || '',
+    registradoPor: row['Registrado por'] || '',
+    fecha: row['Fecha'],
+    estado: row['Estado'] || 'pendiente',
+    entregas: entregasDe,
+    ediciones,
+    deshechas
+  };
+}
+
+function construirDB(datos){
+  const entregas = datos.entregas || [];
+  const historial = datos.historial || [];
+  return (datos.pickings || []).map(row=> construirPickingDesdeRow(row, entregas, historial));
 }
 
 function procesarDatos(datos){
@@ -897,7 +906,13 @@ async function actualizarPendientes(){
   const btn = document.getElementById('btnActualizarPendientes');
   if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
   try{
-    await sincronizar();
+    const res = await fetchConLimite(GAS_URL + '?ligero=1', {}, 25000);
+    const datos = await res.json();
+    const entregas = datos.entregas || [];
+    const anteriores = {};
+    DB.forEach(p=>{ anteriores[p.id] = p; });
+    DB = (datos.pickings || []).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
+    renderPendientes();
   } catch(err){
     toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
     renderPendientes();
@@ -1113,11 +1128,11 @@ async function confirmarEdicion(){
 
 /* ---------- pendientes en home ---------- */
 function compararPendientes(a,b){
-  const porProyecto = (a.proyecto||'').localeCompare(b.proyecto||'', 'es', {numeric:true, sensitivity:'base'});
+  const porProyecto = String(a.proyecto||'').localeCompare(String(b.proyecto||''), 'es', {numeric:true, sensitivity:'base'});
   if(porProyecto !== 0) return porProyecto;
-  const porOF = (a.of||'').localeCompare(b.of||'', 'es', {numeric:true, sensitivity:'base'});
+  const porOF = String(a.of||'').localeCompare(String(b.of||''), 'es', {numeric:true, sensitivity:'base'});
   if(porOF !== 0) return porOF;
-  return (a.subproyecto||'').localeCompare(b.subproyecto||'', 'es', {numeric:true, sensitivity:'base'});
+  return String(a.subproyecto||'').localeCompare(String(b.subproyecto||''), 'es', {numeric:true, sensitivity:'base'});
 }
 function renderPendientes(){
   const cont = document.getElementById('pendingList');
