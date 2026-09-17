@@ -1050,9 +1050,12 @@ async function ejecutarCrearPicking(datos){
   ir('home');
 
   try{
-    await llamarBackend('crearPicking', datos);
+    const resultado = await llamarBackend('crearPicking', datos);
+    if(resultado && resultado.ok === false){
+      toast('⚠️ No se guardó en la hoja: ' + (resultado.error || 'motivo desconocido'));
+    }
   } catch(err){
-    // no molestamos aquí; la sincronización de fondo ya se encarga
+    toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
   }
   sincronizar().catch(()=>{});
 }
@@ -1127,8 +1130,13 @@ async function confirmarEdicion(){
   abrirDetalle(p.id);
 
   try{
-    await llamarBackend('editarPicking', datosEnvio);
-  } catch(err){}
+    const resultado = await llamarBackend('editarPicking', datosEnvio);
+    if(resultado && resultado.ok === false){
+      toast('⚠️ No se guardó en la hoja: ' + (resultado.error || 'motivo desconocido'));
+    }
+  } catch(err){
+    toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
+  }
   sincronizar().catch(()=>{});
 }
 
@@ -1624,8 +1632,13 @@ async function confirmarBorrarPicking(id){
   ir('home');
 
   try{
-    await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
-  } catch(err){}
+    const resultado = await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
+    if(resultado && resultado.ok === false){
+      toast('⚠️ No se guardó en la hoja: ' + (resultado.error || 'motivo desconocido'));
+    }
+  } catch(err){
+    toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
+  }
   sincronizar().catch(()=>{});
 }
 
