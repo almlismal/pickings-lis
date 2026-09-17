@@ -455,7 +455,7 @@ async function llamarBackend(accion, datos){
   return res.json();
 }
 async function cargarDesdeSheet(){
-  const res = await fetchConLimite(GAS_URL, {}, 15000);
+  const res = await fetchConLimite(GAS_URL, {}, 25000);
   return res.json();
 }
 
@@ -899,7 +899,8 @@ async function actualizarPendientes(){
   try{
     await sincronizar();
   } catch(err){
-    toast('No se pudo actualizar — mostrando lo último guardado');
+    toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
+    renderPendientes();
   }
   if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
 }
