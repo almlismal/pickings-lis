@@ -433,25 +433,39 @@
    llamarBackend() y luego vuelve a sincronizar().
    ========================================================= */
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyiSDozSae43RlFazF5La-mRDJ1FkdjuEMCtaW5lcx3j9Tui9nrcgKHyjJI2f7nM-PTjA/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxAkEfLd0_xRtm_2b2uWUl0MdarkCwpQqcbVgoiW4KiVKuoxn6hAwo9tzLSKy4Ssww-Qw/exec';
 const LS_USER = 'pickings_lis_usuario';
 
-async function fetchConLimite(url, opciones, msLimite){
-  const controller = new AbortController();
-  const timeoutId = setTimeout(()=>controller.abort(), msLimite || 15000);
-  try{
-    const res = await fetch(url, { ...(opciones||{}), signal: controller.signal });
-    return res;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+function fetchConLimite(url, opciones, msLimite){
+  // Se usa XMLHttpRequest en vez de fetch(): Safari/iOS tiene un fallo
+  // conocido ("Load failed") al pedir URLs de Apps Script con fetch(),
+  // por cómo Google redirige internamente la petición. XHR no tiene ese problema.
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const metodo = (opciones && opciones.method) || 'GET';
+    xhr.open(metodo, url, true);
+    if (opciones && opciones.headers){
+      Object.keys(opciones.headers).forEach(k => xhr.setRequestHeader(k, opciones.headers[k]));
+    }
+    xhr.timeout = msLimite || 15000;
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300){
+        resolve({ json: () => Promise.resolve(JSON.parse(xhr.responseText)) });
+      } else {
+        reject(new Error('HTTP ' + xhr.status));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Load failed'));
+    xhr.ontimeout = () => reject(new Error('Tiempo de espera agotado'));
+    xhr.send((opciones && opciones.body) || null);
+  });
 }
 async function llamarBackend(accion, datos){
   const res = await fetchConLimite(GAS_URL, {
     method: 'POST',
     headers: {'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion, datos })
-  }, 15000);
+  }, 25000);
   return res.json();
 }
 async function cargarDesdeSheet(){
@@ -1053,9 +1067,16 @@ async function ejecutarCrearPicking(datos){
     const resultado = await llamarBackend('crearPicking', datos);
     if(resultado && resultado.ok === false){
       toast('⚠️ No se guardó en la hoja: ' + (resultado.error || 'motivo desconocido'));
+      DB = DB.filter(p=>p.id!==optimista.id);
+      refrescarPantalla();
+      return;
     }
   } catch(err){
     toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
+    DB = DB.filter(p=>p.id!==optimista.id);
+    refrescarPantalla();
+    // por si en realidad sí llegó a guardarse y solo falló la respuesta,
+    // la sincronización siguiente la vuelve a traer de verdad.
   }
   sincronizar().catch(()=>{});
 }
@@ -1635,9 +1656,13 @@ async function confirmarBorrarPicking(id){
     const resultado = await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
     if(resultado && resultado.ok === false){
       toast('⚠️ No se guardó en la hoja: ' + (resultado.error || 'motivo desconocido'));
+      DB.push(p);
+      refrescarPantalla();
     }
   } catch(err){
     toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
+    // no la reponemos aquí: puede que sí se borrara y solo fallara la
+    // respuesta — la sincronización siguiente deja el dato real, sea cual sea.
   }
   sincronizar().catch(()=>{});
 }
