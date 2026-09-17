@@ -522,10 +522,13 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
   };
 }
 
+function noEsEliminado(row){
+  return String(row['Eliminado']||'').trim().toLowerCase() !== 'sí';
+}
 function construirDB(datos){
   const entregas = datos.entregas || [];
   const historial = datos.historial || [];
-  return (datos.pickings || []).map(row=> construirPickingDesdeRow(row, entregas, historial));
+  return (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, historial));
 }
 
 function procesarDatos(datos){
@@ -911,7 +914,7 @@ async function actualizarPendientes(){
     const entregas = datos.entregas || [];
     const anteriores = {};
     DB.forEach(p=>{ anteriores[p.id] = p; });
-    DB = (datos.pickings || []).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
+    DB = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
     renderPendientes();
   } catch(err){
     toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
