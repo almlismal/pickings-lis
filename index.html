@@ -265,6 +265,10 @@
     display:inline-block; margin-top:5px; font-size:11px; font-weight:700;
     color: var(--accent); cursor:pointer;
   }
+  .link-action{
+    display:inline-block; font-size:12px; font-weight:700;
+    color: var(--accent); cursor:pointer; text-decoration:underline;
+  }
 
   .status-tag{
     display:inline-block; font-size:11px; font-weight:700;
@@ -1094,6 +1098,14 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
       refrescarPantalla();
       return;
     }
+    // Importante: en cuanto la hoja confirma, se reemplaza el ID provisional
+    // por el ID real — si no, entregar/editar/borrar de este picking fallarían
+    // (la hoja no reconoce el ID temporal) si se hace muy rápido tras registrarlo.
+    if(resultado && resultado.id){
+      const actual = DB.find(p=>p.id===optimista.id);
+      if(actual) actual.id = resultado.id;
+      if(ofEnDetalle === optimista.id) ofEnDetalle = resultado.id;
+    }
   } catch(err){
     toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
     DB = DB.filter(p=>p.id!==optimista.id);
@@ -1140,6 +1152,7 @@ function pedirMotivoEdicion(nuevo){
 async function confirmarEdicion(){
   const p = DB.find(x=>x.id===editingId);
   if(!p || !pendienteEdicion) return;
+  if(String(p.id).startsWith('tmp_')){ toast('Este picking se está guardando todavía — espera unos segundos y prueba otra vez'); return; }
   const motivo = document.getElementById('motivoEdicion').value.trim();
   const cambios = diffCambios(p, pendienteEdicion);
 
@@ -1441,18 +1454,34 @@ function historialAdminHtml(p){
   return edicionesHtmlOf(p) + deshechasHtmlOf(p);
 }
 
-let entregaItemsEstado = {};
+function escapeHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escapeAtributo(s){
+  return escapeHtml(s).replace(/"/g,'&quot;');
+}
 
-function entregar(tipo){
+let entregaItemsEstado = {};
+let entregaPorActivo = null; // null = quien tiene la sesión abierta; si no, nombre ya verificado con su PIN
+let entregaDraft = { a:'', nota:'' };
+
+function entregar(tipo, manteniendoEstado){
   const p = DB.find(x=>x.id===ofEnDetalle);
-  const nombres = cargarNombres();
-  let pillsPor = nombres.map(n=>`<span class="name-pill" data-role="por" onclick="seleccionarPill(this)">${n}</span>`).join('');
+
+  if(!manteniendoEstado){
+    entregaPorActivo = null;
+    entregaDraft = { a:'', nota:'' };
+    if(tipo==='parcial' && p){
+      entregaItemsEstado = {};
+      const items = ['Cajas', ...fueraActivas(p)];
+      items.forEach(it=> entregaItemsEstado[it] = 'sin');
+    }
+  }
+
+  const quienEntrega = entregaPorActivo || usuarioActual;
 
   let bloqueItems = '';
   if(tipo==='parcial' && p){
-    entregaItemsEstado = {};
-    const items = ['Cajas', ...fueraActivas(p)];
-    items.forEach(it=> entregaItemsEstado[it] = 'sin');
     bloqueItems = `
     <label>¿Qué incluye esta entrega?</label>
     <div class="hint" style="margin:0 0 10px;">Toca cada ítem para marcar si queda entregado parcial o todo entregado.</div>
@@ -1467,16 +1496,16 @@ function entregar(tipo){
   let html = `
     <h3>${tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</h3>
     <label>¿Quién entrega?</label>
-    <div id="pillsPor">${pillsPor}</div>
-    <input type="text" id="entregaPorManual" placeholder="O escribe el nombre">
+    <div class="hint" style="margin:0 0 4px;">La entrega queda registrada a nombre de: <b>${quienEntrega}</b>${entregaPorActivo ? ' (verificado con su PIN)' : ''}</div>
+    <div class="hint" style="margin:0 0 14px;"><span class="link-action" onclick="abrirCambioEntregaPor('${tipo}')">¿Entrega otra persona? Cambiar</span></div>
 
     <label>¿A quién de DHV se entrega?</label>
-    <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" oninput="actualizarTextoFirma()">
+    <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="actualizarTextoFirma()">
 
     ${bloqueItems}
 
     ${tipo==='parcial' ? `<label>Observaciones</label>
-    <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar"></textarea>` : ''}
+    <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar">${escapeHtml(entregaDraft.nota)}</textarea>` : ''}
 
     <div class="sign-banner">
       <label>
@@ -1489,6 +1518,57 @@ function entregar(tipo){
   `;
   mostrarSheet(html);
   if(tipo==='parcial' && p) renderEntregaItems();
+  actualizarTextoFirma();
+  toggleBtnEntrega();
+}
+
+function guardarBorradorEntrega(){
+  const campoA = document.getElementById('entregaA');
+  const campoNota = document.getElementById('entregaNota');
+  if(campoA) entregaDraft.a = campoA.value.trim();
+  if(campoNota) entregaDraft.nota = campoNota.value.trim();
+}
+
+function abrirCambioEntregaPor(tipo){
+  guardarBorradorEntrega();
+  const nombres = cargarNombres().filter(n=>n!==usuarioActual);
+  if(!nombres.length){ toast('No hay más nombres guardados'); return; }
+  const pills = nombres.map(n=>`<span class="name-pill" onclick="pedirPinEntregaOtro('${n.replace(/'/g,"\\'")}','${tipo}')">${n}</span>`).join('');
+  mostrarSheet(`
+    <h3>¿Quién entrega de verdad?</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Selecciona a la persona — se le pedirá su PIN para confirmar que es ella.</p>
+    <div>${pills}</div>
+    <button class="btn btn-outline" onclick="entregar('${tipo}', true)">Cancelar</button>
+  `);
+}
+
+function pedirPinEntregaOtro(nombre, tipo){
+  const guardado = pinDeUsuario(nombre);
+  if(!guardado){
+    toast(nombre + ' no tiene un PIN configurado todavía — que lo configure primero desde su móvil');
+    entregar(tipo, true);
+    return;
+  }
+  mostrarSheet(`
+    <h3>PIN de ${nombre}</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Que ${nombre} introduzca su PIN para confirmar que la entrega es suya.</p>
+    <input type="text" id="pinEntregaOtro" inputmode="numeric" placeholder="PIN" maxlength="4"
+      oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
+    <button class="btn btn-primary" onclick="validarPinEntregaOtro('${nombre.replace(/'/g,"\\'")}','${tipo}')">Entrar</button>
+    <button class="btn btn-outline" onclick="entregar('${tipo}', true)">Cancelar</button>
+  `);
+}
+
+function validarPinEntregaOtro(nombre, tipo){
+  const val = document.getElementById('pinEntregaOtro').value.trim();
+  const guardado = pinDeUsuario(nombre);
+  if(guardado && val === guardado){
+    entregaPorActivo = nombre;
+    entregar(tipo, true);
+    toast('Entrega a nombre de ' + nombre);
+  } else {
+    toast('PIN incorrecto');
+  }
 }
 
 function renderEntregaItems(){
@@ -1542,17 +1622,12 @@ function actualizarTextoFirma(){
   if(span) span.textContent = nombre || 'la persona de DHV';
 }
 
-function seleccionarPill(el){
-  document.querySelectorAll('#pillsPor .name-pill').forEach(p=>p.classList.remove('sel'));
-  el.classList.add('sel');
-  document.getElementById('entregaPorManual').value = el.textContent;
-}
-
 async function confirmarEntrega(tipo){
   try{
     const p = DB.find(x=>x.id===ofEnDetalle);
     if(!p){ toast('No se encontró la OF, vuelve a abrirla'); return; }
-    const por = document.getElementById('entregaPorManual').value.trim() || usuarioActual;
+    if(String(p.id).startsWith('tmp_')){ toast('Este picking se está guardando todavía — espera unos segundos y prueba otra vez'); return; }
+    const por = entregaPorActivo || usuarioActual;
     const a = document.getElementById('entregaA').value.trim();
     let nota = tipo==='parcial' ? document.getElementById('entregaNota').value.trim() : '';
     const firmaConfirmada = document.getElementById('confirmFirma').checked;
@@ -1610,6 +1685,7 @@ async function confirmarDeshacerEntrega(){
   const { pid, idx } = pendienteDeshacer;
   const p = DB.find(x=>x.id===pid);
   if(!p) return;
+  if(String(p.id).startsWith('tmp_')){ toast('Este picking se está guardando todavía — espera unos segundos y prueba otra vez'); return; }
   const motivo = document.getElementById('motivoDeshacer').value.trim();
   if(!motivo){ toast('Escribe el motivo'); return; }
 
@@ -1665,6 +1741,7 @@ async function confirmarBorrarPicking(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
   if(!puedeGestionar(p)){ toast('No tienes permiso para borrar este picking'); return; }
+  if(String(p.id).startsWith('tmp_')){ toast('Este picking se está guardando todavía — espera unos segundos y prueba otra vez'); return; }
   const motivo = document.getElementById('motivoBorrado').value.trim();
   if(!motivo){ toast('Escribe el motivo'); return; }
 
