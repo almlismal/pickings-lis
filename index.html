@@ -895,9 +895,9 @@ function confirmarAnadirUbicacion(){
   renderUbicacionPills();
   toast('Añadido: ' + val);
 }
-function resetFormRegistro(){
+function resetFormRegistro(mantenerProyecto){
   document.getElementById('f_of').value = '';
-  document.getElementById('f_proyecto').value = '';
+  if(!mantenerProyecto) document.getElementById('f_proyecto').value = '';
   document.getElementById('f_subproyecto').value = '';
   document.getElementById('f_cajas').value = 1;
   document.getElementById('f_obs').value = '';
@@ -915,6 +915,21 @@ function nuevoPicking(){
   document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
   // Se sincroniza por detrás mientras se rellena el formulario, así el
   // aviso de OF duplicada usa datos frescos sin haber hecho esperar al abrir.
+  sincronizar().catch(()=>{});
+}
+
+function continuarMismoProyecto(proyecto){
+  // Tras registrar una OF, deja el formulario listo para la siguiente
+  // caja/OF del mismo proyecto sin tener que volver a escribirlo.
+  // El subproyecto (FM) no se conserva porque suele cambiar de una OF a otra.
+  editingId = null;
+  ir('registro');
+  resetFormRegistro(true);
+  document.getElementById('f_proyecto').value = proyecto || '';
+  document.getElementById('formTitle').textContent = 'Registrar picking';
+  document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+  const campoOf = document.getElementById('f_of');
+  if(campoOf) campoOf.focus();
   sincronizar().catch(()=>{});
 }
 
@@ -970,6 +985,7 @@ async function guardarPicking(){
   const obs = document.getElementById('f_obs').value.trim();
 
   if(!of){ toast('Falta el número de OF'); return; }
+  if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
   const itemsFaltan = itemsParaUbicar().filter(it=>!ubicacionesSeleccion[it]);
   if(itemsFaltan.length){ toast('Falta elegir dónde va: ' + itemsFaltan.join(', ')); return; }
 
@@ -1005,12 +1021,13 @@ function mostrarConfirmacionRegistro(datos){
       Proyecto <b style="color:var(--ink);">${datos.proyecto || '—'}</b>${datos.subproyecto ? ` · FM <b style="color:var(--ink);">${datos.subproyecto}</b>` : ''}
     </p>
     <p style="font-size:12px; color:var(--ink-soft); text-align:center; margin:10px 0 4px;">Revisa bien el número de OF antes de confirmar.</p>
-    <button class="btn btn-primary" onclick="confirmarPasoRegistro()">✓ Está bien, registrar</button>
+    <button class="btn btn-primary" onclick="confirmarPasoRegistro(false)">✓ Está bien, registrar</button>
+    <button class="btn btn-outline" onclick="confirmarPasoRegistro(true)">➕ Registrar y añadir otra OF de este proyecto</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Revisar datos</button>
   `);
 }
 
-function confirmarPasoRegistro(){
+function confirmarPasoRegistro(continuarMismoProy){
   if(!pendienteRegistro) return;
   const datos = pendienteRegistro;
   cerrarSheet();
@@ -1018,6 +1035,7 @@ function confirmarPasoRegistro(){
   const ofNormalizada = datos.of.trim().toLowerCase();
   const existente = DB.find(p=>p.of.trim().toLowerCase()===ofNormalizada);
   if(existente){
+    pendienteRegistro._continuar = continuarMismoProy;
     mostrarSheet(`
       <h3>⚠️ Esta OF ya está registrada</h3>
       <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
@@ -1031,7 +1049,7 @@ function confirmarPasoRegistro(){
     return;
   }
 
-  ejecutarCrearPicking(datos);
+  ejecutarCrearPicking(datos, continuarMismoProy);
   pendienteRegistro = null;
 }
 
@@ -1041,11 +1059,12 @@ async function confirmarRegistroDuplicado(){
   if(!motivo) return;
   pendienteRegistro.observaciones = `[OF repetida — ${motivo}] ${pendienteRegistro.observaciones || ''}`.trim();
   cerrarSheet();
-  await ejecutarCrearPicking(pendienteRegistro);
+  const continuarMismoProy = pendienteRegistro._continuar;
+  await ejecutarCrearPicking(pendienteRegistro, continuarMismoProy);
   pendienteRegistro = null;
 }
 
-async function ejecutarCrearPicking(datos){
+async function ejecutarCrearPicking(datos, continuarMismoProy){
   // Aparece en Inicio al instante; el guardado real va por detrás.
   const optimista = {
     id: idTemporal(),
@@ -1061,7 +1080,11 @@ async function ejecutarCrearPicking(datos){
   };
   DB.unshift(optimista);
   toast('Picking registrado');
-  ir('home');
+  if(continuarMismoProy){
+    continuarMismoProyecto(datos.proyecto);
+  } else {
+    ir('home');
+  }
 
   try{
     const resultado = await llamarBackend('crearPicking', datos);
