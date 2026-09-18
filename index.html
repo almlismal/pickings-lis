@@ -402,6 +402,7 @@
     <div id="buscarResultado" style="margin-top:20px;"></div>
 
     <button class="btn btn-outline" onclick="ir('pendientes')" style="margin-top:28px;">📋 Ver pendientes de entrega</button>
+    <button class="btn btn-outline" id="btnVerEntregados" onclick="ir('entregados')" style="margin-top:10px; display:none;">📦 Ver entregados</button>
   </section>
 
   <!-- ============ PENDIENTES ============ -->
@@ -413,6 +414,18 @@
     <button class="btn btn-outline" onclick="actualizarPendientes()" id="btnActualizarPendientes">🔄 Actualizar</button>
     <div class="pending-strip">
       <div id="pendingList"></div>
+    </div>
+  </section>
+
+  <!-- ============ ENTREGADOS (solo administradores) ============ -->
+  <section class="screen" id="screen-entregados">
+    <div class="screen-title">
+      <button class="back" onclick="ir('buscar')">←</button>
+      <h2>Entregados</h2>
+    </div>
+    <button class="btn btn-outline" onclick="actualizarEntregados()" id="btnActualizarEntregados">🔄 Actualizar</button>
+    <div class="pending-strip">
+      <div id="entregadosList"></div>
     </div>
   </section>
 
@@ -543,22 +556,69 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
 function noEsEliminado(row){
   return String(row['Eliminado']||'').trim().toLowerCase() !== 'sí';
 }
+
+/* ---------- caché local: para que Pendientes/Entregados/usuarios se vean
+   al instante al abrir la app, sin esperar a la hoja — y se actualicen
+   solas de fondo cada vez que se entra a esas pantallas, no solo con el
+   botón Actualizar. ---------- */
+const LS_CACHE_PICKINGS = 'pickings_lis_cache_pickings_v1';
+const LS_CACHE_ENTREGAS = 'pickings_lis_cache_entregas_v1';
+const LS_CACHE_ENTREGADOS = 'pickings_lis_cache_entregados_v1';
+const LS_CACHE_USUARIOS = 'pickings_lis_cache_usuarios_v1';
+
+function guardarCachePendientes(pickings, entregas){
+  try{
+    localStorage.setItem(LS_CACHE_PICKINGS, JSON.stringify(pickings||[]));
+    localStorage.setItem(LS_CACHE_ENTREGAS, JSON.stringify(entregas||[]));
+  } catch(e){}
+}
+function cargarCachePendientes(){
+  try{
+    const pickings = JSON.parse(localStorage.getItem(LS_CACHE_PICKINGS));
+    if(!pickings) return null;
+    const entregas = JSON.parse(localStorage.getItem(LS_CACHE_ENTREGAS)) || [];
+    return { pickings, entregas };
+  } catch(e){ return null; }
+}
+function guardarCacheEntregados(lista){
+  try{ localStorage.setItem(LS_CACHE_ENTREGADOS, JSON.stringify(lista||[])); } catch(e){}
+}
+function cargarCacheEntregados(){
+  try{ return JSON.parse(localStorage.getItem(LS_CACHE_ENTREGADOS)) || null; } catch(e){ return null; }
+}
+function guardarCacheUsuarios(lista){
+  try{ localStorage.setItem(LS_CACHE_USUARIOS, JSON.stringify(lista||[])); } catch(e){}
+}
+function cargarCacheUsuarios(){
+  try{ return JSON.parse(localStorage.getItem(LS_CACHE_USUARIOS)) || null; } catch(e){ return null; }
+}
+
 async function cargarLigeroYActualizarDB(){
   const res = await fetchConLimite(GAS_URL + '?ligero=1', {}, 25000);
   const datos = await res.json();
   const entregas = datos.entregas || [];
   const anteriores = {};
   DB.forEach(p=>{ anteriores[p.id] = p; });
+  guardarCachePendientes(datos.pickings, entregas);
   DB = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
 }
 function construirDB(datos){
   const entregas = datos.entregas || [];
   const historial = datos.historial || [];
+  guardarCachePendientes(datos.pickings, entregas);
   return (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, historial));
+}
+async function cargarEntregadosYActualizar(){
+  const res = await fetchConLimite(GAS_URL + '?entregadosLigero=1', {}, 25000);
+  const datos = await res.json();
+  entregadosCache = datos.entregados || [];
+  guardarCacheEntregados(entregadosCache);
 }
 
 function procesarDatos(datos){
   usuariosRemotos = datos.usuarios || [];
+  guardarCacheUsuarios(usuariosRemotos);
+  actualizarVisibilidadAdmin();
   DB = construirDB(datos);
 
   if(usuarioActual && !usuariosRemotos.some(u=>normalizarNombre(u['Nombre'])===normalizarNombre(usuarioActual))){
@@ -582,6 +642,7 @@ function refrescarPantalla(){
     if(v) buscarOF();
   }
   if(activa.id === 'screen-pendientes') renderPendientes();
+  if(activa.id === 'screen-entregados') renderEntregados();
   if(activa.id === 'screen-detalle' && ofEnDetalle){
     const p = DB.find(x=>x.id===ofEnDetalle);
     if(p) document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
@@ -620,6 +681,7 @@ function pinDeUsuario(nombre){
 
 let DB = [];
 let usuariosRemotos = [];
+let entregadosCache = [];
 let usuarioActual = localStorage.getItem(LS_USER) || '';
 let fueraSeleccion = {};
 let ofEnDetalle = null;
@@ -629,6 +691,22 @@ let pendienteDeshacer = null;
 let ubicacionesSeleccion = {};
 let itemPendienteUbicacion = null;
 let adminUnlocked = false;
+
+// Al cargar la página, se rellena todo con lo último que quedó guardado
+// en el móvil — así se ve al instante, incluso antes de hablar con la
+// hoja. iniciar() lo actualiza de fondo enseguida.
+(function cargarDesdeCacheLocal(){
+  const cacheUsuarios = cargarCacheUsuarios();
+  if(cacheUsuarios) usuariosRemotos = cacheUsuarios;
+  const cachePendientes = cargarCachePendientes();
+  if(cachePendientes){
+    DB = (cachePendientes.pickings || []).filter(noEsEliminado)
+      .map(row=> construirPickingDesdeRow(row, cachePendientes.entregas || [], null));
+  }
+  const cacheEntregados = cargarCacheEntregados();
+  if(cacheEntregados) entregadosCache = cacheEntregados;
+  actualizarVisibilidadAdmin();
+})();
 
 function abrirConfigurarPin(){
   if(!usuarioActual){ toast('Primero identifícate con tu nombre'); return; }
@@ -734,6 +812,12 @@ function ir(pantalla){
   document.getElementById('screen-'+pantalla).classList.add('active');
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
+  if(pantalla==='entregados') entrarAEntregados();
+}
+
+function actualizarVisibilidadAdmin(){
+  const btn = document.getElementById('btnVerEntregados');
+  if(btn) btn.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
 }
 
 function toast(msg){
@@ -760,7 +844,7 @@ function abrirCambioUsuario(forzado){
     <label>Añadir nombre nuevo</label>
     <input type="text" id="nuevoNombre" placeholder="Nombre y apellido">
     <button class="btn btn-primary" onclick="anadirNombre()">Guardar y usar</button>
-    ${(usuarioActual && !forzado && esAdminSheet(usuarioActual)) ? `<button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>` : ''}
+    ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>` : ''}
     ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="cerrarSesion()" style="color:#B33A3A; border-color:#B33A3A;">Cerrar sesión</button>` : ''}`;
   mostrarSheet(html, !!forzado);
 }
@@ -769,6 +853,7 @@ function cerrarSesion(){
   localStorage.removeItem(LS_USER);
   adminUnlocked = false;
   actualizarChipUsuario();
+  actualizarVisibilidadAdmin();
   cerrarSheet();
   toast('Sesión cerrada');
   setTimeout(()=>abrirCambioUsuario(true), 300);
@@ -777,6 +862,7 @@ function elegirUsuario(n){
   usuarioActual = n;
   localStorage.setItem(LS_USER, n);
   actualizarChipUsuario();
+  actualizarVisibilidadAdmin();
   cerrarSheet();
   if(esAdminSheet(n) && !pinDeUsuario(n)){
     setTimeout(abrirConfigurarPinObligatorio, 200);
@@ -940,10 +1026,14 @@ function continuarMismoProyecto(proyecto){
 function entrarABuscar(){
   document.getElementById('buscarInput').value = '';
   document.getElementById('buscarResultado').innerHTML = '';
+  actualizarVisibilidadAdmin();
 }
 
 function entrarAPendientes(){
+  // Se ve al instante con lo que ya hay en el móvil, y de fondo se
+  // actualiza sola — no hace falta tocar "Actualizar" cada vez que se entra.
   renderPendientes();
+  cargarLigeroYActualizarDB().then(renderPendientes).catch(()=>{});
 }
 
 async function actualizarPendientes(){
@@ -957,6 +1047,45 @@ async function actualizarPendientes(){
     renderPendientes();
   }
   if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+}
+
+function entrarAEntregados(){
+  renderEntregados();
+  cargarEntregadosYActualizar().then(renderEntregados).catch(()=>{});
+}
+
+async function actualizarEntregados(){
+  const btn = document.getElementById('btnActualizarEntregados');
+  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  try{
+    await cargarEntregadosYActualizar();
+    renderEntregados();
+  } catch(err){
+    toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
+    renderEntregados();
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+}
+
+function renderEntregados(){
+  const cont = document.getElementById('entregadosList');
+  if(!cont) return;
+  if(!entregadosCache.length){
+    cont.innerHTML = `<div class="empty">No hay pickings entregados todavía</div>`;
+    return;
+  }
+  const ordenados = [...entregadosCache].sort((a,b)=> new Date(b['Fecha de entrega']) - new Date(a['Fecha de entrega']));
+  cont.innerHTML = ordenados.map(r=>`
+    <div class="ticket">
+      <div class="ticket-top">
+        <span class="ticket-of">OF ${r['OF']}</span>
+        <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
+      </div>
+      <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
+      <div class="ticket-meta"><span class="chip done">Entregado</span></div>
+      <div class="hint" style="margin-top:8px;">${r['Entregado por']} se lo entregó a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
+    </div>
+  `).join('');
 }
 
 function abrirEdicion(id){
@@ -1786,8 +1915,10 @@ async function iniciar(){
   // hacer nada. No interrumpe si hay un formulario o ventana abiertos.
   setInterval(()=>{
     if(document.getElementById('sheetOverlay')) return;
-    if(document.querySelector('.screen.active')?.id === 'screen-registro') return;
+    const activa = document.querySelector('.screen.active')?.id;
+    if(activa === 'screen-registro') return;
     sincronizar().catch(()=>{});
+    if(activa === 'screen-entregados') cargarEntregadosYActualizar().then(renderEntregados).catch(()=>{});
   }, 20000);
   document.addEventListener('visibilitychange', ()=>{
     if(document.visibilityState === 'visible'){ sincronizar().catch(()=>{}); }
