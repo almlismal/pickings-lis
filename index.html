@@ -108,6 +108,17 @@
   .chip.on{ border-color:var(--accent); color:var(--accent); font-weight:600; }
   .chip.attn{ background:var(--warn-bg); border-color:var(--warn-edge); color:var(--warn-ink); font-weight:600; }
   .chip.done{ background:var(--ok); border-color:var(--ok); color:#fff; font-weight:600; }
+  .chip.err{ background:#F7E4E0; border-color:#D9856F; color:#8A3319; font-weight:600; cursor:pointer; }
+
+  .pending-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--warn-bg); color:var(--warn-ink); border-bottom:1px solid var(--warn-edge);
+    padding:9px 16px; font-size:13px; font-weight:600;
+  }
+  .pending-banner button{
+    background:none; border:none; color:var(--warn-ink); text-decoration:underline;
+    font-size:13px; font-weight:700; padding:2px; cursor:pointer; white-space:nowrap;
+  }
 
   .empty{
     text-align:center; color:var(--ink-soft); font-size:13px;
@@ -336,6 +347,11 @@
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
+<div id="pending-sync-banner" class="pending-banner" style="display:none;">
+  <span id="pending-sync-text"></span>
+  <button type="button" onclick="reintentarTodo()">Reintentar</button>
+</div>
+
 <main>
 
   <!-- ============ HOME ============ -->
@@ -549,7 +565,8 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
     estado: row['Estado'] || 'pendiente',
     entregas: entregasDe,
     ediciones,
-    deshechas
+    deshechas,
+    sync: 'ok', syncError: ''
   };
 }
 
@@ -593,6 +610,47 @@ function cargarCacheUsuarios(){
   try{ return JSON.parse(localStorage.getItem(LS_CACHE_USUARIOS)) || null; } catch(e){ return null; }
 }
 
+/* ---------- trabajo sin conexión: la app manda en el móvil ----------
+   Cada picking guarda su propio estado (p.sync: 'ok' | 'pendiente' | 'error')
+   y todo el DB se guarda tal cual en el móvil en cada cambio — así se puede
+   registrar, editar, entregar, deshacer y borrar sin esperar a la hoja, igual
+   que en la app de Fungibles. Las operaciones que aún no se confirmaron van
+   en colaSync y se reintentan solas (y a mano, con "Reintentar"). ---------- */
+const LS_DB_LOCAL = 'pickings_lis_db_local_v1';
+const LS_COLA_SYNC = 'pickings_lis_cola_sync_v1';
+
+function guardarDBLocal(){
+  try{ localStorage.setItem(LS_DB_LOCAL, JSON.stringify(DB)); } catch(e){}
+}
+function cargarDBLocalGuardado(){
+  try{ return JSON.parse(localStorage.getItem(LS_DB_LOCAL)) || null; } catch(e){ return null; }
+}
+function guardarColaSync(){
+  try{ localStorage.setItem(LS_COLA_SYNC, JSON.stringify(colaSync)); } catch(e){}
+}
+function cargarColaSyncGuardada(){
+  try{ return JSON.parse(localStorage.getItem(LS_COLA_SYNC)) || []; } catch(e){ return []; }
+}
+
+// Al traer datos frescos de la hoja, un picking con una operación todavía sin
+// confirmar (colaSync) se queda con SU versión local — si no, un refresco de
+// fondo podría borrar un cambio hecho sin conexión antes de que llegara a subirse.
+function fusionarConPendientes(nuevaDB){
+  const idsConPendiente = new Set(colaSync.map(op=>op.pickingId));
+  const resultado = nuevaDB.map(servidorP=>{
+    if(idsConPendiente.has(servidorP.id)){
+      const local = DB.find(p=>p.id===servidorP.id);
+      if(local) return local;
+    }
+    return servidorP;
+  });
+  // pickings registrados en este móvil que la hoja todavía no tiene (siguen con ID provisional)
+  DB.filter(p=> String(p.id).startsWith('tmp_')).forEach(p=>{
+    if(!resultado.some(x=>x.id===p.id)) resultado.unshift(p);
+  });
+  return resultado;
+}
+
 async function cargarLigeroYActualizarDB(){
   const res = await fetchConLimite(GAS_URL + '?ligero=1', {}, 25000);
   const datos = await res.json();
@@ -600,13 +658,16 @@ async function cargarLigeroYActualizarDB(){
   const anteriores = {};
   DB.forEach(p=>{ anteriores[p.id] = p; });
   guardarCachePendientes(datos.pickings, entregas);
-  DB = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
+  const nueva = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
+  DB = fusionarConPendientes(nueva);
+  guardarDBLocal();
 }
 function construirDB(datos){
   const entregas = datos.entregas || [];
   const historial = datos.historial || [];
   guardarCachePendientes(datos.pickings, entregas);
-  return (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, historial));
+  const nueva = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, historial));
+  return fusionarConPendientes(nueva);
 }
 async function cargarEntregadosYActualizar(){
   const res = await fetchConLimite(GAS_URL + '?entregadosLigero=1', {}, 25000);
@@ -620,6 +681,7 @@ function procesarDatos(datos){
   guardarCacheUsuarios(usuariosRemotos);
   actualizarVisibilidadAdmin();
   DB = construirDB(datos);
+  guardarDBLocal();
 
   if(usuarioActual && !usuariosRemotos.some(u=>normalizarNombre(u['Nombre'])===normalizarNombre(usuarioActual))){
     usuarioActual = '';
@@ -661,11 +723,13 @@ const FUERA_BASE = ['Plantillas','Perfiles','Cables'];
 const LS_EXTRAS_UBIC = 'pickings_lis_extras_ubicacion';
 const UBICACION_BASE = ['Carpa','Almacén','Estantería de perfiles','Estantería de plantillas','Sala limpia'];
 
-function claveNombre(n){
-  return (n||'').trim().toLowerCase();
-}
+// Compara nombres ignorando may\u00fasculas/min\u00fasculas Y tildes, para que d\u00e9
+// igual c\u00f3mo lo escriba cada uno ("Mar\u00eda", "maria", "MARIA" son la misma persona).
 function normalizarNombre(s){
   return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+function claveNombre(n){
+  return normalizarNombre(n);
 }
 function esAdminSheet(nombre){
   const u = usuariosRemotos.find(x=>claveNombre(x['Nombre'])===claveNombre(nombre));
@@ -691,22 +755,166 @@ let pendienteDeshacer = null;
 let ubicacionesSeleccion = {};
 let itemPendienteUbicacion = null;
 let adminUnlocked = false;
+let colaSync = [];
+let mapaIdsReales = {};
 
 // Al cargar la página, se rellena todo con lo último que quedó guardado
 // en el móvil — así se ve al instante, incluso antes de hablar con la
-// hoja. iniciar() lo actualiza de fondo enseguida.
+// hoja. iniciar() lo actualiza de fondo enseguida. El DB local (con
+// cualquier cambio hecho sin conexión) manda sobre la caché "cruda" de
+// filas de la hoja, que solo se usa si todavía no hay nada local guardado.
 (function cargarDesdeCacheLocal(){
   const cacheUsuarios = cargarCacheUsuarios();
   if(cacheUsuarios) usuariosRemotos = cacheUsuarios;
-  const cachePendientes = cargarCachePendientes();
-  if(cachePendientes){
-    DB = (cachePendientes.pickings || []).filter(noEsEliminado)
-      .map(row=> construirPickingDesdeRow(row, cachePendientes.entregas || [], null));
+
+  colaSync = cargarColaSyncGuardada();
+
+  const dbLocal = cargarDBLocalGuardado();
+  if(dbLocal && dbLocal.length){
+    DB = dbLocal;
+  } else {
+    const cachePendientes = cargarCachePendientes();
+    if(cachePendientes){
+      DB = (cachePendientes.pickings || []).filter(noEsEliminado)
+        .map(row=> construirPickingDesdeRow(row, cachePendientes.entregas || [], null));
+    }
   }
+
   const cacheEntregados = cargarCacheEntregados();
   if(cacheEntregados) entregadosCache = cacheEntregados;
   actualizarVisibilidadAdmin();
 })();
+
+/* ---------- motor de la cola de sincronización ---------- */
+
+function encolarOperacion(accion, datos, pickingId, etiqueta){
+  const op = {
+    id: 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    accion, datos, pickingId, etiqueta,
+    creadoEn: new Date().toISOString()
+  };
+  colaSync.push(op);
+  guardarColaSync();
+  const p = DB.find(x=>x.id===pickingId);
+  if(p){ p.sync = 'pendiente'; p.syncError = ''; }
+  guardarDBLocal();
+  renderPendingBanner();
+  procesarColaSync().catch(()=>{});
+  return op.id;
+}
+
+// Si un picking se creó sin conexión (ID provisional tmp_...) y luego se le
+// hicieron más cosas (editarlo, entregarlo…) antes de que la hoja confirmara
+// el alta, esas operaciones siguientes se reescriben con el ID real en
+// cuanto se conoce, para que no fallen al enviarlas.
+function reescribirIdsReales(op){
+  const real = mapaIdsReales[op.pickingId];
+  if(!real) return;
+  op.pickingId = real;
+  if(op.datos){
+    if(op.datos.id) op.datos.id = real;
+    if(op.datos.pickingId) op.datos.pickingId = real;
+  }
+}
+
+function aplicarConfirmacionOperacion(op, resultado){
+  if(op.accion === 'crearPicking' && resultado && resultado.id){
+    mapaIdsReales[op.pickingId] = resultado.id;
+    const p = DB.find(x=>x.id===op.pickingId);
+    if(p) p.id = resultado.id;
+    if(ofEnDetalle === op.pickingId) ofEnDetalle = resultado.id;
+    if(editingId === op.pickingId) editingId = resultado.id;
+    // reescribe ya mismo las operaciones hermanas que sigan en cola
+    colaSync.forEach(o=>{ if(o.id !== op.id) reescribirIdsReales(o); });
+  }
+  if(op.accion === 'borrarPicking'){
+    DB = DB.filter(p=>p.id!==op.pickingId);
+  }
+}
+
+let sincronizandoCola = false;
+async function procesarColaSync(){
+  if(sincronizandoCola) return;
+  sincronizandoCola = true;
+  try{
+    for(const op of [...colaSync]){
+      if(!colaSync.find(x=>x.id===op.id)) continue; // ya se quitó mientras tanto
+      reescribirIdsReales(op);
+      const p = DB.find(x=>x.id===op.pickingId);
+      try{
+        const resultado = await llamarBackend(op.accion, op.datos);
+        if(resultado && resultado.ok === false){
+          if(p){ p.sync = 'error'; p.syncError = resultado.error || 'Error desconocido'; }
+          guardarDBLocal();
+          continue;
+        }
+        aplicarConfirmacionOperacion(op, resultado);
+        colaSync = colaSync.filter(x=>x.id!==op.id);
+        guardarColaSync();
+        if(p && !colaSync.some(o=>o.pickingId===p.id)){ p.sync = 'ok'; p.syncError = ''; }
+        guardarDBLocal();
+      } catch(err){
+        if(p){ p.sync = 'error'; p.syncError = (err && err.message) ? err.message : 'No se pudo conectar'; }
+        guardarDBLocal();
+        break; // probablemente no hay conexión — no seguimos fallando el resto ahora mismo
+      }
+    }
+  } finally {
+    sincronizandoCola = false;
+    refrescarPantalla();
+    renderPendingBanner();
+  }
+}
+
+async function reintentarTodo(){
+  if(colaSync.length===0) return;
+  toast('Reintentando ' + colaSync.length + (colaSync.length===1 ? ' cambio…' : ' cambios…'));
+  await procesarColaSync();
+}
+
+async function reintentarPicking(id){
+  const ops = colaSync.filter(o=>o.pickingId===id);
+  if(!ops.length){ toast('No hay nada pendiente para esta OF'); return; }
+  toast('Reintentando…');
+  for(const op of ops){
+    reescribirIdsReales(op);
+    const p = DB.find(x=>x.id===op.pickingId);
+    try{
+      const resultado = await llamarBackend(op.accion, op.datos);
+      if(resultado && resultado.ok === false){
+        if(p){ p.sync = 'error'; p.syncError = resultado.error || 'Error desconocido'; }
+      } else {
+        aplicarConfirmacionOperacion(op, resultado);
+        colaSync = colaSync.filter(x=>x.id!==op.id);
+        guardarColaSync();
+        if(p && !colaSync.some(o2=>o2.pickingId===p.id)){ p.sync = 'ok'; p.syncError = ''; }
+      }
+    } catch(err){
+      if(p){ p.sync = 'error'; p.syncError = (err && err.message) ? err.message : 'No se pudo conectar'; }
+    }
+  }
+  guardarDBLocal();
+  refrescarPantalla();
+  renderPendingBanner();
+}
+
+function renderPendingBanner(){
+  const banner = document.getElementById('pending-sync-banner');
+  if(!banner) return;
+  const n = colaSync.length;
+  if(n === 0){ banner.style.display = 'none'; return; }
+  banner.style.display = 'flex';
+  const texto = document.getElementById('pending-sync-text');
+  if(texto) texto.textContent = '⚠️ ' + n + (n===1 ? ' cambio sin sincronizar' : ' cambios sin sincronizar');
+}
+
+function syncBadgeHtml(p){
+  const s = p.sync || 'ok';
+  if(s === 'ok') return '';
+  if(s === 'pendiente') return `<span class="chip">⏳ enviando…</span>`;
+  return `<span class="chip err" onclick="event.stopPropagation(); reintentarPicking('${p.id}')" title="${escapeAtributo(p.syncError||'')}">⚠️ Sin sincronizar — reintentar</span>`;
+}
+renderPendingBanner();
 
 function abrirConfigurarPin(){
   if(!usuarioActual){ toast('Primero identifícate con tu nombre'); return; }
@@ -1209,9 +1417,11 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
     registradoPor: datos.registradoPor,
     fecha: datos.fecha,
     estado: 'pendiente',
-    entregas: [], ediciones: [], deshechas: []
+    entregas: [], ediciones: [], deshechas: [],
+    sync: 'pendiente', syncError: ''
   };
   DB.unshift(optimista);
+  guardarDBLocal();
   toast('Picking registrado');
   if(continuarMismoProy){
     continuarMismoProyecto(datos.proyecto);
@@ -1219,30 +1429,7 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
     ir('home');
   }
 
-  try{
-    const resultado = await llamarBackend('crearPicking', datos);
-    if(resultado && resultado.ok === false){
-      toast('⚠️ No se guardó en la hoja: ' + (resultado.error || 'motivo desconocido'));
-      DB = DB.filter(p=>p.id!==optimista.id);
-      refrescarPantalla();
-      return;
-    }
-    // Importante: en cuanto la hoja confirma, se reemplaza el ID provisional
-    // por el ID real — si no, entregar/editar/borrar de este picking fallarían
-    // (la hoja no reconoce el ID temporal) si se hace muy rápido tras registrarlo.
-    if(resultado && resultado.id){
-      const actual = DB.find(p=>p.id===optimista.id);
-      if(actual) actual.id = resultado.id;
-      if(ofEnDetalle === optimista.id) ofEnDetalle = resultado.id;
-    }
-  } catch(err){
-    toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
-    DB = DB.filter(p=>p.id!==optimista.id);
-    refrescarPantalla();
-    // por si en realidad sí llegó a guardarse y solo falló la respuesta,
-    // la sincronización siguiente la vuelve a traer de verdad.
-  }
-  sincronizar().catch(()=>{});
+  encolarOperacion('crearPicking', datos, optimista.id, 'Registrar OF ' + datos.of);
 }
 
 function diffCambios(p, nuevo){
@@ -1281,7 +1468,6 @@ function pedirMotivoEdicion(nuevo){
 async function confirmarEdicion(){
   const p = DB.find(x=>x.id===editingId);
   if(!p || !pendienteEdicion) return;
-  if(String(p.id).startsWith('tmp_')){ toast('Este picking se está guardando todavía — espera unos segundos y prueba otra vez'); return; }
   const motivo = document.getElementById('motivoEdicion').value.trim();
   const cambios = diffCambios(p, pendienteEdicion);
 
@@ -1309,21 +1495,14 @@ async function confirmarEdicion(){
   p.observaciones = pendienteEdicion.obs;
   if(!p.ediciones) p.ediciones = [];
   p.ediciones.push({ editadoPor: usuarioActual, fecha: new Date().toISOString(), motivo, cambios });
+  guardarDBLocal();
 
   cerrarSheet();
   pendienteEdicion = null;
   toast('Cambios guardados');
   abrirDetalle(p.id);
 
-  try{
-    const resultado = await llamarBackend('editarPicking', datosEnvio);
-    if(resultado && resultado.ok === false){
-      toast('⚠️ No se guardó en la hoja: ' + (resultado.error || 'motivo desconocido'));
-    }
-  } catch(err){
-    toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
-  }
-  sincronizar().catch(()=>{});
+  encolarOperacion('editarPicking', datosEnvio, p.id, 'Editar OF ' + p.of);
 }
 
 /* ---------- pendientes en home ---------- */
@@ -1398,6 +1577,8 @@ function ticketHtml(p){
   if(adminUnlocked && p.deshechas && p.deshechas.length) chips.push(`<span class="chip attn">↩️ Entrega deshecha</span>`);
   if(entregado) chips.push(`<span class="chip done">Entregado</span>`);
   else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega parcial</span>`);
+  const syncChip = syncBadgeHtml(p);
+  if(syncChip) chips.push(syncChip);
 
   return `<div class="ticket ${attn?'attn':''}" onclick="abrirDetalle('${p.id}')">
     <div class="ticket-top">
@@ -1503,6 +1684,16 @@ function detalleHtml(p){
     </span></div>${resumenSemaforo(p)}`;
   }
 
+  let syncBanner = '';
+  if(p.sync === 'pendiente'){
+    syncBanner = `<div class="attn-banner"><span class="dot">⏳</span><span>Guardando en la hoja… ya lo tienes registrado aquí, pero aún no ha llegado a la hoja de cálculo.</span></div>`;
+  } else if(p.sync === 'error'){
+    syncBanner = `<div class="attn-banner"><span class="dot">⚠️</span><span>
+      No se pudo guardar en la hoja${p.syncError ? ' ('+escapeHtml(p.syncError)+')' : ''}. Lo que ves aquí está bien, pero la hoja de cálculo aún no lo tiene.
+      <br><span class="undo" onclick="reintentarPicking('${p.id}')">Reintentar ahora</span>
+    </span></div>`;
+  }
+
   const entregasHtml = p.entregas.length ? `
     <div class="entrega-log">
       ${p.entregas.map((e,i)=>{
@@ -1528,6 +1719,7 @@ function detalleHtml(p){
 
   return `
     <div class="detail-block">
+      ${syncBanner}
       <div class="detail-of">OF ${p.of}</div>
       <div class="detail-sub">${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''}</div>
       <div class="detail-grid">
@@ -1755,7 +1947,6 @@ async function confirmarEntrega(tipo){
   try{
     const p = DB.find(x=>x.id===ofEnDetalle);
     if(!p){ toast('No se encontró la OF, vuelve a abrirla'); return; }
-    if(String(p.id).startsWith('tmp_')){ toast('Este picking se está guardando todavía — espera unos segundos y prueba otra vez'); return; }
     const por = entregaPorActivo || usuarioActual;
     const a = document.getElementById('entregaA').value.trim();
     let nota = tipo==='parcial' ? document.getElementById('entregaNota').value.trim() : '';
@@ -1776,18 +1967,13 @@ async function confirmarEntrega(tipo){
     const entregaLocal = { tipo, entregadoPor: por, entregadoA: a, nota, fecha: new Date().toISOString() };
     p.entregas.push(entregaLocal);
     if(tipo==='completa') p.estado = 'completado';
+    guardarDBLocal();
 
     cerrarSheet();
     toast('Entrega registrada — recuerda la firma en la hoja');
     abrirDetalle(p.id);
 
-    try{
-      const resultado = await llamarBackend('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota });
-      if(resultado && resultado.ok === false){
-        toast('⚠️ ' + (resultado.error || 'No se pudo confirmar la entrega — revisando'));
-      }
-    } catch(err){}
-    sincronizar().catch(()=>{});
+    encolarOperacion('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota }, p.id, (tipo==='completa' ? 'Entregar' : 'Entrega parcial') + ' OF ' + p.of);
   } catch(errGeneral){
     toast('Algo falló al confirmar — inténtalo de nuevo');
   }
@@ -1814,7 +2000,6 @@ async function confirmarDeshacerEntrega(){
   const { pid, idx } = pendienteDeshacer;
   const p = DB.find(x=>x.id===pid);
   if(!p) return;
-  if(String(p.id).startsWith('tmp_')){ toast('Este picking se está guardando todavía — espera unos segundos y prueba otra vez'); return; }
   const motivo = document.getElementById('motivoDeshacer').value.trim();
   if(!motivo){ toast('Escribe el motivo'); return; }
 
@@ -1830,25 +2015,20 @@ async function confirmarDeshacerEntrega(){
     motivo,
     detalleTexto: `Era: ${eliminada.tipo==='completa' ? 'entrega completa' : 'entrega parcial'} de ${eliminada.entregadoPor} a ${eliminada.entregadoA}`
   });
+  guardarDBLocal();
 
   cerrarSheet();
   pendienteDeshacer = null;
   toast('Entrega deshecha');
   abrirDetalle(p.id);
 
-  try{
-    const resultado = await llamarBackend('deshacerEntrega', {
-      pickingId: pid,
-      tipoOriginal: eliminada.tipo,
-      fechaOriginal: eliminada.fecha,
-      hechoPor: usuarioActual,
-      motivo
-    });
-    if(resultado && resultado.ok === false){
-      toast('⚠️ ' + (resultado.error || 'No se pudo deshacer — revisando'));
-    }
-  } catch(err){}
-  sincronizar().catch(()=>{});
+  encolarOperacion('deshacerEntrega', {
+    pickingId: pid,
+    tipoOriginal: eliminada.tipo,
+    fechaOriginal: eliminada.fecha,
+    hechoPor: usuarioActual,
+    motivo
+  }, p.id, 'Deshacer entrega OF ' + p.of);
 }
 
 function abrirBorrarPicking(id){
@@ -1870,35 +2050,30 @@ async function confirmarBorrarPicking(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
   if(!puedeGestionar(p)){ toast('No tienes permiso para borrar este picking'); return; }
-  if(String(p.id).startsWith('tmp_')){ toast('Este picking se está guardando todavía — espera unos segundos y prueba otra vez'); return; }
   const motivo = document.getElementById('motivoBorrado').value.trim();
   if(!motivo){ toast('Escribe el motivo'); return; }
 
+  const etiqueta = 'Borrar OF ' + p.of;
+
   // se quita de verdad de la app al instante (no solo se marca)
   DB = DB.filter(x=>x.id!==id);
+  guardarDBLocal();
 
   cerrarSheet();
   toast('Picking eliminado');
   ir('home');
 
-  try{
-    const resultado = await llamarBackend('borrarPicking', { id, motivo, por: usuarioActual });
-    if(resultado && resultado.ok === false){
-      toast('⚠️ No se guardó en la hoja: ' + (resultado.error || 'motivo desconocido'));
-      DB.push(p);
-      refrescarPantalla();
-    }
-  } catch(err){
-    toast('⚠️ No se pudo conectar con la hoja: ' + (err && err.message ? err.message : 'error desconocido'));
-    // no la reponemos aquí: puede que sí se borrara y solo fallara la
-    // respuesta — la sincronización siguiente deja el dato real, sea cual sea.
-  }
-  sincronizar().catch(()=>{});
+  encolarOperacion('borrarPicking', { id, motivo, por: usuarioActual }, id, etiqueta);
 }
 
 /* ---------- init ---------- */
 async function iniciar(){
   actualizarChipUsuario();
+  renderPendingBanner();
+
+  // Si quedó algo sin sincronizar de la última vez (se cerró la app,
+  // se quedó sin cobertura...), se intenta mandar ya mismo.
+  if(colaSync.length) procesarColaSync().catch(()=>{});
 
   // Inicio ya no depende de ningún dato: se ve al instante siempre.
   // Solo esperamos a tener datos si hace falta mostrar la pantalla de
@@ -1916,12 +2091,19 @@ async function iniciar(){
   setInterval(()=>{
     if(document.getElementById('sheetOverlay')) return;
     const activa = document.querySelector('.screen.active')?.id;
+    if(colaSync.length) procesarColaSync().catch(()=>{});
     if(activa === 'screen-registro') return;
     sincronizar().catch(()=>{});
     if(activa === 'screen-entregados') cargarEntregadosYActualizar().then(renderEntregados).catch(()=>{});
   }, 20000);
   document.addEventListener('visibilitychange', ()=>{
-    if(document.visibilityState === 'visible'){ sincronizar().catch(()=>{}); }
+    if(document.visibilityState === 'visible'){
+      if(colaSync.length) procesarColaSync().catch(()=>{});
+      sincronizar().catch(()=>{});
+    }
+  });
+  window.addEventListener('online', ()=>{
+    if(colaSync.length) procesarColaSync().catch(()=>{});
   });
 }
 iniciar();
