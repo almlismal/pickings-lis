@@ -242,6 +242,17 @@
     color: #7A2E0E; border-radius:4px; padding:14px;
     font-size:13px; font-weight:600; margin: 16px 0 4px;
   }
+
+  .dup-banner{
+    background:#FDECE8; border:2px solid #C6472E;
+    color:#7A2412; border-radius:8px; padding:14px 16px;
+    margin:10px 0 16px;
+  }
+  .dup-banner .dup-title{
+    font-size:15px; font-weight:800; display:flex; align-items:center; gap:8px; margin-bottom:6px;
+  }
+  .dup-banner p{ margin:0 0 10px; font-size:13.5px; line-height:1.45; }
+  .dup-banner button{ margin-top:6px; }
   .sign-banner label{
     display:flex; gap:10px; align-items:flex-start; cursor:pointer;
     margin:0; text-transform:none; font-size:13px; letter-spacing:normal; color:#7A2E0E;
@@ -380,7 +391,8 @@
     </div>
 
     <label>OF</label>
-    <input type="text" class="mono" id="f_of" placeholder="Ej. 20260912">
+    <input type="text" class="mono" id="f_of" placeholder="Ej. 20260912" oninput="chequearOfEnVivo()">
+    <div id="avisoOfRegistro"></div>
 
     <div class="row2">
       <div>
@@ -11328,6 +11340,8 @@ function confirmarAnadirUbicacion(){
 }
 function resetFormRegistro(mantenerProyecto){
   document.getElementById('f_of').value = '';
+  const avisoOf = document.getElementById('avisoOfRegistro');
+  if(avisoOf) avisoOf.innerHTML = '';
   if(!mantenerProyecto) document.getElementById('f_proyecto').value = '';
   document.getElementById('f_subproyecto').value = '';
   document.getElementById('f_cajas').value = 1;
@@ -11514,6 +11528,16 @@ function confirmarPasoRegistro(continuarMismoProy){
     return;
   }
 
+  // Último chequeo, por si ya se entregó del todo (con lo que ya no está
+  // en DB, sino en Entregados) — usa la caché local, sin esperar a la red,
+  // para no frenar el registro si no hay conexión justo ahora.
+  const entregada = (entregadosCache||[]).find(r=>String(r['OF']||'').trim().toLowerCase()===ofNormalizada);
+  if(entregada){
+    pendienteRegistro._continuar = continuarMismoProy;
+    mostrarSheet(resumenOfEntregada(entregada, datos.of));
+    return;
+  }
+
   ejecutarCrearPicking(datos, continuarMismoProy);
   pendienteRegistro = null;
 }
@@ -11521,14 +11545,26 @@ function confirmarPasoRegistro(continuarMismoProy){
 function resumenOfDuplicada(existente, ofBuscada){
   const ubic = Object.entries(existente.ubicaciones||{}).map(([k,v])=>`${k==='Cajas' ? 'Cajas de picking' : k}: ${v}`).join(' · ');
   return `
-    <h3>⚠️ Esta OF ya tiene un picking pendiente</h3>
-    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
-      <b>${existente.registradoPor}</b> registró la OF <b>${ofBuscada}</b> el ${fechaCorta(existente.fecha)} —
+    <div class="dup-banner">
+      <div class="dup-title">⚠️ Esta OF ya tiene un picking pendiente</div>
+      <p><b>${existente.registradoPor}</b> registró la OF <b>${ofBuscada}</b> el ${fechaCorta(existente.fecha)} —
       ${existente.proyecto || '—'}${existente.subproyecto ? ' · '+existente.subproyecto : ''} ·
-      ${existente.cajas} caja${existente.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}.
-    </p>
+      ${existente.cajas} caja${existente.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}.</p>
+    </div>
     <button class="btn btn-primary" onclick="irAAmpliar('${existente.id}')">➕ Añadir a esta OF (usar su caja)</button>
     <button class="btn btn-outline" onclick="pedirMotivoRegistroAparte()">Registrar aparte de todas formas</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `;
+}
+
+function resumenOfEntregada(r, ofBuscada){
+  return `
+    <div class="dup-banner">
+      <div class="dup-title">⚠️ Esta OF ya se entregó</div>
+      <p>La OF <b>${ofBuscada}</b> se entregó completa el ${fechaCorta(r['Fecha de entrega'])} —
+      ${r['Entregado por']} se la dio a ${r['Entregado a']}. Revisa si de verdad hace falta registrarla otra vez.</p>
+    </div>
+    <button class="btn btn-outline" onclick="pedirMotivoRegistroAparte()">Registrar de todas formas</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `;
 }
@@ -11537,6 +11573,76 @@ function irAAmpliar(id){
   cerrarSheet();
   pendienteRegistro = null;
   abrirAmpliacion(id);
+}
+
+/* ---------- aviso de OF repetida EN VIVO — se ve al momento de escribirla,
+   no hay que esperar a llegar al paso de confirmar. Revisa tanto lo
+   pendiente como lo ya entregado. ---------- */
+function chequearOfEnVivo(){
+  const cont = document.getElementById('avisoOfRegistro');
+  if(!cont) return;
+  const of = document.getElementById('f_of').value.trim();
+  if(!/^\d{8}$/.test(of)){ cont.innerHTML = ''; return; }
+
+  const ofNorm = of.toLowerCase();
+  const pendiente = DB.find(p=>p.of.trim().toLowerCase()===ofNorm && p.estado!=='completado');
+  if(pendiente){
+    cont.innerHTML = avisoOfPendienteHtml(pendiente);
+    return;
+  }
+  const entregadoLocal = (entregadosCache||[]).find(r=>String(r['OF']||'').trim().toLowerCase()===ofNorm);
+  if(entregadoLocal){
+    cont.innerHTML = avisoOfEntregadoHtml(entregadoLocal);
+    return;
+  }
+  cont.innerHTML = '';
+  verificarEntregadoEnVivo(of);
+}
+
+async function verificarEntregadoEnVivo(of){
+  try{
+    const res = await fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(of), {}, 12000);
+    const datos = await res.json();
+    const encontrados = datos.entregados || [];
+    if(!encontrados.length) return;
+    // se guarda en la caché para que el próximo chequeo (incluido el del
+    // paso de confirmar) sea instantáneo, sin tener que volver a preguntar.
+    encontrados.forEach(r=>{
+      const yaEsta = entregadosCache.some(x=>String(x['OF']||'')===String(r['OF']||'') && x['Fecha de entrega']===r['Fecha de entrega']);
+      if(!yaEsta) entregadosCache.push(r);
+    });
+    guardarCacheEntregados(entregadosCache);
+    const actual = document.getElementById('f_of');
+    const cont = document.getElementById('avisoOfRegistro');
+    // solo se muestra si el usuario sigue con la misma OF escrita y no salió ya otro aviso
+    if(actual && cont && actual.value.trim() === of && !cont.innerHTML){
+      cont.innerHTML = avisoOfEntregadoHtml(encontrados[0]);
+    }
+  } catch(err){}
+}
+
+function avisoOfPendienteHtml(p){
+  const ubic = Object.entries(p.ubicaciones||{}).map(([k,v])=>`${k==='Cajas' ? 'Cajas de picking' : k}: ${v}`).join(' · ');
+  return `
+    <div class="dup-banner">
+      <div class="dup-title">⚠️ Esta OF ya tiene un picking pendiente</div>
+      <p><b>${p.registradoPor}</b> la registró el ${fechaCorta(p.fecha)} —
+      ${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''} ·
+      ${p.cajas} caja${p.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}.</p>
+      <button class="btn btn-primary" onclick="irAAmpliar('${p.id}')">➕ Añadir a esta OF (usar su caja)</button>
+      <button class="btn btn-outline" onclick="document.getElementById('avisoOfRegistro').innerHTML=''">Ya lo sé, seguir registrando aparte</button>
+    </div>
+  `;
+}
+function avisoOfEntregadoHtml(r){
+  return `
+    <div class="dup-banner">
+      <div class="dup-title">⚠️ Esta OF ya se entregó</div>
+      <p>Se entregó completa el ${fechaCorta(r['Fecha de entrega'])} —
+      ${r['Entregado por']} se la dio a ${r['Entregado a']}. Revisa si de verdad hace falta registrarla otra vez.</p>
+      <button class="btn btn-outline" onclick="document.getElementById('avisoOfRegistro').innerHTML=''">Ya lo sé, seguir registrando</button>
+    </div>
+  `;
 }
 
 function pedirMotivoRegistroAparte(){
