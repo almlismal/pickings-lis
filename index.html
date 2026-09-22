@@ -12029,7 +12029,7 @@ function cicloEscaner(){
 }
 
 function procesarTextoQR(texto){
-  escanerEscaneando = false;
+  detenerEscaner(); // se apaga la cámara del todo mientras se ve el resultado
   const partes = String(texto).split(';');
   const of = (partes[1] || '').trim();
   const estadoEl = document.getElementById('escanerEstado');
@@ -12071,12 +12071,8 @@ function resumenEscaneoEncontrado(p){
 }
 
 function seguirEscaneando(){
-  const resultadoEl = document.getElementById('escanerResultado');
-  if(resultadoEl) resultadoEl.innerHTML = '';
-  const estadoEl = document.getElementById('escanerEstado');
-  if(estadoEl) estadoEl.textContent = 'Apunta al QR de la etiqueta';
-  escanerEscaneando = true;
-  escanerRAF = requestAnimationFrame(cicloEscaner);
+  // la cámara se apagó al mostrar el resultado — se vuelve a encender aquí
+  iniciarEscaner();
 }
 
 function irAAmpliarDesdeEscaner(id){
