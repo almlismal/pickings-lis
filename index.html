@@ -509,7 +509,8 @@
     <canvas id="escanerCanvas" style="display:none;"></canvas>
     <div id="escanerEstado" class="hint" style="text-align:center; margin-top:12px;"></div>
     <div id="escanerResultado" style="margin-top:12px;"></div>
-    <button class="btn btn-outline" onclick="cancelarComprobarOf()" style="margin-top:20px;">Cancelar</button>
+    <button id="escanearSaltarBtn" class="btn btn-outline" onclick="saltarVerificacionOf()" style="margin-top:20px; display:none;">No tengo la etiqueta a mano — continuar igualmente</button>
+    <button class="btn btn-outline" onclick="cancelarComprobarOf()" style="margin-top:10px;">Cancelar</button>
   </section>
 
   <!-- ============ REALIZAR PICKING (bipado en vivo) — prueba, aparte de todo lo demás ============ -->
@@ -11823,24 +11824,28 @@ async function guardarPicking(){
     pickingPendienteDatos = null;
   }
 
-  mostrarConfirmacionRegistro(datosNuevos);
+  // Antes de mostrar la confirmación, SIEMPRE se abre la cámara sola para
+  // bipar la etiqueta y comprobar que la OF escrita es la de verdad — no
+  // es un botón aparte que haya que acordarse de tocar.
+  iniciarVerificacionAntesDeConfirmar(datosNuevos);
 }
 
-function mostrarConfirmacionRegistro(datos){
+function mostrarConfirmacionRegistro(datos, verificada){
   pendienteRegistro = datos;
   mostrarSheet(`
     <h3>Confirmar registro</h3>
+    <div class="attn-banner" style="margin:0 0 10px;"><span class="dot">⚠️</span><span><b>Atento antes de confirmar</b> — revisa bien el número de OF. Es fácil escribir mal el año (2025 en vez de 2026, etc).</span></div>
     <div style="text-align:center; margin:14px 0 10px;">
       <div style="font-size:12px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.06em;">OF</div>
       <div style="font-family:var(--mono); font-size:40px; font-weight:700; letter-spacing:1px; line-height:1.1; margin-top:4px; word-break:break-all;">${datos.of}</div>
+      <div style="margin-top:6px; font-size:12px; font-weight:700; color:${verificada ? '#2E7D32' : '#B33A3A'};">${verificada ? '✅ Comprobada con la cámara' : '⚠️ No se comprobó con la cámara'}</div>
     </div>
     <p style="font-size:14px; color:var(--ink-soft); text-align:center; margin:0 0 4px;">
       Proyecto <b style="color:var(--ink);">${datos.proyecto || '—'}</b>${datos.subproyecto ? ` · FM <b style="color:var(--ink);">${datos.subproyecto}</b>` : ''}
     </p>
-    <p style="font-size:12px; color:var(--ink-soft); text-align:center; margin:10px 0 4px;">Revisa bien el número de OF antes de confirmar — es fácil escribir mal el año (2025 en vez de 2026, etc).</p>
     <button class="btn btn-primary" onclick="confirmarPasoRegistro(false)">✓ Está bien, registrar</button>
     <button class="btn btn-outline" onclick="confirmarPasoRegistro(true)">➕ Registrar y añadir otra OF de este proyecto</button>
-    <button class="btn btn-outline" onclick="verificarOfConCamara()">📷 Bipar la etiqueta para comprobar la OF</button>
+    ${!verificada ? `<button class="btn btn-outline" onclick="verificarOfConCamara()">📷 Bipar la etiqueta para comprobar la OF</button>` : ''}
     <button class="btn btn-outline" onclick="cerrarSheet()">Revisar datos</button>
   `);
 }
@@ -11849,32 +11854,62 @@ function mostrarConfirmacionRegistro(datos){
 // Reutiliza la misma pantalla/cámara de "Comprobar OF", pero en vez de
 // buscar el picking en la lista, compara lo que se bipa contra lo que se
 // ha escrito a mano — así se pilla el típico error de poner 2025 en vez
-// de 2026 antes de guardar nada.
+// de 2026 antes de guardar nada. Se abre SOLA, siempre, justo antes de
+// llegar a la confirmación — no hace falta acordarse de tocar nada.
 let verificacionOfPendiente = null;
+let alVerificarOfExito = null; // función a llamar al terminar (coincida, o se salte la comprobación)
+
+function iniciarVerificacionAntesDeConfirmar(datos){
+  verificacionOfPendiente = datos.of;
+  alVerificarOfExito = (verificada)=> mostrarConfirmacionRegistro(datos, verificada);
+  ir('escanear'); // ya enciende la cámara sola
+  ajustarPantallaVerificacionOf(datos.of);
+}
 function verificarOfConCamara(){
   if(!pendienteRegistro) return;
   verificacionOfPendiente = pendienteRegistro.of;
+  alVerificarOfExito = (verificada)=> mostrarConfirmacionRegistro(pendienteRegistro, verificada);
   cerrarSheet();
-  ir('escanear'); // ya enciende la cámara sola
-  const titulo = document.getElementById('escanearTitulo');
-  const hint = document.getElementById('escanearHint');
-  if(titulo) titulo.textContent = 'Comprobar la OF';
-  if(hint) hint.textContent = `Bipa la etiqueta para comprobar que es la OF ${pendienteRegistro.of}.`;
+  ir('escanear');
+  ajustarPantallaVerificacionOf(pendienteRegistro.of);
 }
-function cancelarComprobarOf(){
-  const veniaDeVerificar = !!verificacionOfPendiente;
-  verificacionOfPendiente = null;
-  detenerEscaner();
+function ajustarPantallaVerificacionOf(of){
   const titulo = document.getElementById('escanearTitulo');
   const hint = document.getElementById('escanearHint');
+  const saltarBtn = document.getElementById('escanearSaltarBtn');
+  if(titulo) titulo.textContent = 'Comprobar la OF';
+  if(hint) hint.textContent = `Bipa la etiqueta de la caja para comprobar que es la OF ${of} antes de registrar.`;
+  if(saltarBtn) saltarBtn.style.display = '';
+}
+function restaurarPantallaComprobarOf(){
+  const titulo = document.getElementById('escanearTitulo');
+  const hint = document.getElementById('escanearHint');
+  const saltarBtn = document.getElementById('escanearSaltarBtn');
   if(titulo) titulo.textContent = 'Comprobar OF';
   if(hint) hint.textContent = 'Apunta la cámara al QR de la etiqueta de picking de la caja.';
-  if(veniaDeVerificar && pendienteRegistro){
+  if(saltarBtn) saltarBtn.style.display = 'none';
+}
+function cancelarComprobarOf(){
+  const cbPendiente = alVerificarOfExito;
+  verificacionOfPendiente = null;
+  alVerificarOfExito = null;
+  detenerEscaner();
+  restaurarPantallaComprobarOf();
+  if(cbPendiente){
     ir('registro');
-    mostrarConfirmacionRegistro(pendienteRegistro);
+    cbPendiente(false); // se sale sin comprobar — se avisa igualmente en la confirmación
   } else {
     ir('home');
   }
+}
+function saltarVerificacionOf(){
+  const cb = alVerificarOfExito;
+  verificacionOfPendiente = null;
+  alVerificarOfExito = null;
+  detenerEscaner();
+  restaurarPantallaComprobarOf();
+  ir('registro');
+  if(cb) cb(false);
 }
 function mostrarResultadoVerificacionOf(ofLeida){
   const resultadoEl = document.getElementById('escanerResultado');
@@ -11884,7 +11919,7 @@ function mostrarResultadoVerificacionOf(ofLeida){
   if(coincide){
     resultadoEl.innerHTML = `
       <div class="obs-box" style="border:1px solid #2E7D32; color:#2E7D32;">✅ Coincide — la etiqueta es de la OF <b>${escapeHtml(ofLeida)}</b>.</div>
-      <button class="btn btn-primary" onclick="volverAConfirmarTrasVerificar()" style="margin-top:10px;">Seguir con el registro</button>
+      <button class="btn btn-primary" onclick="continuarTrasVerificarOf()" style="margin-top:10px;">Seguir con el registro</button>
     `;
   } else {
     resultadoEl.innerHTML = `
@@ -11896,10 +11931,13 @@ function mostrarResultadoVerificacionOf(ofLeida){
     `;
   }
 }
-function volverAConfirmarTrasVerificar(){
+function continuarTrasVerificarOf(){
+  const cb = alVerificarOfExito;
   verificacionOfPendiente = null;
+  alVerificarOfExito = null;
+  restaurarPantallaComprobarOf();
   ir('registro');
-  if(pendienteRegistro) mostrarConfirmacionRegistro(pendienteRegistro);
+  if(cb) cb(true);
 }
 
 function confirmarPasoRegistro(continuarMismoProy){
