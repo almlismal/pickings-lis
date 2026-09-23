@@ -401,19 +401,19 @@
     <div class="home-grid">
       <button class="home-btn" onclick="nuevoPicking()">
         <b>📦 Registrar picking</b>
-        <span>Nuevo picking hecho: OF, cajas y qué lleva fuera</span>
+        <span>Registra un picking finalizado: OF, cajas y componentes fuera de caja</span>
       </button>
       <button class="home-btn alt" onclick="ir('buscar')">
         <b>🔍 Buscar / Entregar</b>
-        <span>Buscar una OF y registrar su entrega</span>
+        <span>Localiza una OF registrada y gestiona su entrega</span>
       </button>
       <button class="home-btn" onclick="ir('escanear')">
         <b>📷 Comprobar OF (QR)</b>
-        <span>Escanea la etiqueta de picking para ver si esa OF ya está aquí</span>
+        <span>Escanea la etiqueta para verificar si esa OF ya está registrada</span>
       </button>
       <button class="home-btn alt" onclick="nuevoRealizarPicking()">
         <b>🧰 Realizar picking</b>
-        <span>Bipa cada componente mientras lo vas haciendo — prueba</span>
+        <span>Escanea cada componente en tiempo real durante el picking</span>
       </button>
     </div>
   </section>
@@ -443,14 +443,14 @@
     <label>Nº de cajas</label>
     <input type="number" id="f_cajas" min="1" value="1" inputmode="numeric" oninput="renderUbicacionPills()">
 
-    <label>Lleva fuera de la caja</label>
+    <label>Componentes fuera de la caja</label>
     <div class="check-row" id="fueraRow"></div>
 
     <label>Ubicación</label>
     <div id="ubicacionesContainer"></div>
 
     <label>Observaciones</label>
-    <textarea id="f_obs" placeholder="Cualquier detalle útil para quien entregue después"></textarea>
+    <textarea id="f_obs" placeholder="Detalles relevantes para quien realice la entrega"></textarea>
 
     <button class="btn btn-primary" onclick="guardarPicking()" id="btnGuardarPicking">Registrar picking</button>
   </section>
@@ -509,7 +509,7 @@
     <canvas id="escanerCanvas" style="display:none;"></canvas>
     <div id="escanerEstado" class="hint" style="text-align:center; margin-top:12px;"></div>
     <div id="escanerResultado" style="margin-top:12px;"></div>
-    <button id="escanearSaltarBtn" class="btn btn-outline" onclick="saltarVerificacionOf()" style="margin-top:20px; display:none;">No tengo la etiqueta a mano — continuar igualmente</button>
+    <button id="escanearSaltarBtn" class="btn btn-outline" onclick="saltarVerificacionOf()" style="margin-top:20px; display:none;">No dispongo de la etiqueta — continuar sin comprobar</button>
     <button class="btn btn-outline" onclick="cancelarComprobarOf()" style="margin-top:10px;">Cancelar</button>
   </section>
 
@@ -519,14 +519,14 @@
       <button class="back" onclick="ir('home')">←</button>
       <h2>Realizar picking</h2>
     </div>
-    <div class="hint" style="margin-bottom:10px;">Bipa cada etiqueta de componente a medida que lo vas metiendo en la caja. Al terminar se genera la hoja de picking y pasas a registrar la caja como siempre.</div>
+    <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
     <label>OF</label>
     <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
     <div class="row2">
       <div><label>Proyecto</label><input type="text" id="rp_proyecto" placeholder="Ej. 2024-275"></div>
       <div><label>Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
     </div>
-    <button class="btn btn-primary" onclick="empezarBipado()">Empezar a bipar</button>
+    <button class="btn btn-primary" onclick="empezarBipado()">Empezar a escanear</button>
   </section>
 
   <section class="screen" id="screen-realizar-bip">
@@ -550,11 +550,11 @@
       </div>
     </div>
 
-    <label>Líneas bipadas (<span id="rpNumLineas">0</span>)</label>
+    <label>Líneas escaneadas (<span id="rpNumLineas">0</span>)</label>
     <div id="rpListaLineas"></div>
 
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">⚠️ Registrar incidencia (falta / no se encuentra)</button>
-    <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar bipado →</button>
+    <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar escaneo →</button>
   </section>
 
   <section class="screen" id="screen-realizar-resumen">
@@ -11052,10 +11052,10 @@ function comprobarBorradorBipAlArrancar(){
   const of = (b.fase==='bip') ? (b.sesion&&b.sesion.of) : b.of;
   const nLineas = (b.fase==='bip') ? ((b.sesion&&b.sesion.componentes)||[]).length : ((b.pendiente&&b.pendiente.componentes)||[]).length;
   mostrarSheet(`
-    <h3>Tienes un picking sin terminar</h3>
+    <h3>Tienes un picking sin finalizar</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
-      Se quedó a medias la OF <b style="color:var(--ink);">${escapeHtml(of||'—')}</b> — ${nLineas} línea${nLineas===1?'':'s'} bipada${nLineas===1?'':'s'}.
-      ¿Quieres seguir por donde lo dejaste o descartarlo?
+      Quedó pendiente la OF <b style="color:var(--ink);">${escapeHtml(of||'—')}</b>, con ${nLineas} línea${nLineas===1?'':'s'} escaneada${nLineas===1?'':'s'}.
+      ¿Continuar por donde lo dejaste, o descartarlo?
     </p>
     <button class="btn btn-primary" onclick="reanudarBorradorBip()">↺ Continuar donde lo dejé</button>
     <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="descartarBorradorBip()">Descartar</button>
@@ -11752,7 +11752,7 @@ function renderEntregados(){
       </div>
       <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
       <div class="ticket-meta"><span class="chip done">Entregado</span></div>
-      <div class="hint" style="margin-top:8px;">${r['Entregado por']} se lo entregó a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
+      <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
     </div>
   `).join('');
 }
@@ -11845,7 +11845,7 @@ function mostrarConfirmacionRegistro(datos, verificada){
     </p>
     <button class="btn btn-primary" onclick="confirmarPasoRegistro(false)">✓ Está bien, registrar</button>
     <button class="btn btn-outline" onclick="confirmarPasoRegistro(true)">➕ Registrar y añadir otra OF de este proyecto</button>
-    ${!verificada ? `<button class="btn btn-outline" onclick="verificarOfConCamara()">📷 Bipar la etiqueta para comprobar la OF</button>` : ''}
+    ${!verificada ? `<button class="btn btn-outline" onclick="verificarOfConCamara()">📷 Escanear la etiqueta para comprobar la OF</button>` : ''}
     <button class="btn btn-outline" onclick="cerrarSheet()">Revisar datos</button>
   `);
 }
@@ -11878,7 +11878,7 @@ function ajustarPantallaVerificacionOf(of){
   const hint = document.getElementById('escanearHint');
   const saltarBtn = document.getElementById('escanearSaltarBtn');
   if(titulo) titulo.textContent = 'Comprobar la OF';
-  if(hint) hint.textContent = `Bipa la etiqueta de la caja para comprobar que es la OF ${of} antes de registrar.`;
+  if(hint) hint.textContent = `Escanea la etiqueta para comprobar que corresponde a la OF ${of} antes de registrar.`;
   if(saltarBtn) saltarBtn.style.display = '';
 }
 function restaurarPantallaComprobarOf(){
@@ -11924,9 +11924,9 @@ function mostrarResultadoVerificacionOf(ofLeida){
   } else {
     resultadoEl.innerHTML = `
       <div class="obs-box" style="border:1px solid #B33A3A; color:#B33A3A;">
-        ⚠️ No coincide: has escrito la OF <b>${escapeHtml(esperada)}</b>, pero la etiqueta que acabas de bipar es de la OF <b>${escapeHtml(ofLeida || '—')}</b>.
+        ⚠️ No coincide: la OF introducida es <b>${escapeHtml(esperada)}</b>, pero la etiqueta escaneada corresponde a la OF <b>${escapeHtml(ofLeida || '—')}</b>.
       </div>
-      <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:10px;">Bipar otra vez</button>
+      <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:10px;">Volver a escanear</button>
       <button class="btn btn-outline" onclick="cancelarComprobarOf()" style="margin-top:8px;">Volver y corregir la OF a mano</button>
     `;
   }
@@ -12337,13 +12337,13 @@ async function buscarOF(){
             <div class="ticket-meta">
               <span class="chip done">Entregado</span>
             </div>
-            <div class="hint" style="margin-top:8px;">${r['Entregado por']} se lo entregó a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
+            <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
           </div>
         `).join('');
         return;
       }
     } catch(err){}
-    cont.innerHTML = `<div class="empty">No hay ningún picking con esa OF</div>`;
+    cont.innerHTML = `<div class="empty">No se ha encontrado ningún picking con esa OF</div>`;
     return;
   }
   cont.innerHTML = resultados.map(p=>ticketHtml(p)).join('');
@@ -12397,7 +12397,7 @@ function detalleHtml(p){
   if(entregado){
     const cierre = [...p.entregas].reverse().find(e=>e.tipo==='completa') || p.entregas[p.entregas.length-1];
     doneBanner = `<div class="done-banner"><span class="dot">✅</span><span class="txt">
-      Esta OF ya se entregó completa — no hace falta volver a entregar nada.<br>
+      Esta OF ya se entregó de forma completa — no requiere ninguna entrega adicional.<br>
       <b>${cierre.entregadoPor}</b> se la entregó a <b>${cierre.entregadoA}</b> el ${fechaCorta(cierre.fecha)}.
     </span></div>`;
   }
@@ -12461,8 +12461,8 @@ function detalleHtml(p){
 
   const gestionBtns = puedeGestionar(p)
     ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">✏️ Editar datos del picking</button>
-       <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">🗑️ Borrar este picking</button>`
-    : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor}, o un administrador, pueden editar o borrar este picking.</div>`;
+       <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">🗑️ Eliminar este picking</button>`
+    : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor} o un administrador pueden editar o eliminar este picking.</div>`;
 
   return `
     <div class="detail-block">
@@ -12482,7 +12482,7 @@ function detalleHtml(p){
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">📋 Ver hoja de picking</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">⚠️ No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
-      ${p.estado!=='completado' ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="empezarBipadoParaPickingExistente('${p.id}')">📋➕ Bipar componentes que faltaban</button>` : ''}
+      ${p.estado!=='completado' ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="empezarBipadoParaPickingExistente('${p.id}')">📋➕ Escanear componentes pendientes</button>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
       ${gestionBtns}
     </div>
@@ -12737,7 +12737,7 @@ function empezarBipadoParaPickingExistente(id){
 
 function cancelarBipado(){
   if(sesionPicking && (sesionPicking.componentes.length || sesionPicking.incidencias.length)){
-    if(!confirm('Se perderá lo bipado hasta ahora. ¿Seguro que quieres salir?')) return;
+    if(!confirm('Se perderá lo escaneado hasta ahora. ¿Confirmas que quieres salir?')) return;
   }
   detenerBipCamara();
   const volverAId = sesionPicking && sesionPicking.idExistente;
@@ -12766,7 +12766,7 @@ function iniciarBipCamara(){
       if(!video){ stream.getTracks().forEach(t=>t.stop()); return; }
       video.srcObject = stream;
       video.play().catch(()=>{});
-      if(estadoEl) estadoEl.textContent = rpModoIncidencia ? 'Apunta al código del componente con incidencia' : 'Apunta a cada etiqueta según la vayas metiendo';
+      if(estadoEl) estadoEl.textContent = rpModoIncidencia ? 'Apunta al código del componente con incidencia' : 'Apunta al código de cada componente según lo incorpores';
       rpEscaneando = true;
       rpRAF = requestAnimationFrame(cicloBipCamara);
     })
@@ -12841,7 +12841,7 @@ function procesarCodigoBipado(codigo, ofLeida){
         <p>El código <b>${escapeHtml(codigo)}</b> es de la OF <b>${escapeHtml(ofLeida)}</b>, no de la OF <b>${escapeHtml(sesionPicking.of)}</b> que estás bipando ahora.</p>
       </div>
       <button class="btn btn-primary" onclick="anadirCodigoConflictoDeTodasFormas()">Añadirlo de todas formas</button>
-      <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Descartar y seguir bipando</button>
+      <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Descartar y seguir escaneando</button>
     `);
     return;
   }
@@ -12901,7 +12901,7 @@ function editarLineaBip(idx){
     <label>Cantidad</label>
     <input type="number" id="lineaCantidad" min="1" value="${c.cantidad}" inputmode="numeric">
     <button class="btn btn-primary" onclick="guardarEdicionLineaBip(${idx})">Guardar</button>
-    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="borrarLineaBip(${idx})">🗑️ Borrar esta línea</button>
+    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="borrarLineaBip(${idx})">🗑️ Eliminar esta línea</button>
   `);
 }
 function guardarEdicionLineaBip(idx){
@@ -12916,7 +12916,7 @@ function borrarLineaBip(idx){
   sesionPicking.componentes.splice(idx,1);
   cerrarSheet();
   refrescarBipUI();
-  toast('Línea borrada');
+  toast('Línea eliminada');
 }
 function editarLineaBipDesdeResumen(idx){
   editarLineaBip(idx);
@@ -12928,7 +12928,7 @@ function renderLineasBip(){
   if(!sesionPicking || !cont) return;
   if(num) num.textContent = sesionPicking.componentes.length;
   if(!sesionPicking.componentes.length){
-    cont.innerHTML = `<div class="empty">Todavía no se ha bipado ningún componente</div>`;
+    cont.innerHTML = `<div class="empty">Todavía no se ha escaneado ningún componente</div>`;
     return;
   }
   cont.innerHTML = sesionPicking.componentes.map((c,i)=>`
@@ -13014,7 +13014,7 @@ function confirmarAnadirMotivoIncidencia(){
 }
 function confirmarIncidencia(){
   const codigo = document.getElementById('incidenciaCodigo').value.trim();
-  if(!codigo){ toast('Escribe o bipa el código'); return; }
+  if(!codigo){ toast('Escribe o escanea el código'); return; }
   if(!motivoIncidenciaSeleccionado){ toast('Elige un motivo'); return; }
   sesionPicking.incidencias.push({ codigo, motivo: motivoIncidenciaSeleccionado });
   cerrarSheet();
@@ -13045,10 +13045,10 @@ function resumenPickingHtml(){
         <div class="ticket-top"><span class="ticket-of">${escapeHtml(c.codigo)}</span><span class="ticket-date">x${c.cantidad}</span></div>
         <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A</b>' : escapeHtml(c.lote)}</div>
       </div>
-    `).join('') || '<div class="empty">No se bipó ningún componente</div>'}</div>
+    `).join('') || '<div class="empty">No se escaneó ningún componente</div>'}</div>
     ${s.incidencias.length ? `<label>Incidencias (${s.incidencias.length})</label>
     <div class="obs-box">${s.incidencias.map(i=>`${escapeHtml(i.codigo)} — ${escapeHtml(i.motivo)}`).join('<br>')}</div>` : ''}
-    <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir bipando</button>
+    <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
     ${s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ Añadir a la OF ${escapeHtml(s.of)}</button>`
       : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar picking y generar hoja</button>`}
@@ -13057,7 +13057,7 @@ function resumenPickingHtml(){
 function registrarPickingRealizado(){
   if(!sesionPicking) return;
   if(!sesionPicking.componentes.length){
-    if(!confirm('No se ha bipado ningún componente todavía. ¿Seguro que quieres continuar igualmente?')) return;
+    if(!confirm('No se ha escaneado ningún componente todavía. ¿Confirmas que quieres continuar de todas formas?')) return;
   }
   const datosHoja = {
     of: sesionPicking.of, proyecto: sesionPicking.proyecto, subproyecto: sesionPicking.subproyecto,
@@ -13179,9 +13179,9 @@ function imprimirHojaPicking(){
 function preguntarUbicarPickingRealizado(){
   if(!rpDocDatosActuales) return;
   mostrarSheet(`
-    <h3>¿Le das ubicación a este picking?</h3>
+    <h3>¿Asignas ubicación a este picking?</h3>
     <p class="hint" style="margin:0 0 10px;">
-      Si la caja se va a guardar en el almacén, dile dónde va. Si se entrega directamente en mano y no hace falta guardarla en ningún sitio, no hace falta ubicarla.
+      Si la caja se va a almacenar, indica dónde. Si se entrega directamente en mano, no es necesario asignar ubicación.
     </p>
     <button class="btn btn-primary" onclick="cerrarSheet(); continuarARegistroDesdeDoc();">📍 Sí, elegir dónde va</button>
     <button class="btn btn-outline" onclick="cerrarSheet(); preguntarEntregaInmediataSinUbicar();">✋ No, se entrega en mano</button>
@@ -13189,7 +13189,7 @@ function preguntarUbicarPickingRealizado(){
 }
 function preguntarEntregaInmediataSinUbicar(){
   mostrarSheet(`
-    <h3>¿Lo entregas ahora mismo?</h3>
+    <h3>¿Se entrega ahora mismo?</h3>
     <p class="hint" style="margin:0 0 10px;">El picking se registra sin ubicación de todas formas — puedes ubicarlo más tarde editándolo si hiciera falta.</p>
     <button class="btn btn-primary" onclick="cerrarSheet(); registrarPickingSinUbicar(true);">✓ Sí, entregarlo ahora</button>
     <button class="btn btn-outline" onclick="cerrarSheet(); registrarPickingSinUbicar(false);">Todavía no — solo registrar</button>
@@ -13519,22 +13519,22 @@ async function confirmarDeshacerEntrega(){
 function abrirBorrarPicking(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
-  if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden borrarlo'); return; }
+  if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden eliminarlo'); return; }
   mostrarSheet(`
-    <h3>¿Borrar este picking?</h3>
+    <h3>¿Eliminar este picking?</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
-      Se borra de verdad: desaparece de la app para todo el mundo. Queda una copia con el motivo en la hoja "Eliminados" del Excel, por si hace falta consultarla ahí.
+      Se elimina de forma definitiva para todos los usuarios de la app. Queda una copia con el motivo en la hoja "Eliminados" del Excel, por si es necesario consultarla.
     </p>
-    <label>¿Por qué se borra?</label>
+    <label>¿Por qué se elimina?</label>
     <textarea id="motivoBorrado" placeholder="Ej. Se registró por error, era otra OF"></textarea>
-    <button class="btn btn-primary" id="btnConfirmarBorrar" style="background:#B33A3A;" onclick="confirmarBorrarPicking('${id}')">Sí, borrar</button>
+    <button class="btn btn-primary" id="btnConfirmarBorrar" style="background:#B33A3A;" onclick="confirmarBorrarPicking('${id}')">Sí, eliminar</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `);
 }
 async function confirmarBorrarPicking(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
-  if(!puedeGestionar(p)){ toast('No tienes permiso para borrar este picking'); return; }
+  if(!puedeGestionar(p)){ toast('No tienes permiso para eliminar este picking'); return; }
   const motivo = document.getElementById('motivoBorrado').value.trim();
   if(!motivo){ toast('Escribe el motivo'); return; }
 
@@ -13557,9 +13557,9 @@ function abrirAmpliacion(id){
   if(!p){ toast('No se encontró esa OF'); return; }
   pendienteAmpliacion = id;
   mostrarSheet(`
-    <h3>Meter algo más en la caja de la OF ${p.of}</h3>
+    <h3>Añadir contenido a la caja de la OF ${p.of}</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Sigue siendo la misma caja de siempre — <b>no se crea ningún picking nuevo</b>. Rellena esto y la app escribe sola una nota clara, para que cualquiera que la abra después entienda qué se metió.
+      Se trata de la misma caja — <b>no se crea un picking nuevo</b>. Al completar estos datos, la app genera automáticamente una nota clara para que cualquiera que consulte el picking después entienda qué se añadió.
     </p>
     <div class="row2">
       <div>
