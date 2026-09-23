@@ -499,17 +499,17 @@
   <!-- ============ COMPROBAR OF (QR) ============ -->
   <section class="screen" id="screen-escanear">
     <div class="screen-title">
-      <button class="back" onclick="ir('home')">←</button>
-      <h2>Comprobar OF</h2>
+      <button class="back" onclick="cancelarComprobarOf()">←</button>
+      <h2 id="escanearTitulo">Comprobar OF</h2>
     </div>
-    <div class="hint" style="margin-bottom:10px;">Apunta la cámara al QR de la etiqueta de picking de la caja.</div>
+    <div class="hint" id="escanearHint" style="margin-bottom:10px;">Apunta la cámara al QR de la etiqueta de picking de la caja.</div>
     <div style="position:relative; border-radius:14px; overflow:hidden; background:#000; aspect-ratio:1/1; max-width:340px; margin:0 auto;">
       <video id="escanerVideo" playsinline muted style="width:100%; height:100%; object-fit:cover; display:block;"></video>
     </div>
     <canvas id="escanerCanvas" style="display:none;"></canvas>
     <div id="escanerEstado" class="hint" style="text-align:center; margin-top:12px;"></div>
     <div id="escanerResultado" style="margin-top:12px;"></div>
-    <button class="btn btn-outline" onclick="ir('home')" style="margin-top:20px;">Cancelar</button>
+    <button class="btn btn-outline" onclick="cancelarComprobarOf()" style="margin-top:20px;">Cancelar</button>
   </section>
 
   <!-- ============ REALIZAR PICKING (bipado en vivo) — prueba, aparte de todo lo demás ============ -->
@@ -571,13 +571,13 @@
     </div>
     <div id="rpDocContenido"></div>
     <button class="btn btn-outline no-print" onclick="imprimirHojaPicking()">🖨️ Guardar / imprimir como PDF</button>
-    <button class="btn btn-primary no-print" id="rpDocContinuarBtn" onclick="continuarARegistroDesdeDoc()" style="display:none;">Continuar a registrar la caja →</button>
+    <button class="btn btn-primary no-print" id="rpDocContinuarBtn" onclick="preguntarUbicarPickingRealizado()" style="display:none;">Continuar →</button>
   </section>
 
   <!-- ============ DETALLE / ENTREGA ============ -->
   <section class="screen" id="screen-detalle">
     <div class="screen-title">
-      <button class="back" onclick="ir('buscar')">←</button>
+      <button class="back" onclick="volverDeDetalle()">←</button>
       <h2>Detalle de la OF</h2>
     </div>
     <div id="detalleContenido"></div>
@@ -10947,10 +10947,12 @@ function procesarDatos(datos){
 function refrescarPantalla(){
   const activa = document.querySelector('.screen.active');
   if(!activa) return;
-  if(activa.id === 'screen-buscar'){
-    const v = document.getElementById('buscarInput').value;
-    if(v) buscarOF();
-  }
+  // OJO: la pantalla de "Buscar" NO se repinta sola aquí a propósito. Antes
+  // se volvía a renderizar la lista de resultados en cada refresco de fondo
+  // (cada 20s), y si eso pasaba justo cuando alguien tocaba un resultado,
+  // la lista se reordenaba debajo del dedo y se acababa abriendo una OF
+  // distinta a la que se veía. Ahora los resultados solo se recalculan
+  // cuando la persona escribe o busca de nuevo.
   if(activa.id === 'screen-pendientes') renderPendientes();
   if(activa.id === 'screen-entregados') renderEntregados();
   if(activa.id === 'screen-detalle' && ofEnDetalle){
@@ -11173,6 +11175,17 @@ function aplicarConfirmacionOperacion(op, resultado){
   }
   if(op.accion === 'borrarPicking'){
     DB = DB.filter(p=>p.id!==op.pickingId);
+  }
+  if(op.accion === 'agregarComponentesPicking' && resultado){
+    const p = DB.find(x=>x.id===op.pickingId);
+    if(p && resultado.hojaPickingUrl){
+      if(resultado.tipo === 'anexo'){
+        if(!p.anexosPicking) p.anexosPicking = [];
+        p.anexosPicking.push({ url: resultado.hojaPickingUrl, fecha: new Date().toISOString(), lineas: (op.datos.nuevosComponentes||[]).length });
+      } else {
+        p.hojaPickingUrl = resultado.hojaPickingUrl;
+      }
+    }
   }
 }
 
@@ -11448,12 +11461,16 @@ function cargarNombres(){
 }
 
 /* ---------- navegación ---------- */
-function ir(pantalla){
+function ir(pantalla, esVolver){
   const anterior = document.querySelector('.screen.active');
   if(anterior && anterior.id==='screen-escanear' && pantalla!=='escanear') detenerEscaner();
   if(anterior && anterior.id==='screen-realizar-bip' && pantalla!=='realizar-bip') detenerBipCamara();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+pantalla).classList.add('active');
+  // esVolver=true: se usa al volver atrás desde el Detalle — no se vuelve a
+  // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
+  // mismos resultados de búsqueda) y solo se restaura el scroll.
+  if(esVolver) return;
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
   if(pantalla==='entregados') entrarAEntregados();
@@ -11760,6 +11777,10 @@ function abrirEdicion(id){
 }
 
 let pendienteRegistro = null;
+// Callback opcional a ejecutar justo al terminar de registrar un picking,
+// en vez del "ir a Inicio" / "seguir con el mismo proyecto" de siempre —
+// lo usa el registro rápido sin ubicar (se entrega en mano).
+let alTerminarRegistroCallback = null;
 
 async function guardarPicking(){
   if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
@@ -11816,11 +11837,69 @@ function mostrarConfirmacionRegistro(datos){
     <p style="font-size:14px; color:var(--ink-soft); text-align:center; margin:0 0 4px;">
       Proyecto <b style="color:var(--ink);">${datos.proyecto || '—'}</b>${datos.subproyecto ? ` · FM <b style="color:var(--ink);">${datos.subproyecto}</b>` : ''}
     </p>
-    <p style="font-size:12px; color:var(--ink-soft); text-align:center; margin:10px 0 4px;">Revisa bien el número de OF antes de confirmar.</p>
+    <p style="font-size:12px; color:var(--ink-soft); text-align:center; margin:10px 0 4px;">Revisa bien el número de OF antes de confirmar — es fácil escribir mal el año (2025 en vez de 2026, etc).</p>
     <button class="btn btn-primary" onclick="confirmarPasoRegistro(false)">✓ Está bien, registrar</button>
     <button class="btn btn-outline" onclick="confirmarPasoRegistro(true)">➕ Registrar y añadir otra OF de este proyecto</button>
+    <button class="btn btn-outline" onclick="verificarOfConCamara()">📷 Bipar la etiqueta para comprobar la OF</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Revisar datos</button>
   `);
+}
+
+// ---- comprobar con la cámara que la OF escrita es la de verdad ----
+// Reutiliza la misma pantalla/cámara de "Comprobar OF", pero en vez de
+// buscar el picking en la lista, compara lo que se bipa contra lo que se
+// ha escrito a mano — así se pilla el típico error de poner 2025 en vez
+// de 2026 antes de guardar nada.
+let verificacionOfPendiente = null;
+function verificarOfConCamara(){
+  if(!pendienteRegistro) return;
+  verificacionOfPendiente = pendienteRegistro.of;
+  cerrarSheet();
+  ir('escanear'); // ya enciende la cámara sola
+  const titulo = document.getElementById('escanearTitulo');
+  const hint = document.getElementById('escanearHint');
+  if(titulo) titulo.textContent = 'Comprobar la OF';
+  if(hint) hint.textContent = `Bipa la etiqueta para comprobar que es la OF ${pendienteRegistro.of}.`;
+}
+function cancelarComprobarOf(){
+  const veniaDeVerificar = !!verificacionOfPendiente;
+  verificacionOfPendiente = null;
+  detenerEscaner();
+  const titulo = document.getElementById('escanearTitulo');
+  const hint = document.getElementById('escanearHint');
+  if(titulo) titulo.textContent = 'Comprobar OF';
+  if(hint) hint.textContent = 'Apunta la cámara al QR de la etiqueta de picking de la caja.';
+  if(veniaDeVerificar && pendienteRegistro){
+    ir('registro');
+    mostrarConfirmacionRegistro(pendienteRegistro);
+  } else {
+    ir('home');
+  }
+}
+function mostrarResultadoVerificacionOf(ofLeida){
+  const resultadoEl = document.getElementById('escanerResultado');
+  const esperada = String(verificacionOfPendiente || '').trim();
+  const coincide = /^\d{8}$/.test(ofLeida) && ofLeida.trim() === esperada;
+  if(!resultadoEl) return;
+  if(coincide){
+    resultadoEl.innerHTML = `
+      <div class="obs-box" style="border:1px solid #2E7D32; color:#2E7D32;">✅ Coincide — la etiqueta es de la OF <b>${escapeHtml(ofLeida)}</b>.</div>
+      <button class="btn btn-primary" onclick="volverAConfirmarTrasVerificar()" style="margin-top:10px;">Seguir con el registro</button>
+    `;
+  } else {
+    resultadoEl.innerHTML = `
+      <div class="obs-box" style="border:1px solid #B33A3A; color:#B33A3A;">
+        ⚠️ No coincide: has escrito la OF <b>${escapeHtml(esperada)}</b>, pero la etiqueta que acabas de bipar es de la OF <b>${escapeHtml(ofLeida || '—')}</b>.
+      </div>
+      <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:10px;">Bipar otra vez</button>
+      <button class="btn btn-outline" onclick="cancelarComprobarOf()" style="margin-top:8px;">Volver y corregir la OF a mano</button>
+    `;
+  }
+}
+function volverAConfirmarTrasVerificar(){
+  verificacionOfPendiente = null;
+  ir('registro');
+  if(pendienteRegistro) mostrarConfirmacionRegistro(pendienteRegistro);
 }
 
 function confirmarPasoRegistro(continuarMismoProy){
@@ -12001,7 +12080,11 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
   guardarDBLocal();
   borrarBorradorBip(); // ya está a salvo (guardado local + en cola de envío), se puede olvidar el borrador
   toast('Picking registrado');
-  if(continuarMismoProy){
+  if(alTerminarRegistroCallback){
+    const cb = alTerminarRegistroCallback;
+    alTerminarRegistroCallback = null;
+    cb(optimista.id);
+  } else if(continuarMismoProy){
     continuarMismoProyecto(datos.proyecto);
   } else {
     ir('home');
@@ -12229,12 +12312,35 @@ async function buscarOF(){
 }
 
 /* ---------- detalle + entrega ---------- */
+// Recuerda de qué pantalla (y en qué posición de scroll) se vino, para que
+// el botón "←" del Detalle vuelva ahí tal cual se dejó — no siempre a
+// "Buscar" — y sin recargar ni vaciar nada (ir(x, true) se salta eso).
+let pantallaOrigenDetalle = 'buscar';
+let scrollDetalleOrigen = 0;
+const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados'];
 function abrirDetalle(id){
+  // Solo se recuerda el origen cuando se viene de verdad de una de las 3
+  // listas — si se llega aquí desde otro paso intermedio (p.ej. al volver
+  // de bipar más componentes, o tras registrar), se deja el último origen
+  // de lista que hubiera, en vez de apuntar a una pantalla "rara" a la que
+  // no tendría sentido volver con "←".
+  const actual = document.querySelector('.screen.active');
+  if(actual && PANTALLAS_LISTA_ORIGEN.includes(actual.id)){
+    pantallaOrigenDetalle = actual.id.replace('screen-','');
+    scrollDetalleOrigen = window.scrollY || document.documentElement.scrollTop || 0;
+  }
   ofEnDetalle = id;
   const p = DB.find(x=>x.id===id);
   if(!p) return;
   ir('detalle');
   document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
+}
+function volverDeDetalle(){
+  const destino = pantallaOrigenDetalle || 'buscar';
+  ir(destino, true);
+  const y = scrollDetalleOrigen || 0;
+  requestAnimationFrame(()=> window.scrollTo(0, y));
+  setTimeout(()=> window.scrollTo(0, y), 60); // por si el layout aún se está acomodando
 }
 
 function detalleHtml(p){
@@ -12338,6 +12444,8 @@ function detalleHtml(p){
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">📋 Ver hoja de picking</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">⚠️ No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
+      ${p.estado!=='completado' ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="empezarBipadoParaPickingExistente('${p.id}')">📋➕ Bipar componentes que faltaban</button>` : ''}
+      ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
       ${gestionBtns}
     </div>
     ${doneBanner}
@@ -12483,6 +12591,11 @@ function procesarTextoQR(texto){
   const resultadoEl = document.getElementById('escanerResultado');
   if(estadoEl) estadoEl.textContent = '';
 
+  if(verificacionOfPendiente){
+    mostrarResultadoVerificacionOf(of);
+    return;
+  }
+
   if(!/^\d{8}$/.test(of)){
     if(resultadoEl) resultadoEl.innerHTML = `
       <div class="obs-box">Ese QR no parece una etiqueta de picking válida.</div>
@@ -12567,14 +12680,32 @@ function empezarBipado(){
   ir('realizar-bip');
 }
 
+// Bipar más componentes para un picking que YA está registrado (se
+// encontró algo que faltaba, o hay que ampliar días después). Reutiliza
+// toda la misma pantalla y cámara de bipado — lo único que cambia es que,
+// al terminar, en vez de ir a "Registrar picking" se pregunta cómo
+// actualizar la hoja de picking del que ya existe.
+function empezarBipadoParaPickingExistente(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p){ toast('No se encontró esa OF'); return; }
+  sesionPicking = { of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto, componentes: [], incidencias: [], idExistente: id };
+  document.getElementById('rpBipOf').textContent = p.of;
+  const campoManual = document.getElementById('rp_codigoManual');
+  if(campoManual) campoManual.value = '';
+  renderLineasBip();
+  guardarBorradorBip('bip');
+  ir('realizar-bip');
+}
+
 function cancelarBipado(){
   if(sesionPicking && (sesionPicking.componentes.length || sesionPicking.incidencias.length)){
     if(!confirm('Se perderá lo bipado hasta ahora. ¿Seguro que quieres salir?')) return;
   }
   detenerBipCamara();
+  const volverAId = sesionPicking && sesionPicking.idExistente;
   sesionPicking = null;
   borrarBorradorBip();
-  ir('home');
+  if(volverAId) abrirDetalle(volverAId); else ir('home');
 }
 
 /* ---- cámara de bipado (independiente de la de "Comprobar OF") ---- */
@@ -12880,7 +13011,9 @@ function resumenPickingHtml(){
     ${s.incidencias.length ? `<label>Incidencias (${s.incidencias.length})</label>
     <div class="obs-box">${s.incidencias.map(i=>`${escapeHtml(i.codigo)} — ${escapeHtml(i.motivo)}`).join('<br>')}</div>` : ''}
     <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir bipando</button>
-    <button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar picking y generar hoja</button>
+    ${s.idExistente
+      ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ Añadir a la OF ${escapeHtml(s.of)}</button>`
+      : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar picking y generar hoja</button>`}
   `;
 }
 function registrarPickingRealizado(){
@@ -12894,6 +13027,51 @@ function registrarPickingRealizado(){
     componentes: sesionPicking.componentes, incidencias: sesionPicking.incidencias
   };
   mostrarHojaPicking(datosHoja, 'previo', 'realizar-resumen');
+}
+
+// ---- añadir componentes a un picking YA registrado (no uno nuevo) ----
+function preguntarComoActualizarHoja(){
+  if(!sesionPicking || !sesionPicking.idExistente) return;
+  if(!sesionPicking.componentes.length && !sesionPicking.incidencias.length){
+    toast('No se bipó nada nuevo'); return;
+  }
+  mostrarSheet(`
+    <h3>¿Cómo actualizas la hoja de picking?</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
+      Vas a añadir ${sesionPicking.componentes.length} línea${sesionPicking.componentes.length===1?'':'s'} más a la OF ${escapeHtml(sesionPicking.of)}.
+    </p>
+    <button class="btn btn-primary" onclick="confirmarAgregarComponentesExistente('regenerar')">📋 Rehacer la hoja entera (antes + esto junto)</button>
+    <button class="btn btn-outline" onclick="confirmarAgregarComponentesExistente('anexo')">📎 Dejar la hoja original y generar una aparte solo con esto</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+}
+function confirmarAgregarComponentesExistente(modo){
+  if(!sesionPicking || !sesionPicking.idExistente) return;
+  const id = sesionPicking.idExistente;
+  const p = DB.find(x=>x.id===id);
+  if(!p){ toast('No se encontró esa OF'); cerrarSheet(); return; }
+  cerrarSheet();
+
+  const nuevosComponentes = sesionPicking.componentes;
+  const nuevasIncidencias = sesionPicking.incidencias;
+
+  // Optimista: se ve reflejado ya mismo en el detalle, aunque el envío
+  // real a la hoja vaya por detrás.
+  p.componentesPicking = (p.componentesPicking || []).concat(nuevosComponentes);
+  p.incidenciasPicking = (p.incidenciasPicking || []).concat(nuevasIncidencias);
+  guardarDBLocal();
+
+  sesionPicking = null;
+  borrarBorradorBip();
+  toast(modo==='regenerar' ? 'Regenerando la hoja de picking…' : 'Añadiendo hoja aparte…');
+  abrirDetalle(id);
+
+  encolarOperacion('agregarComponentesPicking', {
+    id, of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto,
+    semana: semanaISO(new Date()), hechoPor: usuarioActual || 'Sin identificar',
+    agregadoPor: usuarioActual || 'Sin identificar',
+    nuevosComponentes, nuevasIncidencias, modo
+  }, id, (modo==='regenerar' ? 'Regenerar hoja' : 'Añadir hoja aparte') + ' OF ' + p.of);
 }
 
 /* ---- hoja de picking (documento imprimible) ---- */
@@ -12956,6 +13134,54 @@ function imprimirHojaPicking(){
   window.print();
   document.title = tituloOriginal;
 }
+// ---- ¿hace falta ubicar la caja, o se entrega en mano? ----
+// No todos los pickings van a un sitio del almacén — a veces se hacen y
+// se entregan directamente en mano, sin necesidad de guardar nada. Por
+// eso, antes de forzar a elegir ubicación, se pregunta.
+function preguntarUbicarPickingRealizado(){
+  if(!rpDocDatosActuales) return;
+  mostrarSheet(`
+    <h3>¿Le das ubicación a este picking?</h3>
+    <p class="hint" style="margin:0 0 10px;">
+      Si la caja se va a guardar en el almacén, dile dónde va. Si se entrega directamente en mano y no hace falta guardarla en ningún sitio, no hace falta ubicarla.
+    </p>
+    <button class="btn btn-primary" onclick="cerrarSheet(); continuarARegistroDesdeDoc();">📍 Sí, elegir dónde va</button>
+    <button class="btn btn-outline" onclick="cerrarSheet(); preguntarEntregaInmediataSinUbicar();">✋ No, se entrega en mano</button>
+  `);
+}
+function preguntarEntregaInmediataSinUbicar(){
+  mostrarSheet(`
+    <h3>¿Lo entregas ahora mismo?</h3>
+    <p class="hint" style="margin:0 0 10px;">El picking se registra sin ubicación de todas formas — puedes ubicarlo más tarde editándolo si hiciera falta.</p>
+    <button class="btn btn-primary" onclick="cerrarSheet(); registrarPickingSinUbicar(true);">✓ Sí, entregarlo ahora</button>
+    <button class="btn btn-outline" onclick="cerrarSheet(); registrarPickingSinUbicar(false);">Todavía no — solo registrar</button>
+  `);
+}
+// Registra el picking bipado sin pasar por el formulario de ubicación
+// (reutiliza el mismo chequeo de OF duplicada/ya entregada que el
+// registro normal). Si entregarAhora es true, en cuanto se registra se
+// abre directamente la pantalla de entrega completa.
+function registrarPickingSinUbicar(entregarAhora){
+  if(!rpDocDatosActuales) return;
+  if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
+  const datos = rpDocDatosActuales;
+  const datosNuevos = {
+    of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto,
+    cajas: 1, fuera: '', ubicaciones: '',
+    observaciones: 'Sin ubicar — se entrega en mano',
+    registradoPor: usuarioActual, fecha: new Date().toISOString(),
+    componentes: datos.componentes, incidencias: datos.incidencias,
+    semanaPicking: datos.semana, hechoPorPicking: datos.hechoPor
+  };
+  sesionPicking = null;
+  borrarBorradorBip();
+  alTerminarRegistroCallback = (id)=>{
+    abrirDetalle(id);
+    if(entregarAhora) setTimeout(()=>entregar('completa'), 150);
+  };
+  mostrarConfirmacionRegistro(datosNuevos);
+}
+
 function continuarARegistroDesdeDoc(){
   if(!rpDocDatosActuales) return;
   const datos = rpDocDatosActuales;
