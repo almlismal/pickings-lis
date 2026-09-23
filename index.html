@@ -11018,6 +11018,76 @@ let rpIncidenciaCodigoPendiente = '';
 let motivoIncidenciaSeleccionado = '';
 let rpDocDatosActuales = null;
 let rpDocVolverA = 'home';
+
+// ---- guardado automático del bipado en curso (para no perderlo si se
+// cierra la app, se apaga el móvil, etc. antes de terminar de registrar) ----
+const LS_BORRADOR_BIP = 'pickings_lis_borrador_bip_v1';
+function guardarBorradorBip(fase, extra){
+  try{
+    if(fase === 'bip' && sesionPicking){
+      localStorage.setItem(LS_BORRADOR_BIP, JSON.stringify({ fase:'bip', sesion: sesionPicking, guardadoEn: new Date().toISOString() }));
+    } else if(fase === 'registro' && pickingPendienteDatos){
+      localStorage.setItem(LS_BORRADOR_BIP, JSON.stringify({
+        fase:'registro', pendiente: pickingPendienteDatos,
+        of: (extra&&extra.of)||'', proyecto: (extra&&extra.proyecto)||'', subproyecto: (extra&&extra.subproyecto)||'',
+        guardadoEn: new Date().toISOString()
+      }));
+    }
+  } catch(e){}
+}
+function borrarBorradorBip(){
+  try{ localStorage.removeItem(LS_BORRADOR_BIP); } catch(e){}
+}
+function leerBorradorBip(){
+  try{ return JSON.parse(localStorage.getItem(LS_BORRADOR_BIP)); } catch(e){ return null; }
+}
+function comprobarBorradorBipAlArrancar(){
+  if(sesionPicking) return; // ya hay una sesión de bipado activa en esta misma pestaña
+  const b = leerBorradorBip();
+  if(!b) return;
+  const of = (b.fase==='bip') ? (b.sesion&&b.sesion.of) : b.of;
+  const nLineas = (b.fase==='bip') ? ((b.sesion&&b.sesion.componentes)||[]).length : ((b.pendiente&&b.pendiente.componentes)||[]).length;
+  mostrarSheet(`
+    <h3>Tienes un picking sin terminar</h3>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
+      Se quedó a medias la OF <b style="color:var(--ink);">${escapeHtml(of||'—')}</b> — ${nLineas} línea${nLineas===1?'':'s'} bipada${nLineas===1?'':'s'}.
+      ¿Quieres seguir por donde lo dejaste o descartarlo?
+    </p>
+    <button class="btn btn-primary" onclick="reanudarBorradorBip()">↺ Continuar donde lo dejé</button>
+    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="descartarBorradorBip()">Descartar</button>
+  `);
+}
+function reanudarBorradorBip(){
+  const b = leerBorradorBip();
+  cerrarSheet();
+  if(!b) return;
+  if(b.fase === 'bip'){
+    sesionPicking = b.sesion;
+    document.getElementById('rpBipOf').textContent = sesionPicking.of;
+    const campoManual = document.getElementById('rp_codigoManual');
+    if(campoManual) campoManual.value = '';
+    renderLineasBip();
+    ir('realizar-bip');
+  } else if(b.fase === 'registro'){
+    pickingPendienteDatos = b.pendiente;
+    editingId = null;
+    ir('registro');
+    resetFormRegistro();
+    document.getElementById('formTitle').textContent = 'Registrar picking';
+    document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+    document.getElementById('f_of').value = b.of || '';
+    document.getElementById('f_proyecto').value = b.proyecto || '';
+    document.getElementById('f_subproyecto').value = b.subproyecto || '';
+    chequearOfEnVivo();
+    toast('Sigue eligiendo dónde va la caja — lo bipado ya está a salvo');
+  }
+}
+function descartarBorradorBip(){
+  cerrarSheet();
+  borrarBorradorBip();
+  toast('Descartado');
+}
+
 const LS_MOTIVOS_INCIDENCIA = 'pickings_lis_motivos_incidencia';
 const MOTIVOS_INCIDENCIA_BASE = ['Falta stock','No se encuentra','Dañado / roto','Pedido a proveedor'];
 // Logos reales para la hoja de picking (calcados del Excel/PDF de referencia).
@@ -11354,6 +11424,7 @@ function elegirUsuario(n){
     setTimeout(abrirConfigurarPinObligatorio, 200);
   } else {
     toast('Sesión iniciada como ' + n);
+    setTimeout(comprobarBorradorBipAlArrancar, 400);
   }
 }
 function anadirNombre(){
@@ -11838,6 +11909,7 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
   };
   DB.unshift(optimista);
   guardarDBLocal();
+  borrarBorradorBip(); // ya está a salvo (guardado local + en cola de envío), se puede olvidar el borrador
   toast('Picking registrado');
   if(continuarMismoProy){
     continuarMismoProyecto(datos.proyecto);
@@ -12401,6 +12473,7 @@ function empezarBipado(){
   document.getElementById('rpBipOf').textContent = of;
   document.getElementById('rp_codigoManual').value = '';
   renderLineasBip();
+  guardarBorradorBip('bip');
   ir('realizar-bip');
 }
 
@@ -12410,6 +12483,7 @@ function cancelarBipado(){
   }
   detenerBipCamara();
   sesionPicking = null;
+  borrarBorradorBip();
   ir('home');
 }
 
@@ -12615,6 +12689,7 @@ function refrescarBipUI(){
   if(sesionPicking && cont && pantallaResumen && pantallaResumen.classList.contains('active')){
     cont.innerHTML = resumenPickingHtml();
   }
+  guardarBorradorBip('bip');
 }
 
 /* ---- incidencias (falta de stock / no se encuentra / etc.) ---- */
@@ -12802,6 +12877,7 @@ function continuarARegistroDesdeDoc(){
   };
   sesionPicking = null;
   editingId = null;
+  guardarBorradorBip('registro', { of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto });
   ir('registro');
   resetFormRegistro();
   document.getElementById('formTitle').textContent = 'Registrar picking';
@@ -13197,6 +13273,7 @@ async function iniciar(){
     setTimeout(()=>abrirCambioUsuario(true), 300);
   } else {
     sincronizar().catch(()=>{});
+    setTimeout(comprobarBorradorBipAlArrancar, 400);
   }
 
   // Refresco en segundo plano: para que lo que otra persona borre o cambie
