@@ -390,7 +390,7 @@
 </header>
 
 <div id="pending-sync-banner" class="pending-banner" style="display:none;">
-  <span id="pending-sync-text"></span>
+  <span id="pending-sync-text" style="cursor:pointer;" onclick="verColaSyncDetalle()">Ver detalle</span>
   <button type="button" onclick="reintentarTodo()">Reintentar</button>
 </div>
 
@@ -11005,6 +11005,7 @@ let ubicacionesSeleccion = {};
 let itemPendienteUbicacion = null;
 let adminUnlocked = false;
 let colaSync = [];
+let erroresOperaciones = {}; // { opId: 'mensaje de error' } — para poder ver por qué falla algo aunque el picking ya no esté visible (p.ej. se borró en local)
 let mapaIdsReales = {};
 
 // ---- "Realizar picking" (bipado en vivo) — todo aparte del resto de la app ----
@@ -11187,17 +11188,22 @@ async function procesarColaSync(){
       try{
         const resultado = await llamarBackend(op.accion, op.datos, op.id);
         if(resultado && resultado.ok === false){
-          if(p){ p.sync = 'error'; p.syncError = resultado.error || 'Error desconocido'; }
+          const msg = resultado.error || 'Error desconocido';
+          erroresOperaciones[op.id] = msg;
+          if(p){ p.sync = 'error'; p.syncError = msg; }
           guardarDBLocal();
           continue;
         }
+        delete erroresOperaciones[op.id];
         aplicarConfirmacionOperacion(op, resultado);
         colaSync = colaSync.filter(x=>x.id!==op.id);
         guardarColaSync();
         if(p && !colaSync.some(o=>o.pickingId===p.id)){ p.sync = 'ok'; p.syncError = ''; }
         guardarDBLocal();
       } catch(err){
-        if(p){ p.sync = 'error'; p.syncError = (err && err.message) ? err.message : 'No se pudo conectar'; }
+        const msg = (err && err.message) ? err.message : 'No se pudo conectar';
+        erroresOperaciones[op.id] = msg;
+        if(p){ p.sync = 'error'; p.syncError = msg; }
         guardarDBLocal();
         break; // probablemente no hay conexión — no seguimos fallando el resto ahora mismo
       }
@@ -11225,20 +11231,104 @@ async function reintentarPicking(id){
     try{
       const resultado = await llamarBackend(op.accion, op.datos, op.id);
       if(resultado && resultado.ok === false){
-        if(p){ p.sync = 'error'; p.syncError = resultado.error || 'Error desconocido'; }
+        const msg = resultado.error || 'Error desconocido';
+        erroresOperaciones[op.id] = msg;
+        if(p){ p.sync = 'error'; p.syncError = msg; }
       } else {
+        delete erroresOperaciones[op.id];
         aplicarConfirmacionOperacion(op, resultado);
         colaSync = colaSync.filter(x=>x.id!==op.id);
         guardarColaSync();
         if(p && !colaSync.some(o2=>o2.pickingId===p.id)){ p.sync = 'ok'; p.syncError = ''; }
       }
     } catch(err){
-      if(p){ p.sync = 'error'; p.syncError = (err && err.message) ? err.message : 'No se pudo conectar'; }
+      const msg = (err && err.message) ? err.message : 'No se pudo conectar';
+      erroresOperaciones[op.id] = msg;
+      if(p){ p.sync = 'error'; p.syncError = msg; }
     }
   }
   guardarDBLocal();
   refrescarPantalla();
   renderPendingBanner();
+}
+
+/* ---- ver qué hay atascado en la cola de sincronización, y por qué ----
+   Antes solo había un botón "Reintentar" a ciegas: si algo se quedaba
+   pendiente para siempre (p.ej. se borró un picking en local pero el
+   borrado nunca llegó a la hoja, o cualquier otro fallo repetido), no
+   había forma de saber qué era. Esto muestra cada operación pendiente,
+   con su error si lo tiene, y deja reintentarla o descartarla suelta. ---- */
+const ETIQUETAS_ACCION = {
+  crearPicking: 'Registrar picking', editarPicking: 'Editar picking',
+  entregar: 'Entrega', deshacerEntrega: 'Deshacer entrega',
+  borrarPicking: 'Borrar picking', ampliarPicking: 'Ampliar picking'
+};
+function verColaSyncDetalle(){
+  if(!colaSync.length){ toast('No hay nada pendiente de sincronizar'); return; }
+  const filas = colaSync.map(op=>{
+    const error = erroresOperaciones[op.id];
+    const tipo = ETIQUETAS_ACCION[op.accion] || op.accion;
+    return `
+      <div class="ticket" style="margin-bottom:8px;">
+        <div class="ticket-top"><span class="ticket-of">${escapeHtml(op.etiqueta || tipo)}</span><span class="ticket-date">${fechaCorta(op.creadoEn)}</span></div>
+        <div class="ticket-proj">${escapeHtml(tipo)}</div>
+        ${error ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">⚠️ ${escapeHtml(error)}</div>` : `<div class="hint" style="margin-top:6px;">Todavía no se ha intentado enviar, o está esperando conexión.</div>`}
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="btn btn-outline" style="flex:1; padding:8px;" onclick="reintentarOperacionSuelta('${op.id}')">Reintentar</button>
+          <button class="btn btn-outline" style="flex:1; padding:8px; color:#B33A3A; border-color:#B33A3A;" onclick="descartarOperacionSuelta('${op.id}')">Descartar</button>
+        </div>
+      </div>`;
+  }).join('');
+  mostrarSheet(`
+    <h3>${colaSync.length} cambio${colaSync.length===1?'':'s'} sin sincronizar</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
+      Esto es lo que aún no ha llegado a la hoja de cálculo. Si algo lleva mucho tiempo atascado con el mismo error, dímelo con el mensaje exacto.
+    </p>
+    ${filas}
+    <button class="btn btn-primary" onclick="cerrarSheet(); reintentarTodo();">Reintentar todo</button>
+  `);
+}
+async function reintentarOperacionSuelta(opId){
+  const op = colaSync.find(o=>o.id===opId);
+  if(!op) return;
+  toast('Reintentando…');
+  reescribirIdsReales(op);
+  const p = DB.find(x=>x.id===op.pickingId);
+  try{
+    const resultado = await llamarBackend(op.accion, op.datos, op.id);
+    if(resultado && resultado.ok === false){
+      erroresOperaciones[op.id] = resultado.error || 'Error desconocido';
+      if(p){ p.sync = 'error'; p.syncError = erroresOperaciones[op.id]; }
+    } else {
+      delete erroresOperaciones[op.id];
+      aplicarConfirmacionOperacion(op, resultado);
+      colaSync = colaSync.filter(x=>x.id!==op.id);
+      guardarColaSync();
+      if(p && !colaSync.some(o2=>o2.pickingId===p.id)){ p.sync = 'ok'; p.syncError = ''; }
+      toast('Sincronizado');
+    }
+  } catch(err){
+    erroresOperaciones[op.id] = (err && err.message) ? err.message : 'No se pudo conectar';
+    if(p){ p.sync = 'error'; p.syncError = erroresOperaciones[op.id]; }
+  }
+  guardarDBLocal();
+  refrescarPantalla();
+  renderPendingBanner();
+  cerrarSheet();
+  verColaSyncDetalle();
+}
+function descartarOperacionSuelta(opId){
+  const op = colaSync.find(o=>o.id===opId);
+  if(!op) return;
+  const tipo = ETIQUETAS_ACCION[op.accion] || op.accion;
+  if(!confirm('Se descarta "' + (op.etiqueta||tipo) + '" sin enviarlo nunca a la hoja de cálculo. Solo hazlo si sabes que ya no hace falta (p.ej. lo hiciste a mano en la hoja). ¿Seguro?')) return;
+  colaSync = colaSync.filter(x=>x.id!==op.id);
+  delete erroresOperaciones[op.id];
+  guardarColaSync();
+  renderPendingBanner();
+  cerrarSheet();
+  toast('Descartado');
+  if(colaSync.length) verColaSyncDetalle();
 }
 
 function renderPendingBanner(){
@@ -11248,7 +11338,7 @@ function renderPendingBanner(){
   if(n === 0){ banner.style.display = 'none'; return; }
   banner.style.display = 'flex';
   const texto = document.getElementById('pending-sync-text');
-  if(texto) texto.textContent = '⚠️ ' + n + (n===1 ? ' cambio sin sincronizar' : ' cambios sin sincronizar');
+  if(texto) texto.textContent = '⚠️ ' + n + (n===1 ? ' cambio sin sincronizar (toca para ver)' : ' cambios sin sincronizar (toca para ver)');
 }
 
 function syncBadgeHtml(p){
