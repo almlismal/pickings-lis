@@ -328,6 +328,21 @@
   .screen{ display:none; }
   .screen.active{ display:block; }
 
+  /* ---- hoja de picking imprimible (dentro de "Realizar picking") ---- */
+  .print-doc{ background:#fff; border:1px solid var(--line); border-radius:6px; padding:18px; margin-top:6px; }
+  .print-doc h2{ font-size:16px; }
+  .print-header, .print-tabla, .print-firmas{ width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
+  .print-header td{ padding:4px 6px; }
+  .print-tabla th, .print-tabla td{ border:1px solid #999; padding:6px 8px; font-size:13px; }
+  .print-tabla th{ background:#F3EFE6; text-align:left; }
+  .print-firmas th, .print-firmas td{ border:1px solid #999; padding:10px 8px; font-size:12px; text-align:center; }
+  @media print{
+    body *{ visibility:hidden; }
+    #screen-realizar-doc, #screen-realizar-doc *{ visibility:visible; }
+    #screen-realizar-doc{ position:absolute; left:0; top:0; width:100%; }
+    .no-print{ display:none !important; }
+  }
+
   /* ---- adaptación a pantallas grandes (PC) ---- */
   @media (min-width: 720px){
     main{ max-width: 760px; padding: 28px 24px; }
@@ -379,6 +394,10 @@
       <button class="home-btn" onclick="ir('escanear')">
         <b>📷 Comprobar OF (QR)</b>
         <span>Escanea la etiqueta de picking para ver si esa OF ya está aquí</span>
+      </button>
+      <button class="home-btn alt" onclick="nuevoRealizarPicking()">
+        <b>🧰 Realizar picking</b>
+        <span>Bipa cada componente mientras lo vas haciendo — prueba</span>
       </button>
     </div>
   </section>
@@ -475,6 +494,68 @@
     <div id="escanerEstado" class="hint" style="text-align:center; margin-top:12px;"></div>
     <div id="escanerResultado" style="margin-top:12px;"></div>
     <button class="btn btn-outline" onclick="ir('home')" style="margin-top:20px;">Cancelar</button>
+  </section>
+
+  <!-- ============ REALIZAR PICKING (bipado en vivo) — prueba, aparte de todo lo demás ============ -->
+  <section class="screen" id="screen-realizar-inicio">
+    <div class="screen-title">
+      <button class="back" onclick="ir('home')">←</button>
+      <h2>Realizar picking</h2>
+    </div>
+    <div class="hint" style="margin-bottom:10px;">Bipa cada etiqueta de componente a medida que lo vas metiendo en la caja. Al terminar se genera la hoja de picking y pasas a registrar la caja como siempre.</div>
+    <label>OF</label>
+    <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
+    <div class="row2">
+      <div><label>Proyecto</label><input type="text" id="rp_proyecto" placeholder="Ej. 2024-275"></div>
+      <div><label>Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
+    </div>
+    <button class="btn btn-primary" onclick="empezarBipado()">Empezar a bipar</button>
+  </section>
+
+  <section class="screen" id="screen-realizar-bip">
+    <div class="screen-title">
+      <button class="back" onclick="cancelarBipado()">←</button>
+      <h2>Bipando OF <span id="rpBipOf"></span></h2>
+    </div>
+    <div style="position:relative; border-radius:14px; overflow:hidden; background:#000; aspect-ratio:1/1; max-width:300px; margin:0 auto;">
+      <video id="rpVideo" playsinline muted style="width:100%; height:100%; object-fit:cover; display:block;"></video>
+    </div>
+    <canvas id="rpCanvas" style="display:none;"></canvas>
+    <div id="rpEstado" class="hint" style="text-align:center; margin-top:10px;"></div>
+
+    <div class="row2" style="margin-top:14px; align-items:flex-end;">
+      <div style="flex:2;">
+        <label style="margin-top:0;">O escribe el código a mano</label>
+        <input type="text" class="mono" id="rp_codigoManual" placeholder="Ej. SPC-MC-6370">
+      </div>
+      <div style="flex:1;">
+        <button class="btn btn-outline" style="margin-top:0;" onclick="anadirCodigoManual()">Añadir</button>
+      </div>
+    </div>
+
+    <label>Líneas bipadas (<span id="rpNumLineas">0</span>)</label>
+    <div id="rpListaLineas"></div>
+
+    <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">⚠️ Registrar incidencia (falta / no se encuentra)</button>
+    <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar bipado →</button>
+  </section>
+
+  <section class="screen" id="screen-realizar-resumen">
+    <div class="screen-title">
+      <button class="back" onclick="ir('realizar-bip')">←</button>
+      <h2>Confirmar picking</h2>
+    </div>
+    <div id="rpResumenContenido"></div>
+  </section>
+
+  <section class="screen" id="screen-realizar-doc">
+    <div class="screen-title no-print">
+      <button class="back" onclick="volverDesdeHojaPicking()">←</button>
+      <h2>Hoja de picking</h2>
+    </div>
+    <div id="rpDocContenido"></div>
+    <button class="btn btn-outline no-print" onclick="imprimirHojaPicking()">🖨️ Guardar / imprimir como PDF</button>
+    <button class="btn btn-primary no-print" id="rpDocContinuarBtn" onclick="continuarARegistroDesdeDoc()" style="display:none;">Continuar a registrar la caja →</button>
   </section>
 
   <!-- ============ DETALLE / ENTREGA ============ -->
@@ -10629,11 +10710,15 @@ function fetchConLimite(url, opciones, msLimite){
     xhr.send((opciones && opciones.body) || null);
   });
 }
-async function llamarBackend(accion, datos){
+async function llamarBackend(accion, datos, opId){
+  // opId identifica esta operación de forma única — si por lo que sea se
+  // reintenta una que la hoja ya había recibido y aplicado bien (se perdió
+  // solo la respuesta, no el guardado), la hoja detecta que es la misma y
+  // no la vuelve a aplicar, así nunca se duplica nada por un reintento.
   const res = await fetchConLimite(GAS_URL, {
     method: 'POST',
     headers: {'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({ accion, datos })
+    body: JSON.stringify({ accion, datos, opId: opId || '' })
   }, 25000);
   return res.json();
 }
@@ -10707,6 +10792,12 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
     ediciones,
     deshechas,
     ampliaciones: ampliaciones || [],
+    // El detalle línea a línea vive dentro del PDF, no en la hoja de
+    // cálculo — aquí solo se guarda el enlace y cuántas líneas tenía.
+    componentesPicking: (previo && previo.componentesPicking) || [],
+    incidenciasPicking: (previo && previo.incidenciasPicking) || [],
+    hojaPickingUrl: row['Hoja de picking URL'] || (previo ? previo.hojaPickingUrl : '') || '',
+    cantidadLineasPicking: Number(row['Cantidad de líneas picking']) || 0,
     sync: 'ok', syncError: ''
   };
 }
@@ -10900,6 +10991,20 @@ let adminUnlocked = false;
 let colaSync = [];
 let mapaIdsReales = {};
 
+// ---- "Realizar picking" (bipado en vivo) — todo aparte del resto de la app ----
+let sesionPicking = null;          // { of, proyecto, subproyecto, componentes:[], incidencias:[] }
+let pickingPendienteDatos = null;  // listo para adjuntarse al próximo guardarPicking()
+let rpStream = null, rpRAF = null, rpEscaneando = false;
+let rpModoIncidencia = false;
+let rpLineaPendiente = null;
+let rpCodigoConflicto = '';
+let rpIncidenciaCodigoPendiente = '';
+let motivoIncidenciaSeleccionado = '';
+let rpDocDatosActuales = null;
+let rpDocVolverA = 'home';
+const LS_MOTIVOS_INCIDENCIA = 'pickings_lis_motivos_incidencia';
+const MOTIVOS_INCIDENCIA_BASE = ['Falta stock','No se encuentra','Dañado / roto','Pedido a proveedor'];
+
 // Al cargar la página, se rellena todo con lo último que quedó guardado
 // en el móvil — así se ve al instante, incluso antes de hablar con la
 // hoja. iniciar() lo actualiza de fondo enseguida. El DB local (con
@@ -10963,7 +11068,10 @@ function aplicarConfirmacionOperacion(op, resultado){
   if(op.accion === 'crearPicking' && resultado && resultado.id){
     mapaIdsReales[op.pickingId] = resultado.id;
     const p = DB.find(x=>x.id===op.pickingId);
-    if(p) p.id = resultado.id;
+    if(p){
+      p.id = resultado.id;
+      if(resultado.hojaPickingUrl) p.hojaPickingUrl = resultado.hojaPickingUrl;
+    }
     if(ofEnDetalle === op.pickingId) ofEnDetalle = resultado.id;
     if(editingId === op.pickingId) editingId = resultado.id;
     // reescribe ya mismo las operaciones hermanas que sigan en cola
@@ -10984,7 +11092,7 @@ async function procesarColaSync(){
       reescribirIdsReales(op);
       const p = DB.find(x=>x.id===op.pickingId);
       try{
-        const resultado = await llamarBackend(op.accion, op.datos);
+        const resultado = await llamarBackend(op.accion, op.datos, op.id);
         if(resultado && resultado.ok === false){
           if(p){ p.sync = 'error'; p.syncError = resultado.error || 'Error desconocido'; }
           guardarDBLocal();
@@ -11022,7 +11130,7 @@ async function reintentarPicking(id){
     reescribirIdsReales(op);
     const p = DB.find(x=>x.id===op.pickingId);
     try{
-      const resultado = await llamarBackend(op.accion, op.datos);
+      const resultado = await llamarBackend(op.accion, op.datos, op.id);
       if(resultado && resultado.ok === false){
         if(p){ p.sync = 'error'; p.syncError = resultado.error || 'Error desconocido'; }
       } else {
@@ -11160,12 +11268,14 @@ function cargarNombres(){
 function ir(pantalla){
   const anterior = document.querySelector('.screen.active');
   if(anterior && anterior.id==='screen-escanear' && pantalla!=='escanear') detenerEscaner();
+  if(anterior && anterior.id==='screen-realizar-bip' && pantalla!=='realizar-bip') detenerBipCamara();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+pantalla).classList.add('active');
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
   if(pantalla==='entregados') entrarAEntregados();
   if(pantalla==='escanear') iniciarEscaner();
+  if(pantalla==='realizar-bip') iniciarBipCamara();
 }
 
 function actualizarVisibilidadAdmin(){
@@ -11353,6 +11463,7 @@ function resetFormRegistro(mantenerProyecto){
 }
 
 function nuevoPicking(){
+  pickingPendienteDatos = null; // por si se venía de una sesión de "Realizar picking" sin terminar
   editingId = null;
   ir('registro');
   resetFormRegistro();
@@ -11367,6 +11478,7 @@ function continuarMismoProyecto(proyecto){
   // Tras registrar una OF, deja el formulario listo para la siguiente
   // caja/OF del mismo proyecto sin tener que volver a escribirlo.
   // El subproyecto (FM) no se conserva porque suele cambiar de una OF a otra.
+  pickingPendienteDatos = null;
   editingId = null;
   ir('registro');
   resetFormRegistro(true);
@@ -11447,6 +11559,7 @@ function abrirEdicion(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
   if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden editarlo'); return; }
+  pickingPendienteDatos = null;
   editingId = id;
   ir('registro');
   document.getElementById('f_of').value = p.of;
@@ -11493,6 +11606,17 @@ async function guardarPicking(){
     registradoPor: usuarioActual,
     fecha: new Date().toISOString()
   };
+
+  // Si se llegó aquí desde "Realizar picking" (bipado en vivo), se adjuntan
+  // sus datos a esta misma OF nueva. En el registro normal, de siempre,
+  // pickingPendienteDatos no existe y esto no hace nada.
+  if(pickingPendienteDatos){
+    datosNuevos.componentes = pickingPendienteDatos.componentes;
+    datosNuevos.incidencias = pickingPendienteDatos.incidencias;
+    datosNuevos.semanaPicking = pickingPendienteDatos.semana;
+    datosNuevos.hechoPorPicking = pickingPendienteDatos.hechoPor;
+    pickingPendienteDatos = null;
+  }
 
   mostrarConfirmacionRegistro(datosNuevos);
 }
@@ -11551,7 +11675,7 @@ function resumenOfDuplicada(existente, ofBuscada){
       ${existente.proyecto || '—'}${existente.subproyecto ? ' · '+existente.subproyecto : ''} ·
       ${existente.cajas} caja${existente.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}.</p>
     </div>
-    <button class="btn btn-primary" onclick="irAAmpliar('${existente.id}')">➕ Añadir a esta OF (usar su caja)</button>
+    <button class="btn btn-primary" onclick="irAAmpliar('${existente.id}')">➕ Meter en su misma caja</button>
     <button class="btn btn-outline" onclick="pedirMotivoRegistroAparte()">Registrar aparte de todas formas</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `;
@@ -11629,7 +11753,7 @@ function avisoOfPendienteHtml(p){
       <p><b>${p.registradoPor}</b> la registró el ${fechaCorta(p.fecha)} —
       ${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''} ·
       ${p.cajas} caja${p.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}.</p>
-      <button class="btn btn-primary" onclick="irAAmpliar('${p.id}')">➕ Añadir a esta OF (usar su caja)</button>
+      <button class="btn btn-primary" onclick="irAAmpliar('${p.id}')">➕ Meter en su misma caja</button>
       <button class="btn btn-outline" onclick="document.getElementById('avisoOfRegistro').innerHTML=''">Ya lo sé, seguir registrando aparte</button>
     </div>
   `;
@@ -11682,6 +11806,11 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
     fecha: datos.fecha,
     estado: 'pendiente',
     entregas: [], ediciones: [], deshechas: [], ampliaciones: [],
+    componentesPicking: datos.componentes || [],
+    incidenciasPicking: datos.incidencias || [],
+    semanaPicking: datos.semanaPicking || '',
+    hechoPorPicking: datos.hechoPorPicking || '',
+    hojaPickingUrl: '', // se rellena solo en cuanto la nube confirme el PDF
     sync: 'pendiente', syncError: ''
   };
   DB.unshift(optimista);
@@ -11839,7 +11968,12 @@ function ticketHtml(p){
   });
   if(adminUnlocked && p.ediciones && p.ediciones.length) chips.push(`<span class="chip">✏️ Editado</span>`);
   if(adminUnlocked && p.deshechas && p.deshechas.length) chips.push(`<span class="chip attn">↩️ Entrega deshecha</span>`);
-  if(p.ampliaciones && p.ampliaciones.length) chips.push(`<span class="chip attn">➕ Ampliado</span>`);
+  if(p.ampliaciones && p.ampliaciones.length){
+    const ultimaAmpliacion = p.ampliaciones[p.ampliaciones.length-1];
+    chips.push(ultimaAmpliacion.cajaExtra
+      ? `<span class="chip attn">📦 +1 caja — ${escapeHtml(ultimaAmpliacion.agregadoPor)}</span>`
+      : `<span class="chip attn">➕ ${escapeHtml(ultimaAmpliacion.agregadoPor)} metió algo más</span>`);
+  }
   if(entregado) chips.push(`<span class="chip done">Entregado</span>`);
   else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega parcial</span>`);
   const syncChip = syncBadgeHtml(p);
@@ -11959,6 +12093,24 @@ function detalleHtml(p){
     </span></div>`;
   }
 
+  // Si se metió algo más en la caja (o se sumó una caja de verdad), se
+  // avisa arriba del todo — no solo abajo, en el historial — para que no
+  // pase desapercibido, sobre todo cuando cambió el número de cajas.
+  let ampliacionBanner = '';
+  if(p.ampliaciones && p.ampliaciones.length){
+    const ultimaAmpliacion = p.ampliaciones[p.ampliaciones.length-1];
+    if(ultimaAmpliacion.cajaExtra){
+      ampliacionBanner = `<div class="dup-banner">
+        <div class="dup-title">📦 Ahora son ${p.cajas} cajas, no ${p.cajas - 1}</div>
+        <p><b>${escapeHtml(ultimaAmpliacion.agregadoPor)}</b> sumó una caja más el ${fechaCorta(ultimaAmpliacion.fecha)}: ${escapeHtml(ultimaAmpliacion.detalle)}</p>
+      </div>`;
+    } else {
+      ampliacionBanner = `<div class="attn-banner"><span class="dot">➕</span><span>
+        <b>${escapeHtml(ultimaAmpliacion.agregadoPor)}</b> metió algo más en la caja el ${fechaCorta(ultimaAmpliacion.fecha)}: ${escapeHtml(ultimaAmpliacion.detalle)}
+      </span></div>`;
+    }
+  }
+
   const entregasHtml = p.entregas.length ? `
     <div class="entrega-log">
       ${p.entregas.map((e,i)=>{
@@ -11975,7 +12127,7 @@ function detalleHtml(p){
   const acciones = p.estado==='completado' ? '' : `
     <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
     <button class="btn btn-outline" onclick="entregar('parcial')">Entrega parcial</button>
-    <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">➕ Añadir algo a este picking</button>
+    <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">➕ Meter algo más en esta misma caja</button>
   `;
 
   const gestionBtns = puedeGestionar(p)
@@ -11986,6 +12138,7 @@ function detalleHtml(p){
   return `
     <div class="detail-block">
       ${syncBanner}
+      ${ampliacionBanner}
       <div class="detail-of">OF ${p.of}</div>
       <div class="detail-sub">${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''}</div>
       <div class="detail-grid">
@@ -11998,6 +12151,7 @@ function detalleHtml(p){
       </div>` : ''}
       ${p.observaciones ? `<div class="obs-box">${p.observaciones}</div>` : ''}
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
+      ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">📋 Ver hoja de picking</button>` : ''}
       ${gestionBtns}
     </div>
     ${doneBanner}
@@ -12035,10 +12189,11 @@ function deshechasHtmlOf(p){
 function ampliacionesHtmlOf(p){
   if(!p.ampliaciones || !p.ampliaciones.length) return '';
   return `<div class="entrega-log">
-    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Añadido después del registro</div>
+    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Esto se añadió a la caja después de registrarla</div>
     ${p.ampliaciones.map(a=>`<div class="item">
-      <b>${a.agregadoPor}</b> añadió — ${fechaCorta(a.fecha)}<br>
-      ${escapeHtml(a.detalle)}${a.cajaExtra ? ' <span class="chip">+1 caja</span>' : ''}
+      ${a.cajaExtra ? '<span class="chip attn" style="margin-bottom:4px;">📦 Se sumó otra caja</span><br>' : ''}
+      <b>${escapeHtml(a.detalle)}</b><br>
+      <span class="hint" style="margin-top:0;">Lo metió ${a.agregadoPor} el ${fechaCorta(a.fecha)}</span>
     </div>`).join('')}
   </div>`;
 }
@@ -12170,7 +12325,7 @@ function resumenEscaneoEncontrado(p){
       ${p.cajas} caja${p.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}<br>
       Registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}
     </div>
-    <button class="btn btn-primary" onclick="irAAmpliarDesdeEscaner('${p.id}')" style="margin-top:10px;">➕ Añadir a esta OF</button>
+    <button class="btn btn-primary" onclick="irAAmpliarDesdeEscaner('${p.id}')" style="margin-top:10px;">➕ Meter en su misma caja</button>
     <button class="btn btn-outline" onclick="verDetalleDesdeEscaner('${p.id}')" style="margin-top:8px;">Ver detalle completo</button>
     <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">Seguir escaneando</button>
   `;
@@ -12194,6 +12349,464 @@ function registrarDesdeEscaner(of){
   nuevoPicking();
   const campo = document.getElementById('f_of');
   if(campo) campo.value = of;
+}
+
+/* ================= REALIZAR PICKING (bipado en vivo) =================
+   Pantalla nueva y APARTE de "Registrar picking": aquí se van bipando los
+   componentes mientras se hace el picking físico. Usa su propia cámara
+   (rpStream/rpRAF/rpEscaneando), separada por completo de la de "Comprobar
+   OF", para no interferir nunca con ella. Al terminar, genera la hoja de
+   picking y entrega OF/Proyecto/Subproyecto ya rellenos a la pantalla de
+   Registro de siempre (que no se toca en nada — solo se le pasan los
+   campos ya escritos, igual que hace abrirEdicion()). ========================= */
+
+function nuevoRealizarPicking(){
+  document.getElementById('rp_of').value = '';
+  document.getElementById('rp_proyecto').value = '';
+  document.getElementById('rp_subproyecto').value = '';
+  ir('realizar-inicio');
+}
+
+function empezarBipado(){
+  const of = document.getElementById('rp_of').value.trim();
+  const proyecto = document.getElementById('rp_proyecto').value.trim();
+  const subproyecto = document.getElementById('rp_subproyecto').value.trim();
+  if(!of){ toast('Falta el número de OF'); return; }
+  if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
+  sesionPicking = { of, proyecto, subproyecto, componentes: [], incidencias: [] };
+  document.getElementById('rpBipOf').textContent = of;
+  document.getElementById('rp_codigoManual').value = '';
+  renderLineasBip();
+  ir('realizar-bip');
+}
+
+function cancelarBipado(){
+  if(sesionPicking && (sesionPicking.componentes.length || sesionPicking.incidencias.length)){
+    if(!confirm('Se perderá lo bipado hasta ahora. ¿Seguro que quieres salir?')) return;
+  }
+  detenerBipCamara();
+  sesionPicking = null;
+  ir('home');
+}
+
+/* ---- cámara de bipado (independiente de la de "Comprobar OF") ---- */
+function iniciarBipCamara(){
+  detenerBipCamara();
+  const estadoEl = document.getElementById('rpEstado');
+  if(typeof jsQR !== 'function'){
+    if(estadoEl) estadoEl.textContent = 'No se pudo cargar el lector de QR — usa el campo de abajo para escribir el código a mano.';
+    return;
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    if(estadoEl) estadoEl.textContent = 'Este navegador no deja usar la cámara aquí — usa el campo de abajo para escribir el código a mano.';
+    return;
+  }
+  if(estadoEl) estadoEl.textContent = 'Abriendo cámara…';
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+    .then(stream=>{
+      rpStream = stream;
+      const video = document.getElementById('rpVideo');
+      if(!video){ stream.getTracks().forEach(t=>t.stop()); return; }
+      video.srcObject = stream;
+      video.play().catch(()=>{});
+      if(estadoEl) estadoEl.textContent = rpModoIncidencia ? 'Apunta al código del componente con incidencia' : 'Apunta a cada etiqueta según la vayas metiendo';
+      rpEscaneando = true;
+      rpRAF = requestAnimationFrame(cicloBipCamara);
+    })
+    .catch(err=>{
+      if(estadoEl) estadoEl.textContent = 'No se pudo abrir la cámara — usa el campo de abajo para escribir el código a mano.';
+    });
+}
+function detenerBipCamara(){
+  rpEscaneando = false;
+  if(rpRAF) cancelAnimationFrame(rpRAF);
+  rpRAF = null;
+  if(rpStream){
+    rpStream.getTracks().forEach(t=>t.stop());
+    rpStream = null;
+  }
+  const video = document.getElementById('rpVideo');
+  if(video) video.srcObject = null;
+}
+function cicloBipCamara(){
+  if(!rpEscaneando) return;
+  const video = document.getElementById('rpVideo');
+  const canvas = document.getElementById('rpCanvas');
+  if(video && canvas && video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth){
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    let codigo = null;
+    try{
+      const imagen = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      codigo = jsQR(imagen.data, imagen.width, imagen.height);
+    } catch(e){}
+    if(codigo && codigo.data){
+      const partes = String(codigo.data).split(';');
+      procesarCodigoBipado((partes[0]||'').trim(), (partes[1]||'').trim());
+      return; // se retoma cuando el usuario resuelve lo que salga (línea, aviso, incidencia...)
+    }
+  }
+  rpRAF = requestAnimationFrame(cicloBipCamara);
+}
+
+function anadirCodigoManual(){
+  const campo = document.getElementById('rp_codigoManual');
+  const val = campo.value.trim();
+  if(!val){ toast('Escribe un código'); return; }
+  campo.value = '';
+  // Si pegan el texto completo de la etiqueta (con los ";"), se aprovecha
+  // igual que si se hubiera bipado con la cámara.
+  const partes = val.split(';');
+  procesarCodigoBipado((partes[0]||'').trim(), (partes[1]||'').trim());
+}
+
+function procesarCodigoBipado(codigo, ofLeida){
+  if(!codigo) return;
+
+  if(rpModoIncidencia){
+    detenerBipCamara();
+    rpModoIncidencia = false;
+    abrirIncidencia(codigo);
+    return;
+  }
+  if(!sesionPicking) return;
+
+  // Si la etiqueta trae OF y no coincide con la que estamos bipando, avisa
+  // — pero deja seguir de todas formas, por si de verdad hace falta.
+  if(ofLeida && /^\d{8}$/.test(ofLeida) && ofLeida !== sesionPicking.of){
+    detenerBipCamara();
+    rpCodigoConflicto = codigo;
+    mostrarSheet(`
+      <div class="dup-banner">
+        <div class="dup-title">⚠️ Esta etiqueta es de otra OF</div>
+        <p>El código <b>${escapeHtml(codigo)}</b> es de la OF <b>${escapeHtml(ofLeida)}</b>, no de la OF <b>${escapeHtml(sesionPicking.of)}</b> que estás bipando ahora.</p>
+      </div>
+      <button class="btn btn-primary" onclick="anadirCodigoConflictoDeTodasFormas()">Añadirlo de todas formas</button>
+      <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Descartar y seguir bipando</button>
+    `);
+    return;
+  }
+
+  const yaEsta = sesionPicking.componentes.some(c=>c.codigo===codigo);
+  if(yaEsta){
+    detenerBipCamara();
+    rpCodigoConflicto = codigo;
+    mostrarSheet(`
+      <div class="attn-banner"><span class="dot">🔁</span><span>El código <b>${escapeHtml(codigo)}</b> ya está en la lista. ¿Se repitió sin querer, o es otra cantidad más de lo mismo?</span></div>
+      <button class="btn btn-primary" onclick="anadirCodigoConflictoDeTodasFormas()">Es otra línea (añadir de nuevo)</button>
+      <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Fue sin querer, no añadir</button>
+    `);
+    return;
+  }
+
+  continuarLineaBip(codigo);
+}
+function anadirCodigoConflictoDeTodasFormas(){
+  cerrarSheet();
+  continuarLineaBip(rpCodigoConflicto);
+}
+
+function continuarLineaBip(codigo){
+  detenerBipCamara();
+  rpLineaPendiente = { codigo };
+  mostrarSheet(`
+    <h3>Código ${escapeHtml(codigo)}</h3>
+    <label>Lote</label>
+    <input type="text" class="mono" id="lineaLote" placeholder="Obligatorio — si se deja en blanco se guarda como N/A">
+    <label>Cantidad</label>
+    <input type="number" id="lineaCantidad" min="1" value="1" inputmode="numeric">
+    <button class="btn btn-primary" onclick="confirmarLineaBip()">Añadir a la lista</button>
+    <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Cancelar</button>
+  `);
+}
+
+function confirmarLineaBip(){
+  if(!rpLineaPendiente || !sesionPicking) return;
+  const lote = document.getElementById('lineaLote').value.trim() || 'N/A';
+  const cantidad = parseInt(document.getElementById('lineaCantidad').value) || 1;
+  sesionPicking.componentes.push({ codigo: rpLineaPendiente.codigo, lote, cantidad });
+  rpLineaPendiente = null;
+  cerrarSheet();
+  refrescarBipUI();
+  toast('Añadido');
+  iniciarBipCamara();
+}
+
+function editarLineaBip(idx){
+  const c = sesionPicking.componentes[idx];
+  if(!c) return;
+  mostrarSheet(`
+    <h3>Editar ${escapeHtml(c.codigo)}</h3>
+    <label>Lote</label>
+    <input type="text" class="mono" id="lineaLote" value="${escapeHtml(c.lote)}">
+    <label>Cantidad</label>
+    <input type="number" id="lineaCantidad" min="1" value="${c.cantidad}" inputmode="numeric">
+    <button class="btn btn-primary" onclick="guardarEdicionLineaBip(${idx})">Guardar</button>
+    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="borrarLineaBip(${idx})">🗑️ Borrar esta línea</button>
+  `);
+}
+function guardarEdicionLineaBip(idx){
+  const c = sesionPicking.componentes[idx];
+  if(!c) return;
+  c.lote = document.getElementById('lineaLote').value.trim() || 'N/A';
+  c.cantidad = parseInt(document.getElementById('lineaCantidad').value) || 1;
+  cerrarSheet();
+  refrescarBipUI();
+}
+function borrarLineaBip(idx){
+  sesionPicking.componentes.splice(idx,1);
+  cerrarSheet();
+  refrescarBipUI();
+  toast('Línea borrada');
+}
+function editarLineaBipDesdeResumen(idx){
+  editarLineaBip(idx);
+}
+
+function renderLineasBip(){
+  const cont = document.getElementById('rpListaLineas');
+  const num = document.getElementById('rpNumLineas');
+  if(!sesionPicking || !cont) return;
+  if(num) num.textContent = sesionPicking.componentes.length;
+  if(!sesionPicking.componentes.length){
+    cont.innerHTML = `<div class="empty">Todavía no se ha bipado ningún componente</div>`;
+    return;
+  }
+  cont.innerHTML = sesionPicking.componentes.map((c,i)=>`
+    <div class="ticket" style="cursor:pointer;" onclick="editarLineaBip(${i})">
+      <div class="ticket-top">
+        <span class="ticket-of">${escapeHtml(c.codigo)}</span>
+        <span class="ticket-date">x${c.cantidad}</span>
+      </div>
+      <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A — falta ponerlo</b>' : escapeHtml(c.lote)}</div>
+    </div>
+  `).join('');
+}
+function refrescarBipUI(){
+  renderLineasBip();
+  const pantallaResumen = document.getElementById('screen-realizar-resumen');
+  const cont = document.getElementById('rpResumenContenido');
+  if(sesionPicking && cont && pantallaResumen && pantallaResumen.classList.contains('active')){
+    cont.innerHTML = resumenPickingHtml();
+  }
+}
+
+/* ---- incidencias (falta de stock / no se encuentra / etc.) ---- */
+function abrirIncidencia(codigoPrellenado){
+  detenerBipCamara();
+  if(codigoPrellenado===undefined) motivoIncidenciaSeleccionado = '';
+  mostrarSheet(`
+    <h3>Registrar incidencia</h3>
+    <label>Código</label>
+    <div class="row2">
+      <div><input type="text" class="mono" id="incidenciaCodigo" placeholder="Ej. SPC-MC-6370" value="${escapeAtributo(codigoPrellenado||'')}"></div>
+      <div style="flex:0 0 auto;"><button class="btn btn-outline" style="margin-top:0; width:auto; padding:12px 14px;" onclick="biparCodigoIncidencia()">📷</button></div>
+    </div>
+    <label>Motivo</label>
+    <div id="motivoIncidenciaChips"></div>
+    <button class="btn btn-primary" onclick="confirmarIncidencia()">Guardar incidencia</button>
+  `);
+  renderMotivosIncidencia();
+}
+function biparCodigoIncidencia(){
+  const campo = document.getElementById('incidenciaCodigo');
+  rpIncidenciaCodigoPendiente = campo ? campo.value : '';
+  cerrarSheet();
+  rpModoIncidencia = true;
+  iniciarBipCamara();
+}
+function cargarMotivosIncidencia(){
+  try{ return JSON.parse(localStorage.getItem(LS_MOTIVOS_INCIDENCIA)) || []; } catch(e){ return []; }
+}
+function guardarMotivosIncidencia(lista){
+  try{ localStorage.setItem(LS_MOTIVOS_INCIDENCIA, JSON.stringify(lista)); } catch(e){}
+}
+function renderMotivosIncidencia(){
+  const cont = document.getElementById('motivoIncidenciaChips');
+  if(!cont) return;
+  const opciones = MOTIVOS_INCIDENCIA_BASE.concat(cargarMotivosIncidencia());
+  cont.innerHTML = `<div class="ubic-grid">` + opciones.map(m=>{
+    const active = motivoIncidenciaSeleccionado === m ? 'active' : '';
+    return `<div class="loc-chip ${active}" onclick="elegirMotivoIncidencia('${m.replace(/'/g,"\\'")}', this)">${escapeHtml(m)}</div>`;
+  }).join('') + `<div class="loc-chip add" onclick="abrirAnadirMotivoIncidencia()">+ Añadir otro</div></div>`;
+}
+function elegirMotivoIncidencia(m, el){
+  motivoIncidenciaSeleccionado = m;
+  document.querySelectorAll('#motivoIncidenciaChips .loc-chip').forEach(p=>p.classList.remove('active'));
+  if(el) el.classList.add('active');
+}
+function abrirAnadirMotivoIncidencia(){
+  const campo = document.getElementById('incidenciaCodigo');
+  rpIncidenciaCodigoPendiente = campo ? campo.value : '';
+  mostrarSheet(`<h3>Añadir motivo</h3>
+    <label>Motivo</label>
+    <input type="text" id="nuevoMotivoIncidencia" placeholder="Ej. Etiqueta ilegible">
+    <button class="btn btn-primary" onclick="confirmarAnadirMotivoIncidencia()">Añadir y elegir</button>`);
+}
+function confirmarAnadirMotivoIncidencia(){
+  const val = document.getElementById('nuevoMotivoIncidencia').value.trim();
+  if(!val) return;
+  const extras = cargarMotivosIncidencia();
+  if(!extras.includes(val) && !MOTIVOS_INCIDENCIA_BASE.includes(val)) extras.push(val);
+  guardarMotivosIncidencia(extras);
+  motivoIncidenciaSeleccionado = val;
+  abrirIncidencia(rpIncidenciaCodigoPendiente);
+}
+function confirmarIncidencia(){
+  const codigo = document.getElementById('incidenciaCodigo').value.trim();
+  if(!codigo){ toast('Escribe o bipa el código'); return; }
+  if(!motivoIncidenciaSeleccionado){ toast('Elige un motivo'); return; }
+  sesionPicking.incidencias.push({ codigo, motivo: motivoIncidenciaSeleccionado });
+  cerrarSheet();
+  toast('Incidencia registrada');
+  refrescarBipUI();
+  iniciarBipCamara();
+}
+
+/* ---- resumen final y confirmación ---- */
+function irAResumenPicking(){
+  if(!sesionPicking) return;
+  detenerBipCamara();
+  ir('realizar-resumen');
+  document.getElementById('rpResumenContenido').innerHTML = resumenPickingHtml();
+}
+function resumenPickingHtml(){
+  const s = sesionPicking;
+  const faltaLote = s.componentes.filter(c=>c.lote==='N/A').length;
+  return `
+    <div class="detail-block">
+      <div class="detail-of">OF ${escapeHtml(s.of)}</div>
+      <div class="detail-sub">${escapeHtml(s.proyecto||'—')}${s.subproyecto ? ' · '+escapeHtml(s.subproyecto) : ''}</div>
+      <div class="hint" style="margin-top:10px;">Cantidad de líneas: <b>${s.componentes.length}</b></div>
+    </div>
+    ${faltaLote ? `<div class="attn-banner"><span class="dot">⚠️</span><span>${faltaLote} línea${faltaLote>1?'s':''} sin lote — se guardará${faltaLote>1?'n':''} como N/A. Toca la línea para editarla antes de seguir.</span></div>` : ''}
+    <div id="rpListaResumen">${s.componentes.map((c,i)=>`
+      <div class="ticket" style="cursor:pointer;" onclick="editarLineaBipDesdeResumen(${i})">
+        <div class="ticket-top"><span class="ticket-of">${escapeHtml(c.codigo)}</span><span class="ticket-date">x${c.cantidad}</span></div>
+        <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A</b>' : escapeHtml(c.lote)}</div>
+      </div>
+    `).join('') || '<div class="empty">No se bipó ningún componente</div>'}</div>
+    ${s.incidencias.length ? `<label>Incidencias (${s.incidencias.length})</label>
+    <div class="obs-box">${s.incidencias.map(i=>`${escapeHtml(i.codigo)} — ${escapeHtml(i.motivo)}`).join('<br>')}</div>` : ''}
+    <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir bipando</button>
+    <button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar picking y generar hoja</button>
+  `;
+}
+function registrarPickingRealizado(){
+  if(!sesionPicking) return;
+  if(!sesionPicking.componentes.length){
+    if(!confirm('No se ha bipado ningún componente todavía. ¿Seguro que quieres continuar igualmente?')) return;
+  }
+  const datosHoja = {
+    of: sesionPicking.of, proyecto: sesionPicking.proyecto, subproyecto: sesionPicking.subproyecto,
+    semana: semanaISO(new Date()), hechoPor: usuarioActual || 'Sin identificar',
+    componentes: sesionPicking.componentes, incidencias: sesionPicking.incidencias
+  };
+  mostrarHojaPicking(datosHoja, 'previo', 'realizar-resumen');
+}
+
+/* ---- hoja de picking (documento imprimible) ---- */
+function semanaISO(d){
+  const date = new Date(d.getTime());
+  date.setHours(0,0,0,0);
+  date.setDate(date.getDate() + 3 - (date.getDay()+6)%7);
+  const semana1 = new Date(date.getFullYear(),0,4);
+  const numero = 1 + Math.round(((date - semana1) / 86400000 - 3 + (semana1.getDay()+6)%7) / 7);
+  return `Semana ${numero} · ${date.getFullYear()}`;
+}
+function generarHojaPickingHtml(datos){
+  const filas = datos.componentes.map(c=>`
+    <tr><td>${escapeHtml(c.codigo)}</td><td>${escapeHtml(c.lote||'N/A')}</td><td style="text-align:center;">${c.cantidad}</td></tr>
+  `).join('') || `<tr><td colspan="3" style="text-align:center; color:#888;">Sin componentes bipados</td></tr>`;
+  const faltante = datos.incidencias.map(i=>`${escapeHtml(i.codigo)} (${escapeHtml(i.motivo)})`).join(' · ');
+  const hoy = fechaCorta(new Date().toISOString());
+  return `
+    <div class="print-doc">
+      <h2 style="text-align:center; margin:0 0 4px;">REGISTRO RECEPCIÓN Y ENTREGA PICKINGS</h2>
+      <table class="print-header">
+        <tr><td><b>Proyecto</b></td><td>${escapeHtml(datos.proyecto||'—')}${datos.subproyecto ? ' · '+escapeHtml(datos.subproyecto) : ''}</td>
+            <td><b>OF</b></td><td>${escapeHtml(datos.of)}</td></tr>
+        <tr><td><b>Fecha</b></td><td>${hoy}</td>
+            <td><b>Semana</b></td><td>${escapeHtml(datos.semana)}</td></tr>
+      </table>
+      <table class="print-tabla">
+        <thead><tr><th>Código</th><th>Lote</th><th>Cantidad</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+      <p><b>MATERIAL FALTANTE:</b> ${faltante || 'Ninguno'}</p>
+      <p><b>CANTIDAD DE LÍNEAS:</b> ${datos.componentes.length}</p>
+      <table class="print-firmas">
+        <tr><th>FECHA ENTREGA</th><th>FIRMA Y NOMBRE LIS</th><th>FIRMA Y NOMBRE DHV</th></tr>
+        <tr><td>${hoy}</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+      </table>
+      <p class="hint" style="text-align:center; margin-top:14px;">Hecho por ${escapeHtml(datos.hechoPor)}</p>
+    </div>
+  `;
+}
+function mostrarHojaPicking(datos, modo, volverA){
+  rpDocDatosActuales = datos;
+  rpDocVolverA = volverA || 'home';
+  document.getElementById('rpDocContenido').innerHTML = generarHojaPickingHtml(datos);
+  const btnContinuar = document.getElementById('rpDocContinuarBtn');
+  if(btnContinuar) btnContinuar.style.display = (modo==='previo') ? '' : 'none';
+  ir('realizar-doc');
+}
+function volverDesdeHojaPicking(){
+  ir(rpDocVolverA);
+}
+function imprimirHojaPicking(){
+  if(!rpDocDatosActuales) return;
+  const tituloOriginal = document.title;
+  document.title = `${rpDocDatosActuales.of}-${rpDocDatosActuales.hechoPor}`.replace(/\s+/g,'_');
+  window.print();
+  document.title = tituloOriginal;
+}
+function continuarARegistroDesdeDoc(){
+  if(!rpDocDatosActuales) return;
+  const datos = rpDocDatosActuales;
+  pickingPendienteDatos = {
+    componentes: datos.componentes,
+    incidencias: datos.incidencias,
+    semana: datos.semana,
+    hechoPor: datos.hechoPor
+  };
+  sesionPicking = null;
+  editingId = null;
+  ir('registro');
+  resetFormRegistro();
+  document.getElementById('formTitle').textContent = 'Registrar picking';
+  document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+  document.getElementById('f_of').value = datos.of;
+  document.getElementById('f_proyecto').value = datos.proyecto || '';
+  document.getElementById('f_subproyecto').value = datos.subproyecto || '';
+  chequearOfEnVivo();
+  sincronizar().catch(()=>{});
+  toast('Ahora registra dónde va la caja');
+}
+function verHojaPickingDetalle(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p){ toast('No se encontró esa OF'); return; }
+  // Ya está el PDF de verdad guardado en la nube: se abre directamente ahí.
+  if(p.hojaPickingUrl){
+    window.open(p.hojaPickingUrl, '_blank');
+    return;
+  }
+  // Todavía no se ha sincronizado (o Drive falló al generarlo) — se enseña
+  // una vista previa local con lo que hay hasta ahora, avisando de que
+  // no es el archivo definitivo.
+  if(p.componentesPicking && p.componentesPicking.length){
+    const datos = {
+      of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto,
+      semana: p.semanaPicking || '—', hechoPor: p.hechoPorPicking || p.registradoPor,
+      componentes: p.componentesPicking, incidencias: p.incidenciasPicking || []
+    };
+    toast('Aún no se sincronizó con la nube — esto es una vista previa');
+    mostrarHojaPicking(datos, 'ver', 'detalle');
+    return;
+  }
+  toast('Esta OF no tiene hoja de picking');
 }
 
 let entregaItemsEstado = {};
@@ -12486,15 +13099,25 @@ function abrirAmpliacion(id){
   if(!p){ toast('No se encontró esa OF'); return; }
   pendienteAmpliacion = id;
   mostrarSheet(`
-    <h3>Añadir a la OF ${p.of}</h3>
+    <h3>Meter algo más en la caja de la OF ${p.of}</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Se guarda como algo añadido a este picking — no se crea uno nuevo. Queda quién lo añadió y cuándo.
+      Sigue siendo la misma caja de siempre — <b>no se crea ningún picking nuevo</b>. Rellena esto y la app escribe sola una nota clara, para que cualquiera que la abra después entienda qué se metió.
     </p>
-    <label>¿Qué se añade?</label>
-    <textarea id="detalleAmpliacion" placeholder="Ej. 2 perfiles más, van en la misma caja"></textarea>
+    <div class="row2">
+      <div>
+        <label>Cantidad</label>
+        <input type="number" id="cantidadAmpliacion" min="1" value="1" inputmode="numeric">
+      </div>
+      <div>
+        <label>¿Qué es?</label>
+        <input type="text" id="queEsAmpliacion" placeholder="Ej. perfiles, tornillos, cables">
+      </div>
+    </div>
+    <label>Algo más a tener en cuenta (opcional)</label>
+    <textarea id="notaExtraAmpliacion" placeholder="Ej. Van sueltos, no en bolsa"></textarea>
     <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:400;">
       <input type="checkbox" id="cajaExtraAmpliacion">
-      <span>Esto necesita una caja nueva (sube el nº de cajas)</span>
+      <span>No cabe en la caja que había — hace falta una caja nueva (sube el nº de cajas)</span>
     </label>
     <button class="btn btn-primary" onclick="confirmarAmpliacion()">Guardar</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
@@ -12505,9 +13128,16 @@ function confirmarAmpliacion(){
   if(!pendienteAmpliacion) return;
   const p = DB.find(x=>x.id===pendienteAmpliacion);
   if(!p){ toast('No se encontró esa OF'); return; }
-  const detalle = document.getElementById('detalleAmpliacion').value.trim();
-  if(!detalle){ toast('Escribe qué se añade'); return; }
+  const cantidad = parseInt(document.getElementById('cantidadAmpliacion').value) || 0;
+  const queEs = document.getElementById('queEsAmpliacion').value.trim();
+  const notaExtra = document.getElementById('notaExtraAmpliacion').value.trim();
+  if(!cantidad || cantidad<1){ toast('Escribe cuántas piezas se añaden'); return; }
+  if(!queEs){ toast('Escribe qué es (ej. perfiles, tornillos...)'); return; }
   const cajaExtra = document.getElementById('cajaExtraAmpliacion').checked;
+
+  // La frase la escribe siempre la app, con los mismos datos — así se
+  // entiende igual de claro lo escriba quien lo escriba.
+  const detalle = `Se añadieron ${cantidad} ${queEs} más a la caja.` + (notaExtra ? ' ' + notaExtra : '');
 
   if(!p.ampliaciones) p.ampliaciones = [];
   if(cajaExtra) p.cajas = (p.cajas||1) + 1;
