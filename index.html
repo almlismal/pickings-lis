@@ -10768,7 +10768,14 @@ function parseUbicaciones(str){
 }
 
 function construirPickingDesdeRow(row, entregas, historial, previo){
-  const id = row['ID'];
+  // Si por lo que sea la fila no tiene ID (pasó con pickings antiguos, de
+  // antes de que esa columna se usara siempre), NUNCA se deja en blanco:
+  // dos filas con ID en blanco se confundirían entre sí al buscar y abrir
+  // una — mejor un ID propio calculado a partir de sus datos, siempre igual
+  // para la misma fila, que uno vacío compartido por varias.
+  const id = (row['ID'] && String(row['ID']).trim())
+    ? row['ID']
+    : 'legacy_' + String(row['OF']||'').trim() + '_' + String(row['Fecha']||'').trim();
   const entregasDe = entregas.filter(e=>e['ID del picking']===id).map(e=>({
     tipo: e['Tipo'], entregadoPor: e['Entregado por'], entregadoA: e['Entregado a'],
     nota: e['Nota'] || '', fecha: e['Fecha']
