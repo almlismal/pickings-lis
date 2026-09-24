@@ -10948,14 +10948,13 @@ function procesarDatos(datos){
 function refrescarPantalla(){
   const activa = document.querySelector('.screen.active');
   if(!activa) return;
-  // OJO: la pantalla de "Buscar" NO se repinta sola aquí a propósito. Antes
-  // se volvía a renderizar la lista de resultados en cada refresco de fondo
-  // (cada 20s), y si eso pasaba justo cuando alguien tocaba un resultado,
-  // la lista se reordenaba debajo del dedo y se acababa abriendo una OF
-  // distinta a la que se veía. Ahora los resultados solo se recalculan
-  // cuando la persona escribe o busca de nuevo.
-  if(activa.id === 'screen-pendientes') renderPendientes();
-  if(activa.id === 'screen-entregados') renderEntregados();
+  // OJO: "Buscar", "Pendientes" y "Entregados" NO se repintan solas aquí a
+  // propósito. Antes se volvía a renderizar la lista en cada refresco de
+  // fondo (cada 20s), y si eso pasaba justo cuando alguien tocaba un
+  // resultado, la lista se reordenaba debajo del dedo y se acababa abriendo
+  // una OF distinta a la que se veía. Ahora esas 3 listas solo se
+  // recalculan al entrar a la pantalla o al tocar "Actualizar" / "Buscar" a
+  // propósito — nunca solas mientras la persona las está mirando.
   if(activa.id === 'screen-detalle' && ofEnDetalle){
     const p = DB.find(x=>x.id===ofEnDetalle);
     if(p) document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
