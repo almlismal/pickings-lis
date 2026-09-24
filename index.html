@@ -12435,7 +12435,7 @@ function detalleHtml(p){
       </div>`;
     } else {
       ampliacionBanner = `<div class="attn-banner"><span class="dot">➕</span><span>
-        <b>${escapeHtml(ultimaAmpliacion.agregadoPor)}</b> metió algo más en la caja el ${fechaCorta(ultimaAmpliacion.fecha)}: ${escapeHtml(ultimaAmpliacion.detalle)}
+        <b>${escapeHtml(ultimaAmpliacion.agregadoPor)}</b> añadió algo más al picking el ${fechaCorta(ultimaAmpliacion.fecha)}: ${escapeHtml(ultimaAmpliacion.detalle)}
       </span></div>`;
     }
   }
@@ -12456,7 +12456,7 @@ function detalleHtml(p){
   const acciones = p.estado==='completado' ? '' : `
     <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
     <button class="btn btn-outline" onclick="entregar('parcial')">Entrega parcial</button>
-    <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">➕ Meter algo más en esta misma caja</button>
+    <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">➕ Añadir algo más a este picking</button>
   `;
 
   const gestionBtns = puedeGestionar(p)
@@ -12521,7 +12521,7 @@ function deshechasHtmlOf(p){
 function ampliacionesHtmlOf(p){
   if(!p.ampliaciones || !p.ampliaciones.length) return '';
   return `<div class="entrega-log">
-    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Esto se añadió a la caja después de registrarla</div>
+    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Esto se añadió al picking después de registrarlo</div>
     ${p.ampliaciones.map(a=>`<div class="item">
       ${a.cajaExtra ? '<span class="chip attn" style="margin-bottom:4px;">📦 Se sumó otra caja</span><br>' : ''}
       <b>${escapeHtml(a.detalle)}</b><br>
@@ -13557,9 +13557,9 @@ function abrirAmpliacion(id){
   if(!p){ toast('No se encontró esa OF'); return; }
   pendienteAmpliacion = id;
   mostrarSheet(`
-    <h3>Añadir contenido a la caja de la OF ${p.of}</h3>
+    <h3>Añadir contenido al picking de la OF ${p.of}</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Se trata de la misma caja — <b>no se crea un picking nuevo</b>. Al completar estos datos, la app genera automáticamente una nota clara para que cualquiera que consulte el picking después entienda qué se añadió.
+      Se trata del mismo picking — <b>no se crea uno nuevo</b>. Al completar estos datos, la app genera automáticamente una nota clara para que cualquiera que lo consulte después entienda qué se añadió.
     </p>
     <div class="row2">
       <div>
@@ -13595,7 +13595,7 @@ function confirmarAmpliacion(){
 
   // La frase la escribe siempre la app, con los mismos datos — así se
   // entiende igual de claro lo escriba quien lo escriba.
-  const detalle = `Se añadieron ${cantidad} ${queEs} más a la caja.` + (notaExtra ? ' ' + notaExtra : '');
+  const detalle = `Se añadieron ${cantidad} ${queEs} más al picking.` + (notaExtra ? ' ' + notaExtra : '');
 
   if(!p.ampliaciones) p.ampliaciones = [];
   if(cajaExtra) p.cajas = (p.cajas||1) + 1;
