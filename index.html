@@ -11750,7 +11750,8 @@ function renderEntregados(){
     return;
   }
   const ordenados = [...entregadosCache].sort((a,b)=> new Date(b['Fecha de entrega']) - new Date(a['Fecha de entrega']));
-  cont.innerHTML = ordenados.map(r=>`
+  const leyenda = `<div class="hint" style="margin-bottom:10px;">${ordenados.length} picking${ordenados.length===1?'':'s'} entregado${ordenados.length===1?'':'s'}</div>`;
+  cont.innerHTML = leyenda + ordenados.map(r=>`
     <div class="ticket">
       <div class="ticket-top">
         <span class="ticket-of">OF ${r['OF']}</span>
@@ -12225,7 +12226,8 @@ function renderPendientes(){
     cont.innerHTML = `<div class="empty">No hay pickings pendientes de entrega</div>`;
     return;
   }
-  cont.innerHTML = pendientes.map(p=>ticketHtml(p)).join('');
+  const leyenda = `<div class="hint" style="margin-bottom:10px;">${pendientes.length} picking${pendientes.length===1?'':'s'} pendiente${pendientes.length===1?'':'s'} de entrega</div>`;
+  cont.innerHTML = leyenda + pendientes.map(p=>ticketHtml(p)).join('');
 }
 
 function parsearItemsEntrega(nota){
