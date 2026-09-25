@@ -11911,27 +11911,39 @@ function renderResumen(){
   }).filter(v=>v!==null);
   const tiempoMedio = tiempos.length ? (tiempos.reduce((a,b)=>a+b,0) / tiempos.length) : null;
 
-  const porRegistrado = {};
-  pendientes.forEach(p=>{
-    const n = String(p.registradoPor||'').trim() || 'Sin nombre';
-    porRegistrado[n] = (porRegistrado[n]||0) + 1;
-  });
-  entregados.forEach(r=>{
-    const n = String(r['Registrado por']||'').trim() || 'Sin nombre';
-    porRegistrado[n] = (porRegistrado[n]||0) + 1;
-  });
-  const porEntregadoPor = {};
-  entregados.forEach(r=>{
-    const n = String(r['Entregado por']||'').trim() || 'Sin nombre';
-    porEntregadoPor[n] = (porEntregadoPor[n]||0) + 1;
-  });
+  // Agrupa por nombre ignorando mayúsculas/acentos (con normalizarNombre,
+  // la misma función que usa el resto de la app para reconocer a alguien
+  // que ya existe), para que "ADRIAN" y "Adrian" cuenten como la misma
+  // persona en vez de salir dos veces. La etiqueta que se muestra usa,
+  // cuando existe, el nombre tal cual está guardado en Usuarios.
+  const agruparNombres = nombres => {
+    const grupos = {};
+    nombres.forEach(raw0=>{
+      const raw = String(raw0||'').trim() || 'Sin nombre';
+      const clave = normalizarNombre(raw);
+      if(!grupos[clave]) grupos[clave] = { label: raw, count: 0 };
+      grupos[clave].count++;
+    });
+    Object.values(grupos).forEach(g=>{
+      if(g.label==='Sin nombre') return;
+      const oficial = usuariosRemotos.find(u=>claveNombre(u['Nombre'])===normalizarNombre(g.label));
+      if(oficial && oficial['Nombre']) g.label = oficial['Nombre'];
+    });
+    return grupos;
+  };
 
-  const filasDe = obj => {
-    const entradas = Object.entries(obj).sort((a,b)=> b[1]-a[1]);
+  const porRegistrado = agruparNombres([
+    ...pendientes.map(p=>p.registradoPor),
+    ...entregados.map(r=>r['Registrado por'])
+  ]);
+  const porEntregadoPor = agruparNombres(entregados.map(r=>r['Entregado por']));
+
+  const filasDe = grupos => {
+    const entradas = Object.values(grupos).sort((a,b)=> b.count-a.count);
     if(!entradas.length) return `<div class="hint">Sin datos todavía</div>`;
-    return entradas.map(([n,c])=>`
+    return entradas.map(g=>`
       <div style="display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px;">
-        <span>${escapeHtml(n)}</span><b>${c}</b>
+        <span>${escapeHtml(g.label)}</span><b>${g.count}</b>
       </div>
     `).join('');
   };
