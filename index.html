@@ -462,14 +462,15 @@
       <h2>Buscar OF</h2>
     </div>
 
-    <label>Nº de OF</label>
-    <input type="text" class="mono" id="buscarInput" placeholder="Ej. 20260912" inputmode="numeric">
+    <label>OF o proyecto</label>
+    <input type="text" class="mono" id="buscarInput" placeholder="Ej. 20260912 o 2025-072">
     <button class="btn btn-outline" onclick="buscarOF()">Buscar</button>
 
     <div id="buscarResultado" style="margin-top:20px;"></div>
 
     <button class="btn btn-outline" onclick="ir('pendientes')" style="margin-top:28px;">📋 Ver pendientes de entrega</button>
     <button class="btn btn-outline" id="btnVerEntregados" onclick="ir('entregados')" style="margin-top:10px; display:none;">📦 Ver entregados</button>
+    <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">📊 Ver resumen</button>
   </section>
 
   <!-- ============ PENDIENTES ============ -->
@@ -491,9 +492,20 @@
       <h2>Entregados</h2>
     </div>
     <button class="btn btn-outline" onclick="actualizarEntregados()" id="btnActualizarEntregados">🔄 Actualizar</button>
+    <button class="btn btn-outline" onclick="exportarInformeEntregados()" style="margin-top:8px;">⬇️ Exportar informe (Excel/CSV)</button>
     <div class="pending-strip">
       <div id="entregadosList"></div>
     </div>
+  </section>
+
+  <!-- ============ RESUMEN (solo administradores) ============ -->
+  <section class="screen" id="screen-resumen">
+    <div class="screen-title">
+      <button class="back" onclick="ir('buscar')">←</button>
+      <h2>Resumen</h2>
+    </div>
+    <button class="btn btn-outline" onclick="actualizarResumen()" id="btnActualizarResumen">🔄 Actualizar</button>
+    <div id="resumenContenido" style="margin-top:16px;"></div>
   </section>
 
   <!-- ============ COMPROBAR OF (QR) ============ -->
@@ -10821,7 +10833,7 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
     componentesPicking: (previo && previo.componentesPicking) || [],
     incidenciasPicking: (previo && previo.incidenciasPicking) || [],
     hojaPickingUrl: row['Hoja de picking URL'] || (previo ? previo.hojaPickingUrl : '') || '',
-    cantidadLineasPicking: Number(row['Cantidad de líneas picking']) || 0,
+    cantidadLineasPicking: Number(row['Cantidad de lineas picking']) || 0,
     sync: 'ok', syncError: ''
   };
 }
@@ -11405,8 +11417,17 @@ async function guardarPinUsuario(obligatorio){
   usuariosRemotos = usuariosRemotos.filter(u=>claveNombre(u['Nombre'])!==claveNombre(usuarioActual));
   usuariosRemotos.push({ 'Nombre': usuarioActual, 'PIN': val });
 
-  cerrarSheet();
-  toast(obligatorio ? 'Listo, ya puedes usar la app' : 'PIN guardado');
+  // Antes esto solo se avisaba con un toast, fácil de no ver — ahora queda
+  // una confirmación clara que hay que cerrar a propósito, para que quede
+  // claro de verdad que el PIN se guardó.
+  mostrarSheet(`
+    <div style="text-align:center; padding:6px 0 4px;">
+      <div style="font-size:40px; line-height:1;">✅</div>
+      <h3 style="margin:10px 0 4px;">PIN guardado</h3>
+      <p style="font-size:13px; color:var(--ink-soft); margin:0;">Tu PIN para <b>${usuarioActual}</b> quedó guardado — te servirá en cualquier móvil.</p>
+    </div>
+    <button class="btn btn-primary" onclick="cerrarSheet()">Continuar</button>
+  `, obligatorio);
 
   try{
     const resultado = await llamarBackend('guardarUsuario', { nombre: usuarioActual, pin: val, por: usuarioActual });
@@ -11481,6 +11502,7 @@ function ir(pantalla, esVolver){
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
   if(pantalla==='entregados') entrarAEntregados();
+  if(pantalla==='resumen') entrarAResumen();
   if(pantalla==='escanear') iniciarEscaner();
   if(pantalla==='realizar-bip') iniciarBipCamara();
 }
@@ -11488,6 +11510,8 @@ function ir(pantalla, esVolver){
 function actualizarVisibilidadAdmin(){
   const btn = document.getElementById('btnVerEntregados');
   if(btn) btn.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
+  const btnResumen = document.getElementById('btnVerResumen');
+  if(btnResumen) btnResumen.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
 }
 
 function toast(msg){
@@ -11502,7 +11526,13 @@ function actualizarChipUsuario(){
   const chip = document.getElementById('userChip');
   chip.textContent = usuarioActual ? usuarioActual : 'Identificarse';
 }
+// Se recuerda si la pantalla de "¿Quién eres?" actual es obligatoria (al
+// arrancar la app sin sesión, o tras cerrar sesión) — así, si al elegir un
+// nombre con PIN se cancela la verificación, se vuelve al mismo punto en
+// vez de dejar la app sin nadie identificado.
+let loginForzado = false;
 function abrirCambioUsuario(forzado){
+  loginForzado = !!forzado;
   const nombres = cargarNombres();
   let html = `<h3>¿Quién eres?</h3>`;
   if(forzado) html += `<p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Identifícate para poder usar la app.</p>`;
@@ -11528,7 +11558,40 @@ function cerrarSesion(){
   toast('Sesión cerrada');
   setTimeout(()=>abrirCambioUsuario(true), 300);
 }
+// Antes, elegir un nombre de la lista (o escribirlo de nuevo en "Añadir
+// nombre nuevo") entraba directo, sin comprobar nada — cualquiera podía
+// identificarse como otra persona solo sabiendo su nombre. Ahora, si ese
+// nombre ya tiene un PIN configurado, hay que introducirlo para entrar como
+// esa persona. Un nombre sin PIN todavía (usuarios nuevos, o quien no se lo
+// haya configurado) entra igual que siempre, sin pedir nada.
 function elegirUsuario(n){
+  const pinDelNombre = pinDeUsuario(n);
+  if(pinDelNombre && n !== usuarioActual){
+    pedirPinParaEntrar(n);
+    return;
+  }
+  entrarComoUsuario(n);
+}
+function pedirPinParaEntrar(n){
+  mostrarSheet(`
+    <h3>PIN de ${escapeHtml(n)}</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Este nombre tiene un PIN configurado — introdúcelo para entrar como ${escapeHtml(n)}.</p>
+    <input type="text" id="pinLogin" inputmode="numeric" placeholder="PIN" maxlength="4"
+      oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
+    <button class="btn btn-primary" onclick="validarPinLogin('${n.replace(/'/g,"\\'")}')">Entrar</button>
+    <button class="btn btn-outline" onclick="abrirCambioUsuario(loginForzado)">Cancelar</button>
+  `, loginForzado);
+}
+function validarPinLogin(n){
+  const val = document.getElementById('pinLogin').value.trim();
+  const guardado = pinDeUsuario(n);
+  if(guardado && val === guardado){
+    entrarComoUsuario(n);
+  } else {
+    toast('PIN incorrecto');
+  }
+}
+function entrarComoUsuario(n){
   usuarioActual = n;
   localStorage.setItem(LS_USER, n);
   actualizarChipUsuario();
@@ -11762,6 +11825,143 @@ function renderEntregados(){
       <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
     </div>
   `).join('');
+}
+
+function csvEscape(v){
+  const s = (v===null || v===undefined) ? '' : String(v);
+  if(/[",;\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+
+// Exporta TODO lo que haya en "Entregados" en ese momento (el histórico
+// completo, no solo lo más reciente) a un CSV descargable, con ; como
+// separador para que Excel en español lo abra bien de un vistazo, sin
+// asistente de importación.
+function exportarInformeEntregados(){
+  if(!entregadosCache.length){ toast('No hay entregados que exportar'); return; }
+  const columnas = ['OF','Proyecto','Subproyecto','Cajas','Registrado por','Fecha','Entregado por','Entregado a','Fecha de entrega','Observaciones'];
+  const filas = [columnas.join(';')];
+  [...entregadosCache]
+    .sort((a,b)=> new Date(b['Fecha de entrega']) - new Date(a['Fecha de entrega']))
+    .forEach(r=> filas.push(columnas.map(c=>csvEscape(r[c])).join(';')));
+  const csv = '﻿' + filas.join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'entregados_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  toast('Informe exportado (' + entregadosCache.length + ' entregas)');
+}
+
+function entrarAResumen(){
+  renderResumen();
+  cargarEntregadosYActualizar().then(renderResumen).catch(()=>{});
+}
+
+async function actualizarResumen(){
+  const btn = document.getElementById('btnActualizarResumen');
+  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  try{
+    await cargarEntregadosYActualizar();
+    renderResumen();
+  } catch(err){
+    toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
+    renderResumen();
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+}
+
+// Los números aquí se calculan con TODO lo que hay: los pendientes de "DB"
+// (que ya se mantiene al día en toda la app) y el histórico completo de
+// "Entregados", que se carga entero (sin límite de fechas ni de cantidad)
+// nada más entrar a esta pantalla — así un picking antiguo cuenta igual
+// que uno de hoy, y no hace falta esperar a que se entregue nada nuevo
+// para ver algo aquí.
+function renderResumen(){
+  const cont = document.getElementById('resumenContenido');
+  if(!cont) return;
+
+  const pendientes = DB.filter(p=>p.estado!=='completado');
+  const entregados = entregadosCache;
+  const DIA_MS = 1000*60*60*24;
+  const ahoraMs = Date.now();
+
+  const entregadosSemana = entregados.filter(r=>{
+    const t = r['Fecha de entrega'] ? new Date(r['Fecha de entrega']).getTime() : NaN;
+    return !isNaN(t) && (ahoraMs - t) <= 7*DIA_MS;
+  });
+  const entregadosMes = entregados.filter(r=>{
+    const t = r['Fecha de entrega'] ? new Date(r['Fecha de entrega']).getTime() : NaN;
+    return !isNaN(t) && (ahoraMs - t) <= 30*DIA_MS;
+  });
+
+  // Tiempo medio entre el registro y la entrega, en días — solo sobre las
+  // entregas que tienen ambas fechas válidas (algunas de las más antiguas
+  // podrían no tenerlas).
+  const tiempos = entregados.map(r=>{
+    const f1 = r['Fecha'] ? new Date(r['Fecha']).getTime() : NaN;
+    const f2 = r['Fecha de entrega'] ? new Date(r['Fecha de entrega']).getTime() : NaN;
+    if(isNaN(f1) || isNaN(f2)) return null;
+    const dias = (f2 - f1) / DIA_MS;
+    return dias >= 0 ? dias : null;
+  }).filter(v=>v!==null);
+  const tiempoMedio = tiempos.length ? (tiempos.reduce((a,b)=>a+b,0) / tiempos.length) : null;
+
+  const porRegistrado = {};
+  pendientes.forEach(p=>{
+    const n = String(p.registradoPor||'').trim() || 'Sin nombre';
+    porRegistrado[n] = (porRegistrado[n]||0) + 1;
+  });
+  entregados.forEach(r=>{
+    const n = String(r['Registrado por']||'').trim() || 'Sin nombre';
+    porRegistrado[n] = (porRegistrado[n]||0) + 1;
+  });
+  const porEntregadoPor = {};
+  entregados.forEach(r=>{
+    const n = String(r['Entregado por']||'').trim() || 'Sin nombre';
+    porEntregadoPor[n] = (porEntregadoPor[n]||0) + 1;
+  });
+
+  const filasDe = obj => {
+    const entradas = Object.entries(obj).sort((a,b)=> b[1]-a[1]);
+    if(!entradas.length) return `<div class="hint">Sin datos todavía</div>`;
+    return entradas.map(([n,c])=>`
+      <div style="display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px;">
+        <span>${escapeHtml(n)}</span><b>${c}</b>
+      </div>
+    `).join('');
+  };
+
+  const tarjeta = (num, label) => `
+    <div style="background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; text-align:center;">
+      <div style="font-size:24px; font-weight:800;">${num}</div>
+      <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">${label}</div>
+    </div>
+  `;
+
+  cont.innerHTML = `
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      ${tarjeta(pendientes.length, 'Pendientes de entrega ahora')}
+      ${tarjeta(entregados.length, 'Entregados en total')}
+      ${tarjeta(entregadosSemana.length, 'Entregados en los últimos 7 días')}
+      ${tarjeta(entregadosMes.length, 'Entregados en los últimos 30 días')}
+    </div>
+
+    <div style="margin-top:16px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; text-align:center;">
+      <div style="font-size:22px; font-weight:800;">${tiempoMedio!==null ? tiempoMedio.toFixed(1).replace('.',',') + ' días' : '—'}</div>
+      <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">Tiempo medio entre registro y entrega</div>
+    </div>
+
+    <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Registrados por persona (pendientes + entregados)</div>
+    ${filasDe(porRegistrado)}
+
+    <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Entregas realizadas por persona</div>
+    ${filasDe(porEntregadoPor)}
+  `;
 }
 
 function abrirEdicion(id){
@@ -12269,12 +12469,26 @@ function tieneAtencion(p){
   return p.cajas > 1 || fueraActivas(p).length > 0 || !!p.observaciones;
 }
 
+// Días que lleva un picking sin entregar, contando desde que se registró.
+// Solo tiene sentido para los que siguen pendientes.
+const DIAS_PICKING_VIEJO = 7;
+function diasPendiente(p){
+  if(!p.fecha) return 0;
+  const ms = new Date() - new Date(p.fecha);
+  return Math.floor(ms / (1000*60*60*24));
+}
+function esPickingViejo(p){
+  return p.estado!=='completado' && diasPendiente(p) >= DIAS_PICKING_VIEJO;
+}
+
 function ticketHtml(p){
   const entregado = p.estado==='completado';
-  const attn = !entregado && tieneAtencion(p);
+  const viejo = esPickingViejo(p);
+  const attn = !entregado && (tieneAtencion(p) || viejo);
   const chips = [];
   if(p.cajas>1) chips.push(`<span class="chip attn">${p.cajas} cajas</span>`);
   else chips.push(`<span class="chip">${p.cajas} caja</span>`);
+  if(viejo) chips.push(`<span class="chip attn">🕐 ${diasPendiente(p)} días pendiente</span>`);
   fueraActivas(p).forEach(k=> chips.push(`<span class="chip on">${k}</span>`));
   Object.entries(p.ubicaciones||{}).forEach(([k,v])=>{
     const etiqueta = k==='Cajas' ? `Cajas de picking (${p.cajas})` : k;
@@ -12315,8 +12529,12 @@ async function buscarOF(){
   const cont = document.getElementById('buscarResultado');
   if(!val){ cont.innerHTML=''; return; }
 
-  const buscar = ()=> DB.filter(p=>p.of.toLowerCase().includes(val.toLowerCase()))
-                        .sort((a,b)=> new Date(b.fecha)-new Date(a.fecha));
+  const valBusq = val.toLowerCase();
+  const buscar = ()=> DB.filter(p=>
+                          p.of.toLowerCase().includes(valBusq) ||
+                          String(p.proyecto||'').toLowerCase().includes(valBusq) ||
+                          String(p.subproyecto||'').toLowerCase().includes(valBusq)
+                        ).sort((a,b)=> new Date(b.fecha)-new Date(a.fecha));
 
   let resultados = buscar();
   if(resultados.length===0){
@@ -12354,7 +12572,10 @@ async function buscarOF(){
     cont.innerHTML = `<div class="empty">No se ha encontrado ningún picking con esa OF</div>`;
     return;
   }
-  cont.innerHTML = resultados.map(p=>ticketHtml(p)).join('');
+  const leyenda = resultados.length>1
+    ? `<div class="hint" style="margin-bottom:10px;">${resultados.length} pickings encontrados</div>`
+    : '';
+  cont.innerHTML = leyenda + resultados.map(p=>ticketHtml(p)).join('');
 }
 
 /* ---------- detalle + entrega ---------- */
@@ -12391,10 +12612,12 @@ function volverDeDetalle(){
 
 function detalleHtml(p){
   const entregado = p.estado==='completado';
-  const attn = !entregado && tieneAtencion(p);
+  const viejo = esPickingViejo(p);
+  const attn = !entregado && (tieneAtencion(p) || viejo);
   let banner = '';
   if(attn){
     const motivos = [];
+    if(viejo) motivos.push(`lleva ${diasPendiente(p)} días pendiente de entrega`);
     if(p.cajas>1) motivos.push(`${p.cajas} cajas — recoger todas juntas`);
     fueraActivas(p).forEach(k=> motivos.push(`lleva ${k.toLowerCase()} fuera de la caja`));
     if(p.observaciones) motivos.push(p.observaciones);
