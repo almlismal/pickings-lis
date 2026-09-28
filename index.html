@@ -507,6 +507,7 @@
     </div>
     <button class="btn btn-outline" onclick="actualizarEntregados()" id="btnActualizarEntregados">🔄 Actualizar</button>
     <button class="btn btn-outline" onclick="exportarInformeEntregados()" style="margin-top:8px;">⬇️ Exportar informe (Excel/CSV)</button>
+    <input type="text" class="mono" id="entregadosBuscarInput" placeholder="Filtrar por OF o proyecto" style="margin-top:12px;" oninput="renderEntregados()">
     <div class="pending-strip">
       <div id="entregadosList"></div>
     </div>
@@ -11890,6 +11891,33 @@ function renderUbicaciones(){
   `).join('');
 }
 
+// Abre el detalle de un picking que YA se entregó del todo (ya no está en
+// DB, porque al entregarse del todo se mueve de "Pickings" a "Entregados").
+// Se pide al backend con su historial completo de entregas, y se mete un
+// momento en DB solo para poder verlo y usar el detalle de siempre — con
+// eso ya aparece "Deshacer esta entrega" para quien pueda gestionarlo
+// (quien lo registró, o un administrador), que es lo que hace falta para
+// corregir una entrega mal marcada como completa (deshacerla y volver a
+// entregarla, esta vez como parcial). No se guarda en el móvil ni afecta
+// a ninguna lista de pendientes, que ya excluyen lo entregado por su estado.
+async function verPickingEntregado(id){
+  toast('Cargando…');
+  try{
+    const res = await fetchConLimite(GAS_URL + '?detallePicking=' + encodeURIComponent(id), {}, 25000);
+    const datos = await res.json();
+    if(!datos.ok || !datos.picking){
+      toast('No se pudo cargar ese picking' + (datos && datos.error ? ': ' + datos.error : ''));
+      return;
+    }
+    const p = construirPickingDesdeRow(datos.picking, datos.entregas || [], datos.historial || []);
+    DB = DB.filter(x=>x.id!==p.id);
+    DB.push(p);
+    abrirDetalle(p.id);
+  } catch(err){
+    toast('No se pudo cargar ese picking: ' + (err && err.message ? err.message : 'error desconocido'));
+  }
+}
+
 function entrarAEntregados(){
   renderEntregados();
   cargarEntregadosYActualizar().then(renderEntregados).catch(()=>{});
@@ -11915,10 +11943,26 @@ function renderEntregados(){
     cont.innerHTML = `<div class="empty">No hay pickings entregados todavía</div>`;
     return;
   }
-  const ordenados = [...entregadosCache].sort((a,b)=> new Date(b['Fecha de entrega']) - new Date(a['Fecha de entrega']));
-  const leyenda = `<div class="hint" style="margin-bottom:10px;">${ordenados.length} picking${ordenados.length===1?'':'s'} entregado${ordenados.length===1?'':'s'}</div>`;
-  cont.innerHTML = leyenda + ordenados.map(r=>`
-    <div class="ticket">
+  const campoBusq = document.getElementById('entregadosBuscarInput');
+  const val = campoBusq ? campoBusq.value.trim().toLowerCase() : '';
+  const filtrados = !val ? entregadosCache : entregadosCache.filter(r=>
+    String(r['OF']||'').toLowerCase().includes(val) ||
+    String(r['Proyecto']||'').toLowerCase().includes(val) ||
+    String(r['Subproyecto']||'').toLowerCase().includes(val)
+  );
+  if(!filtrados.length){
+    cont.innerHTML = `<div class="empty">Ningún entregado coincide con "${escapeHtml(campoBusq.value.trim())}"</div>`;
+    return;
+  }
+  const ordenados = [...filtrados].sort((a,b)=> new Date(b['Fecha de entrega']) - new Date(a['Fecha de entrega']));
+  const leyenda = val
+    ? `<div class="hint" style="margin-bottom:10px;">${ordenados.length} de ${entregadosCache.length} — toca uno para ver el detalle o corregir su entrega</div>`
+    : `<div class="hint" style="margin-bottom:10px;">${ordenados.length} picking${ordenados.length===1?'':'s'} entregado${ordenados.length===1?'':'s'} — toca uno para ver el detalle o corregir su entrega</div>`;
+  cont.innerHTML = leyenda + ordenados.map(r=>{
+    const id = r['ID'] ? String(r['ID']) : '';
+    const onclick = id ? `onclick="verPickingEntregado('${id.replace(/'/g,"\\'")}')"` : '';
+    return `
+    <div class="ticket" ${onclick} style="${id ? '' : 'cursor:default;'}">
       <div class="ticket-top">
         <span class="ticket-of">OF ${r['OF']}</span>
         <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
@@ -11927,7 +11971,7 @@ function renderEntregados(){
       <div class="ticket-meta"><span class="chip done">Entregado</span></div>
       <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
     </div>
-  `).join('');
+  `;}).join('');
 }
 
 function csvEscape(v){
@@ -12676,8 +12720,11 @@ async function buscarOF(){
       const datos = await res.json();
       const entregados = datos.entregados || [];
       if(entregados.length){
-        cont.innerHTML = entregados.map(r=>`
-          <div class="ticket">
+        cont.innerHTML = entregados.map(r=>{
+          const id = r['ID'] ? String(r['ID']) : '';
+          const onclick = id ? `onclick="verPickingEntregado('${id.replace(/'/g,"\\'")}')"` : '';
+          return `
+          <div class="ticket" ${onclick} style="${id ? '' : 'cursor:default;'}">
             <div class="ticket-top">
               <span class="ticket-of">OF ${r['OF']}</span>
               <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
@@ -12688,7 +12735,7 @@ async function buscarOF(){
             </div>
             <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
           </div>
-        `).join('');
+        `;}).join('');
         return;
       }
     } catch(err){}
@@ -13820,7 +13867,7 @@ async function confirmarEntrega(tipo){
 
 function deshacerEntrega(pid, idx){
   const p = DB.find(x=>x.id===pid);
-  if(!p) return;
+  if(!p){ toast('Se actualizó la lista justo ahora — vuelve a abrir este picking e inténtalo otra vez'); return; }
   if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden deshacer su entrega'); return; }
   pendienteDeshacer = { pid, idx };
   mostrarSheet(`
