@@ -469,6 +469,7 @@
     <div id="buscarResultado" style="margin-top:20px;"></div>
 
     <button class="btn btn-outline" onclick="ir('pendientes')" style="margin-top:28px;">📋 Ver pendientes de entrega</button>
+    <button class="btn btn-outline" onclick="ir('ubicaciones')" style="margin-top:10px;">📍 Ver por ubicación</button>
     <button class="btn btn-outline" id="btnVerEntregados" onclick="ir('entregados')" style="margin-top:10px; display:none;">📦 Ver entregados</button>
     <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">📊 Ver resumen</button>
   </section>
@@ -482,6 +483,19 @@
     <button class="btn btn-outline" onclick="actualizarPendientes()" id="btnActualizarPendientes">🔄 Actualizar</button>
     <div class="pending-strip">
       <div id="pendingList"></div>
+    </div>
+  </section>
+
+  <!-- ============ POR UBICACIÓN ============ -->
+  <section class="screen" id="screen-ubicaciones">
+    <div class="screen-title">
+      <button class="back" onclick="ir('buscar')">←</button>
+      <h2>Por ubicación</h2>
+    </div>
+    <button class="btn btn-outline" onclick="actualizarUbicaciones()" id="btnActualizarUbicaciones">🔄 Actualizar</button>
+    <div id="ubicacionesChips" style="display:flex; flex-wrap:wrap; gap:8px; margin:14px 0;"></div>
+    <div class="pending-strip">
+      <div id="ubicacionesList"></div>
     </div>
   </section>
 
@@ -11501,6 +11515,7 @@ function ir(pantalla, esVolver){
   if(esVolver) return;
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
+  if(pantalla==='ubicaciones') entrarAUbicaciones();
   if(pantalla==='entregados') entrarAEntregados();
   if(pantalla==='resumen') entrarAResumen();
   if(pantalla==='escanear') iniciarEscaner();
@@ -11785,6 +11800,94 @@ async function actualizarPendientes(){
     renderPendientes();
   }
   if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+}
+
+let ubicacionSeleccionada = null;
+
+function entrarAUbicaciones(){
+  ubicacionSeleccionada = null;
+  renderUbicaciones();
+  cargarLigeroYActualizarDB().then(renderUbicaciones).catch(()=>{});
+}
+
+async function actualizarUbicaciones(){
+  const btn = document.getElementById('btnActualizarUbicaciones');
+  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  try{
+    await cargarLigeroYActualizarDB();
+    renderUbicaciones();
+  } catch(err){
+    toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
+    renderUbicaciones();
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+}
+
+// Recorre solo lo pendiente de entrega y, de cada uno, solo lo que todavía
+// no se ha entregado (si algo ya se entregó, aunque sea en parte, deja de
+// contar ahí) — para cada cosa así, mira en qué ubicación quedó anotada.
+// Lo que no tiene ubicación anotada (pickings de antes de usar esto, o
+// donde no se rellenó) se agrupa aparte, sin desaparecer.
+function calcularUbicacionesPendientes(){
+  const mapa = {};
+  DB.filter(p=>p.estado!=='completado').forEach(p=>{
+    const estados = estadosItemsFuera(p);
+    Object.keys(estados).forEach(item=>{
+      if(estados[item]==='completado') return;
+      const ubic = (p.ubicaciones && String(p.ubicaciones[item]||'').trim()) || '';
+      const clave = ubic || 'Sin ubicación anotada';
+      if(!mapa[clave]) mapa[clave] = [];
+      mapa[clave].push({ p, item });
+    });
+  });
+  return mapa;
+}
+
+function seleccionarUbicacion(clave){
+  ubicacionSeleccionada = (ubicacionSeleccionada === clave) ? null : clave;
+  renderUbicaciones();
+}
+
+function renderUbicaciones(){
+  const contChips = document.getElementById('ubicacionesChips');
+  const contLista = document.getElementById('ubicacionesList');
+  if(!contChips || !contLista) return;
+
+  const mapa = calcularUbicacionesPendientes();
+  const claves = Object.keys(mapa).sort((a,b)=> mapa[b].length - mapa[a].length);
+
+  if(!claves.length){
+    contChips.innerHTML = '';
+    contLista.innerHTML = `<div class="empty">No hay nada pendiente con ubicación anotada ahora mismo</div>`;
+    return;
+  }
+
+  if(ubicacionSeleccionada && !mapa[ubicacionSeleccionada]) ubicacionSeleccionada = null;
+
+  contChips.innerHTML = claves.map(clave=>{
+    const activa = clave === ubicacionSeleccionada;
+    return `<span class="chip ${activa?'on':''}" style="cursor:pointer; padding:7px 12px; font-size:13px;" onclick="seleccionarUbicacion('${clave.replace(/'/g,"\\'")}')">📍 ${escapeHtml(clave)} (${mapa[clave].length})</span>`;
+  }).join('');
+
+  if(!ubicacionSeleccionada){
+    contLista.innerHTML = `<div class="hint">Toca una ubicación para ver qué hay pendiente ahí</div>`;
+    return;
+  }
+
+  // Un mismo picking puede tener varias cosas en la misma ubicación — se
+  // muestra una sola vez, con todas juntas debajo del ticket.
+  const entradas = mapa[ubicacionSeleccionada];
+  const porPicking = {};
+  entradas.forEach(({p,item})=>{
+    if(!porPicking[p.id]) porPicking[p.id] = { p, items: [] };
+    porPicking[p.id].items.push(item);
+  });
+  const lista = Object.values(porPicking).sort((a,b)=> new Date(a.p.fecha) - new Date(b.p.fecha));
+  const leyenda = `<div class="hint" style="margin-bottom:10px;">${entradas.length} pendiente${entradas.length===1?'':'s'} en ${escapeHtml(ubicacionSeleccionada)}</div>`;
+  contLista.innerHTML = leyenda + lista.map(({p,items})=>`
+    ${ticketHtml(p)}
+    <div class="hint" style="margin:-4px 0 10px 2px;">📍 Pendiente ahí: ${items.map(escapeHtml).join(', ')}</div>
+  `).join('');
 }
 
 function entrarAEntregados(){
@@ -12455,13 +12558,21 @@ function chipsEstadoItems(items){
   const iconos = { pendiente:'🟠', completado:'🟢' };
   return items.map(it=>`<span class="chip ${it.estado==='completado'?'on':'attn'}">${iconos[it.estado]||''} ${it.nombre}</span>`).join('');
 }
-function resumenSemaforo(p){
+// nombre -> null (registrado, aún sin tocar) | 'pendiente' (entregado parcial,
+// queda algo de eso) | 'completado' (esa parte ya se entregó del todo).
+// Compartida entre el semáforo del detalle y la pantalla "Por ubicación",
+// para que las dos cuenten exactamente lo mismo como "todavía pendiente".
+function estadosItemsFuera(p){
   const estados = {};
-  fueraActivas(p).forEach(nombre=> estados[nombre] = null); // registrados, aún sin tocar
+  fueraActivas(p).forEach(nombre=> estados[nombre] = null);
   p.entregas.forEach(e=>{
     const { items } = parsearItemsEntrega(e.nota);
     items.forEach(it=> estados[it.nombre] = it.estado);
   });
+  return estados;
+}
+function resumenSemaforo(p){
+  const estados = estadosItemsFuera(p);
   const claves = Object.keys(estados);
   if(!claves.length) return '';
   const iconos = { pendiente:'🟠', completado:'🟢' };
@@ -12596,7 +12707,7 @@ async function buscarOF(){
 // "Buscar" — y sin recargar ni vaciar nada (ir(x, true) se salta eso).
 let pantallaOrigenDetalle = 'buscar';
 let scrollDetalleOrigen = 0;
-const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados'];
+const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones'];
 function abrirDetalle(id){
   // Solo se recuerda el origen cuando se viene de verdad de una de las 3
   // listas — si se llega aquí desde otro paso intermedio (p.ej. al volver
