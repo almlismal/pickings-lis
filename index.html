@@ -12968,6 +12968,34 @@ let escanerStream = null;
 let escanerRAF = null;
 let escanerEscaneando = false;
 
+// Pide la cámara trasera para leer QR. En Android, sin pedir nada más,
+// Chrome suele dar una resolución baja y dejar la cámara con un enfoque
+// que no llega bien de cerca — que es justo la distancia a la que se lee
+// una etiqueta — y por eso cuesta tanto comparado con el iPhone, que
+// enfoca solo de por sí. Aquí se pide una resolución más alta y, si el
+// móvil lo permite, enfoque continuo. Si no lo soporta, sigue funcionando
+// exactamente igual que antes — no le cambia nada al iPhone.
+function pedirCamaraQR(){
+  return navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    }
+  }).then(stream=>{
+    const track = stream.getVideoTracks()[0];
+    if(track && track.getCapabilities){
+      try{
+        const cap = track.getCapabilities();
+        if(cap.focusMode && cap.focusMode.includes('continuous')){
+          track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(()=>{});
+        }
+      } catch(e){}
+    }
+    return stream;
+  });
+}
+
 function iniciarEscaner(){
   const estadoEl = document.getElementById('escanerEstado');
   const resultadoEl = document.getElementById('escanerResultado');
@@ -12986,7 +13014,7 @@ function iniciarEscaner(){
   }
 
   if(estadoEl) estadoEl.textContent = 'Abriendo cámara…';
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+  pedirCamaraQR()
     .then(stream=>{
       escanerStream = stream;
       const video = document.getElementById('escanerVideo');
@@ -13174,7 +13202,7 @@ function iniciarBipCamara(){
     return;
   }
   if(estadoEl) estadoEl.textContent = 'Abriendo cámara…';
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+  pedirCamaraQR()
     .then(stream=>{
       rpStream = stream;
       const video = document.getElementById('rpVideo');
