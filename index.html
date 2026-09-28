@@ -481,6 +481,7 @@
       <h2>Pendientes de entrega</h2>
     </div>
     <button class="btn btn-outline" onclick="actualizarPendientes()" id="btnActualizarPendientes">🔄 Actualizar</button>
+    <input type="text" class="mono" id="pendientesBuscarInput" placeholder="Filtrar por OF o proyecto" style="margin-top:12px;" oninput="renderPendientes()">
     <div class="pending-strip">
       <div id="pendingList"></div>
     </div>
@@ -12580,12 +12581,25 @@ function compararPendientes(a,b){
 }
 function renderPendientes(){
   const cont = document.getElementById('pendingList');
-  const pendientes = DB.filter(p=>p.estado!=='completado').sort(compararPendientes);
-  if(pendientes.length===0){
+  const todos = DB.filter(p=>p.estado!=='completado').sort(compararPendientes);
+  if(todos.length===0){
     cont.innerHTML = `<div class="empty">No hay pickings pendientes de entrega</div>`;
     return;
   }
-  const leyenda = `<div class="hint" style="margin-bottom:10px;">${pendientes.length} picking${pendientes.length===1?'':'s'} pendiente${pendientes.length===1?'':'s'} de entrega</div>`;
+  const campoBusq = document.getElementById('pendientesBuscarInput');
+  const val = campoBusq ? campoBusq.value.trim().toLowerCase() : '';
+  const pendientes = !val ? todos : todos.filter(p=>
+    p.of.toLowerCase().includes(val) ||
+    String(p.proyecto||'').toLowerCase().includes(val) ||
+    String(p.subproyecto||'').toLowerCase().includes(val)
+  );
+  if(!pendientes.length){
+    cont.innerHTML = `<div class="empty">Ningún pendiente coincide con "${escapeHtml(campoBusq.value.trim())}"</div>`;
+    return;
+  }
+  const leyenda = val
+    ? `<div class="hint" style="margin-bottom:10px;">${pendientes.length} de ${todos.length} pendientes</div>`
+    : `<div class="hint" style="margin-bottom:10px;">${pendientes.length} picking${pendientes.length===1?'':'s'} pendiente${pendientes.length===1?'':'s'} de entrega</div>`;
   cont.innerHTML = leyenda + pendientes.map(p=>ticketHtml(p)).join('');
 }
 
