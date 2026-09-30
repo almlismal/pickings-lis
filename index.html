@@ -470,7 +470,7 @@
 
     <button class="btn btn-outline" onclick="ir('pendientes')" style="margin-top:28px;">📋 Ver pendientes de entrega</button>
     <button class="btn btn-outline" onclick="ir('ubicaciones')" style="margin-top:10px;">📍 Ver por ubicación</button>
-    <button class="btn btn-outline" id="btnVerEntregados" onclick="ir('entregados')" style="margin-top:10px; display:none;">📦 Ver entregados</button>
+    <button class="btn btn-outline" onclick="ir('entregados')" style="margin-top:10px;">📦 Ver entregados</button>
     <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">📊 Ver resumen</button>
   </section>
 
@@ -500,7 +500,7 @@
     </div>
   </section>
 
-  <!-- ============ ENTREGADOS (solo administradores) ============ -->
+  <!-- ============ ENTREGADOS (visible para todos, solo lectura) ============ -->
   <section class="screen" id="screen-entregados">
     <div class="screen-title">
       <button class="back" onclick="ir('buscar')">←</button>
@@ -11525,8 +11525,9 @@ function ir(pantalla, esVolver){
 }
 
 function actualizarVisibilidadAdmin(){
-  const btn = document.getElementById('btnVerEntregados');
-  if(btn) btn.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
+  // "Ver entregados" ya lo puede ver cualquiera (solo lectura — deshacer
+  // una entrega sigue reservado a quien la registró o a un administrador,
+  // eso no cambia). Solo "Resumen" sigue siendo de administradores.
   const btnResumen = document.getElementById('btnVerResumen');
   if(btnResumen) btnResumen.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
 }
