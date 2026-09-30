@@ -11608,12 +11608,35 @@ function validarPinLogin(n){
     toast('PIN incorrecto');
   }
 }
-function entrarComoUsuario(n){
+async function entrarComoUsuario(n){
   usuarioActual = n;
   localStorage.setItem(LS_USER, n);
   actualizarChipUsuario();
   actualizarVisibilidadAdmin();
   cerrarSheet();
+
+  // La primera vez que entra un nombre nuevo (que todavía no está en
+  // Usuarios), se guarda ya mismo en la hoja, sin PIN. Antes, un nombre
+  // nuevo solo "existía" en ese móvil — nunca se guardaba en la hoja hasta
+  // que esa persona configurase su PIN — y como cada refresco en segundo
+  // plano comprueba que el usuario activo siga existiendo en Usuarios, a
+  // alguien que acababa de escribir su nombre se le cerraba la sesión sola
+  // al rato, obligándole a escribirlo una y otra vez, sin haber hecho nada
+  // mal. Ahora queda registrada desde el primer momento.
+  if(!usuariosRemotos.some(u=>claveNombre(u['Nombre'])===claveNombre(n))){
+    try{
+      const resultado = await llamarBackend('guardarUsuario', { nombre: n, pin: '', por: n });
+      if(resultado && resultado.usuarios) usuariosRemotos = resultado.usuarios;
+      else usuariosRemotos.push({ 'Nombre': n, 'PIN': '' });
+    } catch(err){
+      // Sin conexión ahora mismo: se deja entrar igual (como siempre), y el
+      // nombre se guardará solo en cuanto haya conexión y se repita el
+      // inicio de sesión.
+      usuariosRemotos.push({ 'Nombre': n, 'PIN': '' });
+    }
+    guardarCacheUsuarios(usuariosRemotos);
+  }
+
   if(esAdminSheet(n) && !pinDeUsuario(n)){
     setTimeout(abrirConfigurarPinObligatorio, 200);
   } else {
