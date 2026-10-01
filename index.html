@@ -352,11 +352,15 @@
   .print-firmas{ width:100%; border-collapse:collapse; margin-top:14px; font-size:11.5px; }
   .print-firmas th, .print-firmas td{ border:1px solid #000; padding:10px 8px; text-align:center; }
   .print-firmas th{ font-weight:700; }
+  #pdfAntiguedad{ display:none; }
   @media print{
     body *{ visibility:hidden; }
     #screen-realizar-doc, #screen-realizar-doc *{ visibility:visible; }
     #screen-realizar-doc{ position:absolute; left:0; top:0; width:100%; }
     .no-print{ display:none !important; }
+    body.imprimiendo-antiguedad #pdfAntiguedad,
+    body.imprimiendo-antiguedad #pdfAntiguedad *{ visibility:visible; }
+    body.imprimiendo-antiguedad #pdfAntiguedad{ display:block; position:absolute; left:0; top:0; width:100%; }
   }
 
   /* ---- adaptación a pantallas grandes (PC) ---- */
@@ -10730,6 +10734,47 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxAkEfLd0_xRtm_2b2uWUl0MdarkCwpQqcbVgoiW4KiVKuoxn6hAwo9tzLSKy4Ssww-Qw/exec';
 const LS_USER = 'pickings_lis_usuario';
+const LS_PERIODO_SESION = 'pickings_lis_periodo_sesion';
+
+// Delia y María José comparten el mismo móvil (como en la app de
+// fungibles), así que su sesión se cierra sola en cada cambio de turno —
+// a las 14:00 y a las 22:00 — para que la siguiente persona tenga que
+// identificarse a la fuerza y quede claro quién hizo cada cosa. El resto
+// de usuarios no se ve afectado por esto.
+const NOMBRES_SESION_POR_TURNO = ['Delia', 'Maria Jose'];
+function tieneSesionPorTurno(n){
+  return NOMBRES_SESION_POR_TURNO.some(nombre=> claveNombre(nombre)===claveNombre(n));
+}
+function periodoSesionActual(){
+  const ahora = new Date();
+  const h = ahora.getHours();
+  const tramo = h < 14 ? 'manana' : (h < 22 ? 'tarde' : 'noche');
+  const fecha = ahora.getFullYear() + '-' + String(ahora.getMonth()+1).padStart(2,'0') + '-' + String(ahora.getDate()).padStart(2,'0');
+  return fecha + '_' + tramo;
+}
+// Se llama al arrancar, cada refresco en segundo plano y al volver a la
+// app — así, aunque el móvil se haya quedado con la pantalla apagada
+// justo cuando cambiaba el turno, en cuanto alguien vuelve a tocarlo se
+// nota y se le pide identificarse de nuevo.
+function comprobarCierreSesionPorTurno(){
+  if(!usuarioActual || !tieneSesionPorTurno(usuarioActual)) return;
+  const actual = periodoSesionActual();
+  const guardado = localStorage.getItem(LS_PERIODO_SESION);
+  if(!guardado){
+    localStorage.setItem(LS_PERIODO_SESION, actual);
+    return;
+  }
+  if(guardado !== actual){
+    usuarioActual = '';
+    localStorage.removeItem(LS_USER);
+    localStorage.removeItem(LS_PERIODO_SESION);
+    adminUnlocked = false;
+    actualizarChipUsuario();
+    cerrarSheet();
+    toast('Fin de turno — identifícate de nuevo');
+    setTimeout(()=>abrirCambioUsuario(true), 300);
+  }
+}
 
 function fetchConLimite(url, opciones, msLimite){
   // Se usa XMLHttpRequest en vez de fetch(): Safari/iOS tiene un fallo
@@ -11569,6 +11614,7 @@ function abrirCambioUsuario(forzado){
 function cerrarSesion(){
   usuarioActual = '';
   localStorage.removeItem(LS_USER);
+  localStorage.removeItem(LS_PERIODO_SESION);
   adminUnlocked = false;
   actualizarChipUsuario();
   actualizarVisibilidadAdmin();
@@ -11612,6 +11658,8 @@ function validarPinLogin(n){
 async function entrarComoUsuario(n){
   usuarioActual = n;
   localStorage.setItem(LS_USER, n);
+  if(tieneSesionPorTurno(n)) localStorage.setItem(LS_PERIODO_SESION, periodoSesionActual());
+  else localStorage.removeItem(LS_PERIODO_SESION);
   actualizarChipUsuario();
   actualizarVisibilidadAdmin();
   cerrarSheet();
@@ -11638,7 +11686,12 @@ async function entrarComoUsuario(n){
     guardarCacheUsuarios(usuariosRemotos);
   }
 
-  if(esAdminSheet(n) && !pinDeUsuario(n)){
+  // Antes esto solo era obligatorio para administradores — cualquier otro
+  // nombre podía entrar sin PIN indefinidamente. Ahora, la primera vez que
+  // entra cualquier persona (todavía sin PIN configurado), se le pide que
+  // elija uno antes de seguir — así nadie puede identificarse con el
+  // nombre de otro solo escribiéndolo.
+  if(!pinDeUsuario(n)){
     setTimeout(abrirConfigurarPinObligatorio, 200);
   } else {
     toast('Sesión iniciada como ' + n);
@@ -12127,6 +12180,28 @@ function renderResumen(){
     </div>
   `;
 
+  // Antigüedad de los pendientes, por franjas. Los rangos son [min, max) —
+  // un pendiente de exactamente 7 días cae en "7 a 10", no se cuenta dos
+  // veces en ningún lado. Se guarda todo (no solo el seleccionado) para que
+  // "Descargar PDF" pueda sacar las 4 franjas juntas.
+  const franjasAntiguedad = BUCKETS_ANTIGUEDAD.map(b=>({
+    ...b,
+    pickings: pendientes.filter(p=>{ const d = diasPendiente(p); return d>=b.min && d<b.max; }).sort((a,b2)=> diasPendiente(b2)-diasPendiente(a))
+  }));
+  resumenFranjasAntiguedadCache = franjasAntiguedad;
+  if(bucketAntiguedadSeleccionado && !franjasAntiguedad.some(f=>f.id===bucketAntiguedadSeleccionado && f.pickings.length)){
+    // si la franja que tenía abierta se quedó sin pickings, se cierra sola
+    bucketAntiguedadSeleccionado = null;
+  }
+  const franjaAbierta = franjasAntiguedad.find(f=>f.id===bucketAntiguedadSeleccionado);
+
+  const tarjetaFranja = f => `
+    <div onclick="seleccionarFranjaAntiguedad('${f.id}')" style="cursor:pointer; background:var(--panel); border:1px solid ${f.id===bucketAntiguedadSeleccionado?'var(--accent)':'var(--line)'}; border-radius:8px; padding:14px; text-align:center;">
+      <div style="font-size:24px; font-weight:800; color:${f.id===bucketAntiguedadSeleccionado?'var(--accent)':'inherit'};">${f.pickings.length}</div>
+      <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">${f.label}</div>
+    </div>
+  `;
+
   cont.innerHTML = `
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
       ${tarjeta(pendientes.length, 'Pendientes de entrega ahora')}
@@ -12140,12 +12215,97 @@ function renderResumen(){
       <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">Tiempo medio entre registro y entrega</div>
     </div>
 
+    <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">⏳ Antigüedad de los pendientes — toca un número para ver cuáles son</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      ${franjasAntiguedad.map(f=>tarjetaFranja(f)).join('')}
+    </div>
+    <button class="btn btn-outline" onclick="descargarAntiguedadPDF()" style="margin-top:10px;">⬇️ Descargar PDF (todas las franjas)</button>
+    <div style="margin-top:10px;">
+      ${franjaAbierta
+        ? (franjaAbierta.pickings.length ? franjaAbierta.pickings.map(p=>ticketHtml(p)).join('') : '<div class="empty">Ninguno en esta franja ahora mismo</div>')
+        : ''}
+    </div>
+
     <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Registrados por persona (pendientes + entregados)</div>
     ${filasDe(porRegistrado)}
 
     <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Entregas realizadas por persona</div>
     ${filasDe(porEntregadoPor)}
   `;
+}
+
+// Las 4 franjas de antigüedad que se ven en Resumen. Rangos [min, max) —
+// así un pendiente de exactamente 7 días cae en "De 7 a 10 días" y en
+// ningún otro, sin solaparse.
+const BUCKETS_ANTIGUEDAD = [
+  { id: 'b5_7',  label: 'De 5 a 7 días',   min: 5,  max: 7 },
+  { id: 'b7_10', label: 'De 7 a 10 días',  min: 7,  max: 10 },
+  { id: 'b10_15',label: 'De 10 a 15 días', min: 10, max: 15 },
+  { id: 'b15',   label: 'Más de 15 días',  min: 15, max: Infinity }
+];
+let bucketAntiguedadSeleccionado = null;
+function seleccionarFranjaAntiguedad(id){
+  bucketAntiguedadSeleccionado = (bucketAntiguedadSeleccionado === id) ? null : id;
+  renderResumen();
+}
+
+// Guardado aparte para que "Descargar PDF" use exactamente los mismos
+// datos que se ven en pantalla en ese momento, sin tener que recalcularlos.
+let resumenFranjasAntiguedadCache = [];
+
+// Genera el PDF con el "Guardar como PDF" del propio navegador (al
+// imprimir) — funciona igual en el móvil (Android o iPhone) que en un
+// ordenador, porque es una función del navegador, no de la app; y no
+// depende de ninguna librería externa ni de conexión, igual que el resto
+// de la app. Se mete el listado en una zona oculta que solo se ve al
+// imprimir, se imprime, y se vuelve a ocultar. Incluye las 4 franjas
+// juntas, cada pendiente con la suya.
+function descargarAntiguedadPDF(){
+  const total = resumenFranjasAntiguedadCache.reduce((n,f)=> n + f.pickings.length, 0);
+  if(!total){ toast('No hay pendientes de 5 días o más para descargar'); return; }
+  const filas = resumenFranjasAntiguedadCache.flatMap(f=>
+    f.pickings.map(p=>`
+      <tr>
+        <td>${escapeHtml(p.of)}</td>
+        <td>${escapeHtml(p.proyecto||'—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</td>
+        <td style="text-align:center;">${diasPendiente(p)}</td>
+        <td>${escapeHtml(f.label)}</td>
+        <td>${escapeHtml(p.registradoPor||'—')}</td>
+        <td>${fechaCorta(p.fecha)}</td>
+      </tr>
+    `)
+  ).join('');
+  let cont = document.getElementById('pdfAntiguedad');
+  if(!cont){
+    cont = document.createElement('div');
+    cont.id = 'pdfAntiguedad';
+    document.body.appendChild(cont);
+  }
+  cont.innerHTML = `
+    <style>
+      #pdfAntiguedad table{ border-collapse:collapse; width:100%; font-size:13px; }
+      #pdfAntiguedad th, #pdfAntiguedad td{ border:1px solid #999; padding:6px; text-align:left; }
+      #pdfAntiguedad th{ background:#eee; }
+    </style>
+    <h2 style="margin:0 0 4px;">Pendientes de entrega — 5 días o más</h2>
+    <p style="margin:0 0 14px; color:#555;">Generado el ${new Date().toLocaleString('es-ES')}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>OF</th>
+          <th>Proyecto</th>
+          <th>Días pendiente</th>
+          <th>Franja</th>
+          <th>Registrado por</th>
+          <th>Fecha de registro</th>
+        </tr>
+      </thead>
+      <tbody>${filas}</tbody>
+    </table>
+  `;
+  document.body.classList.add('imprimiendo-antiguedad');
+  window.print();
+  setTimeout(()=> document.body.classList.remove('imprimiendo-antiguedad'), 500);
 }
 
 function abrirEdicion(id){
@@ -12595,6 +12755,64 @@ async function confirmarEdicion(){
   encolarOperacion('editarPicking', datosEnvio, p.id, 'Editar OF ' + p.of);
 }
 
+// Para cuando no hay una persona de DHV que reciba y firme en el momento
+// (se deja en Producción para que lo cojan ellos) — se anota la ubicación
+// de todo lo del picking como "Producción" y NO se cierra como entregado:
+// sigue pendiente (y visible en "Por ubicación → Producción") hasta que,
+// el día que llegue el papel firmado, se registre la entrega de verdad con
+// "Entrega completa" de siempre.
+function itemsParaUbicarDe(p){
+  return ['Cajas', ...fueraActivas(p)];
+}
+function abrirEntregarProduccion(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p) return;
+  if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden hacer esto'); return; }
+  mostrarSheet(`
+    <h3>🏭 Entregar a producción</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
+      Se anota que la OF <b>${escapeHtml(p.of)}</b> se dejó en <b>Producción</b> — sin una persona de DHV que la reciba y firme en el momento.
+      Sigue apareciendo como pendiente (la verás en "Por ubicación → Producción") hasta que registres la entrega ya firmada, el día que te llegue el papel.
+    </p>
+    <button class="btn btn-primary" onclick="confirmarEntregarProduccion('${p.id}')">Confirmar</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+}
+async function confirmarEntregarProduccion(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p) return;
+
+  const ubicacionesFinal = {};
+  itemsParaUbicarDe(p).forEach(it=> ubicacionesFinal[it] = 'Producción');
+  const motivo = 'Entregado a producción — pendiente de entrega firmada';
+  const cambios = diffCambios(p, {
+    of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto, cajas: p.cajas,
+    obs: p.observaciones, fuera: p.fuera, ubicaciones: ubicacionesFinal
+  });
+
+  const datosEnvio = {
+    id: p.id,
+    of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto, cajas: p.cajas,
+    fuera: formatFuera(p.fuera),
+    ubicaciones: formatUbicaciones(ubicacionesFinal),
+    observaciones: p.observaciones,
+    editadoPor: usuarioActual,
+    motivo,
+    cambios
+  };
+
+  p.ubicaciones = ubicacionesFinal;
+  if(!p.ediciones) p.ediciones = [];
+  p.ediciones.push({ editadoPor: usuarioActual, fecha: new Date().toISOString(), motivo, cambios });
+  guardarDBLocal();
+
+  cerrarSheet();
+  toast('Anotado: en Producción, pendiente de la entrega firmada');
+  abrirDetalle(p.id);
+
+  encolarOperacion('editarPicking', datosEnvio, p.id, 'Entregar a producción OF ' + p.of);
+}
+
 /* ---------- pendientes en home ---------- */
 function compararPendientes(a,b){
   const porProyecto = String(a.proyecto||'').localeCompare(String(b.proyecto||''), 'es', {numeric:true, sensitivity:'base'});
@@ -12895,6 +13113,7 @@ function detalleHtml(p){
   const acciones = p.estado==='completado' ? '' : `
     <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
     <button class="btn btn-outline" onclick="entregar('parcial')">Entrega parcial</button>
+    <button class="btn btn-outline" onclick="abrirEntregarProduccion('${p.id}')" style="margin-top:8px;">🏭 Entregar a producción</button>
     <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">➕ Añadir algo más a este picking</button>
   `;
 
@@ -13774,6 +13993,7 @@ function entregar(tipo, manteniendoEstado){
 
     <label>¿A quién de DHV se entrega?</label>
     <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="actualizarTextoFirma()">
+    <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">📍 Se dejó en Producción, sin una persona concreta</span></div>
 
     ${bloqueItems}
 
@@ -13888,6 +14108,13 @@ function toggleBtnEntrega(){
   const chk = document.getElementById('confirmFirma');
   const btn = document.getElementById('btnConfirmarEntrega');
   if(chk && btn) btn.style.opacity = chk.checked ? '1' : '0.5';
+}
+function rellenarEntregaA(valor){
+  const campo = document.getElementById('entregaA');
+  if(!campo) return;
+  campo.value = valor;
+  actualizarTextoFirma();
+  toggleBtnEntrega();
 }
 function actualizarTextoFirma(){
   const nombre = document.getElementById('entregaA').value.trim();
@@ -14079,6 +14306,7 @@ function confirmarAmpliacion(){
 
 /* ---------- init ---------- */
 async function iniciar(){
+  comprobarCierreSesionPorTurno();
   actualizarChipUsuario();
   renderPendingBanner();
 
@@ -14102,6 +14330,7 @@ async function iniciar(){
   // hacer nada. No interrumpe si hay un formulario o ventana abiertos.
   setInterval(()=>{
     if(document.getElementById('sheetOverlay')) return;
+    comprobarCierreSesionPorTurno();
     const activa = document.querySelector('.screen.active')?.id;
     if(colaSync.length) procesarColaSync().catch(()=>{});
     if(activa === 'screen-registro') return;
@@ -14110,6 +14339,7 @@ async function iniciar(){
   }, 20000);
   document.addEventListener('visibilitychange', ()=>{
     if(document.visibilityState === 'visible'){
+      comprobarCierreSesionPorTurno();
       if(colaSync.length) procesarColaSync().catch(()=>{});
       sincronizar().catch(()=>{});
     }
