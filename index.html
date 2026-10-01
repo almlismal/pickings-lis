@@ -12228,12 +12228,13 @@ function renderResumen(){
       <div style="font-size:22px; font-weight:800;">${tiempoMedio!==null ? tiempoMedio.toFixed(1).replace('.',',') + ' días' : '—'}</div>
       <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">Tiempo medio entre registro y entrega</div>
     </div>
+    <button class="btn btn-outline" onclick="descargarResumenPDF()" style="margin-top:10px;">⬇️ Descargar PDF del resumen</button>
 
     <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">⏳ Antigüedad de los pendientes — toca un número para ver cuáles son</div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
       ${franjasAntiguedad.map(f=>tarjetaFranja(f)).join('')}
     </div>
-    <button class="btn btn-outline" onclick="descargarResumenPDF()" style="margin-top:10px;">⬇️ Descargar PDF del resumen completo</button>
+    <button class="btn btn-outline" onclick="descargarListadoOfsPDF()" style="margin-top:10px;">📋 Descargar listado de OFs pendientes</button>
     <div style="margin-top:10px;">
       ${franjaAbierta
         ? (franjaAbierta.pickings.length ? franjaAbierta.pickings.map(p=>ticketHtml(p)).join('') : '<div class="empty">Ninguno en esta franja ahora mismo</div>')
@@ -12274,10 +12275,10 @@ let resumenDatosCache = null;
 // de la app. Se mete el documento en una zona oculta que solo se ve al
 // imprimir, se imprime, y se vuelve a ocultar.
 //
-// Es el resumen COMPLETO de la pantalla (no solo la antigüedad): totales,
-// tiempo medio, las 4 franjas de antigüedad con su detalle, y las dos
-// tablas de por persona — en formato de documento, para imprimir o
-// archivar.
+// Es el resumen de la pantalla: totales, tiempo medio, cantidad por cada
+// franja de antigüedad (sin el detalle de qué OFs son — eso va en el otro
+// botón, "listado de OFs"), y las dos tablas de por persona — en formato
+// de documento, para imprimir o archivar.
 function descargarResumenPDF(){
   const d = resumenDatosCache;
   if(!d){ toast('Todavía no hay datos cargados'); return; }
@@ -12285,21 +12286,6 @@ function descargarResumenPDF(){
   const filasPorPersona = grupos => Object.values(grupos).sort((a,b)=>b.count-a.count).map(g=>`
     <tr><td>${escapeHtml(g.label)}</td><td style="text-align:center;">${g.count}</td></tr>
   `).join('') || '<tr><td colspan="2">Sin datos</td></tr>';
-
-  const filasAntiguedad = d.franjasAntiguedad.flatMap(f=>
-    f.pickings.length
-      ? f.pickings.map(p=>`
-          <tr>
-            <td>${escapeHtml(f.label)}</td>
-            <td>${escapeHtml(p.of)}</td>
-            <td>${escapeHtml(p.proyecto||'—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</td>
-            <td style="text-align:center;">${diasPendiente(p)}</td>
-            <td>${escapeHtml(p.registradoPor||'—')}</td>
-            <td>${fechaCorta(p.fecha)}</td>
-          </tr>
-        `)
-      : [`<tr><td>${escapeHtml(f.label)}</td><td colspan="5" style="color:#777;">Ninguno en esta franja ahora mismo</td></tr>`]
-  ).join('');
 
   let cont = document.getElementById('pdfAntiguedad');
   if(!cont){
@@ -12336,19 +12322,6 @@ function descargarResumenPDF(){
         ${d.franjasAntiguedad.map(f=>`<tr><td>${escapeHtml(f.label)}</td><td style="text-align:center;">${f.pickings.length}</td></tr>`).join('')}
       </tbody>
     </table>
-    <table>
-      <thead>
-        <tr>
-          <th>Franja</th>
-          <th>OF</th>
-          <th>Proyecto</th>
-          <th>Días pendiente</th>
-          <th>Registrado por</th>
-          <th>Fecha de registro</th>
-        </tr>
-      </thead>
-      <tbody>${filasAntiguedad}</tbody>
-    </table>
 
     <h3>Registrados por persona (pendientes + entregados)</h3>
     <table>
@@ -12360,6 +12333,58 @@ function descargarResumenPDF(){
     <table>
       <thead><tr><th>Persona</th><th style="text-align:center;">Cantidad</th></tr></thead>
       <tbody>${filasPorPersona(d.porEntregadoPor)}</tbody>
+    </table>
+  `;
+  document.body.classList.add('imprimiendo-antiguedad');
+  window.print();
+  setTimeout(()=> document.body.classList.remove('imprimiendo-antiguedad'), 500);
+}
+
+// El otro botón: el listado de los OFs pendientes de 4 días o más (las 4
+// franjas juntas, ordenados de más a menos antiguo). Sin columna de
+// franja — ese dato ya está en el PDF del resumen, aquí no hace falta
+// repetirlo en cada fila.
+function descargarListadoOfsPDF(){
+  const d = resumenDatosCache;
+  if(!d){ toast('Todavía no hay datos cargados'); return; }
+  const todos = d.franjasAntiguedad.flatMap(f=>f.pickings).sort((a,b)=> diasPendiente(b)-diasPendiente(a));
+  if(!todos.length){ toast('No hay pendientes de 4 días o más para descargar'); return; }
+
+  const filas = todos.map(p=>`
+    <tr>
+      <td>${escapeHtml(p.of)}</td>
+      <td>${escapeHtml(p.proyecto||'—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</td>
+      <td style="text-align:center;">${diasPendiente(p)}</td>
+      <td>${escapeHtml(p.registradoPor||'—')}</td>
+      <td>${fechaCorta(p.fecha)}</td>
+    </tr>
+  `).join('');
+
+  let cont = document.getElementById('pdfAntiguedad');
+  if(!cont){
+    cont = document.createElement('div');
+    cont.id = 'pdfAntiguedad';
+    document.body.appendChild(cont);
+  }
+  cont.innerHTML = `
+    <style>
+      #pdfAntiguedad table{ border-collapse:collapse; width:100%; font-size:13px; }
+      #pdfAntiguedad th, #pdfAntiguedad td{ border:1px solid #999; padding:6px; text-align:left; }
+      #pdfAntiguedad th{ background:#eee; }
+    </style>
+    <h2 style="margin:0 0 4px;">Listado de OFs pendientes — 4 días o más</h2>
+    <p style="margin:0 0 14px; color:#555;">Generado el ${new Date().toLocaleString('es-ES')}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>OF</th>
+          <th>Proyecto</th>
+          <th>Días pendiente</th>
+          <th>Registrado por</th>
+          <th>Fecha de registro</th>
+        </tr>
+      </thead>
+      <tbody>${filas}</tbody>
     </table>
   `;
   document.body.classList.add('imprimiendo-antiguedad');
