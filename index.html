@@ -12180,20 +12180,34 @@ function renderResumen(){
     </div>
   `;
 
-  // Antigüedad de los pendientes, por franjas. Los rangos son [min, max) —
-  // un pendiente de exactamente 7 días cae en "7 a 10", no se cuenta dos
-  // veces en ningún lado. Se guarda todo (no solo el seleccionado) para que
-  // "Descargar PDF" pueda sacar las 4 franjas juntas.
+  // Antigüedad de los pendientes, por franjas. Los rangos son [min, max],
+  // ambos extremos incluidos — un pendiente de exactamente 7 días cae en
+  // "1 a 7", uno de 15 cae en "11 a 15", no se cuenta dos veces en ningún
+  // lado. Se guarda todo (no solo el seleccionado) para que "Descargar PDF"
+  // pueda sacar las 4 franjas juntas.
   const franjasAntiguedad = BUCKETS_ANTIGUEDAD.map(b=>({
     ...b,
-    pickings: pendientes.filter(p=>{ const d = diasPendiente(p); return d>=b.min && d<b.max; }).sort((a,b2)=> diasPendiente(b2)-diasPendiente(a))
+    pickings: pendientes.filter(p=>{ const d = diasPendiente(p); return d>=b.min && d<=b.max; }).sort((a,b2)=> diasPendiente(b2)-diasPendiente(a))
   }));
-  resumenFranjasAntiguedadCache = franjasAntiguedad;
   if(bucketAntiguedadSeleccionado && !franjasAntiguedad.some(f=>f.id===bucketAntiguedadSeleccionado && f.pickings.length)){
     // si la franja que tenía abierta se quedó sin pickings, se cierra sola
     bucketAntiguedadSeleccionado = null;
   }
   const franjaAbierta = franjasAntiguedad.find(f=>f.id===bucketAntiguedadSeleccionado);
+
+  // Se guarda todo lo que se ve en esta pantalla (no solo la franja abierta)
+  // para que "Descargar PDF" pueda sacar un documento con el resumen
+  // completo, igual en cualquier dispositivo.
+  resumenDatosCache = {
+    pendientes: pendientes.length,
+    entregadosTotal: entregados.length,
+    entregadosSemana: entregadosSemana.length,
+    entregadosMes: entregadosMes.length,
+    tiempoMedio,
+    franjasAntiguedad,
+    porRegistrado,
+    porEntregadoPor
+  };
 
   const tarjetaFranja = f => `
     <div onclick="seleccionarFranjaAntiguedad('${f.id}')" style="cursor:pointer; background:var(--panel); border:1px solid ${f.id===bucketAntiguedadSeleccionado?'var(--accent)':'var(--line)'}; border-radius:8px; padding:14px; text-align:center;">
@@ -12219,7 +12233,7 @@ function renderResumen(){
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
       ${franjasAntiguedad.map(f=>tarjetaFranja(f)).join('')}
     </div>
-    <button class="btn btn-outline" onclick="descargarAntiguedadPDF()" style="margin-top:10px;">⬇️ Descargar PDF (todas las franjas)</button>
+    <button class="btn btn-outline" onclick="descargarResumenPDF()" style="margin-top:10px;">⬇️ Descargar PDF del resumen completo</button>
     <div style="margin-top:10px;">
       ${franjaAbierta
         ? (franjaAbierta.pickings.length ? franjaAbierta.pickings.map(p=>ticketHtml(p)).join('') : '<div class="empty">Ninguno en esta franja ahora mismo</div>')
@@ -12234,14 +12248,14 @@ function renderResumen(){
   `;
 }
 
-// Las 4 franjas de antigüedad que se ven en Resumen. Rangos [min, max) —
-// así un pendiente de exactamente 7 días cae en "De 7 a 10 días" y en
-// ningún otro, sin solaparse.
+// Las 4 franjas de antigüedad que se ven en Resumen. Rangos [min, max],
+// ambos extremos incluidos — así un pendiente de exactamente 7 días cae en
+// "De 1 a 7 días" y en ningún otro, sin solaparse.
 const BUCKETS_ANTIGUEDAD = [
-  { id: 'b5_7',  label: 'De 5 a 7 días',   min: 5,  max: 7 },
-  { id: 'b7_10', label: 'De 7 a 10 días',  min: 7,  max: 10 },
-  { id: 'b10_15',label: 'De 10 a 15 días', min: 10, max: 15 },
-  { id: 'b15',   label: 'Más de 15 días',  min: 15, max: Infinity }
+  { id: 'b1_7',  label: 'De 4 a 7 días',   min: 4,  max: 7 },
+  { id: 'b8_10', label: 'De 8 a 10 días',  min: 8,  max: 10 },
+  { id: 'b11_15',label: 'De 11 a 15 días', min: 11, max: 15 },
+  { id: 'b15',   label: 'Más de 15 días',  min: 16, max: Infinity }
 ];
 let bucketAntiguedadSeleccionado = null;
 function seleccionarFranjaAntiguedad(id){
@@ -12251,30 +12265,42 @@ function seleccionarFranjaAntiguedad(id){
 
 // Guardado aparte para que "Descargar PDF" use exactamente los mismos
 // datos que se ven en pantalla en ese momento, sin tener que recalcularlos.
-let resumenFranjasAntiguedadCache = [];
+let resumenDatosCache = null;
 
 // Genera el PDF con el "Guardar como PDF" del propio navegador (al
 // imprimir) — funciona igual en el móvil (Android o iPhone) que en un
 // ordenador, porque es una función del navegador, no de la app; y no
 // depende de ninguna librería externa ni de conexión, igual que el resto
-// de la app. Se mete el listado en una zona oculta que solo se ve al
-// imprimir, se imprime, y se vuelve a ocultar. Incluye las 4 franjas
-// juntas, cada pendiente con la suya.
-function descargarAntiguedadPDF(){
-  const total = resumenFranjasAntiguedadCache.reduce((n,f)=> n + f.pickings.length, 0);
-  if(!total){ toast('No hay pendientes de 5 días o más para descargar'); return; }
-  const filas = resumenFranjasAntiguedadCache.flatMap(f=>
-    f.pickings.map(p=>`
-      <tr>
-        <td>${escapeHtml(p.of)}</td>
-        <td>${escapeHtml(p.proyecto||'—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</td>
-        <td style="text-align:center;">${diasPendiente(p)}</td>
-        <td>${escapeHtml(f.label)}</td>
-        <td>${escapeHtml(p.registradoPor||'—')}</td>
-        <td>${fechaCorta(p.fecha)}</td>
-      </tr>
-    `)
+// de la app. Se mete el documento en una zona oculta que solo se ve al
+// imprimir, se imprime, y se vuelve a ocultar.
+//
+// Es el resumen COMPLETO de la pantalla (no solo la antigüedad): totales,
+// tiempo medio, las 4 franjas de antigüedad con su detalle, y las dos
+// tablas de por persona — en formato de documento, para imprimir o
+// archivar.
+function descargarResumenPDF(){
+  const d = resumenDatosCache;
+  if(!d){ toast('Todavía no hay datos cargados'); return; }
+
+  const filasPorPersona = grupos => Object.values(grupos).sort((a,b)=>b.count-a.count).map(g=>`
+    <tr><td>${escapeHtml(g.label)}</td><td style="text-align:center;">${g.count}</td></tr>
+  `).join('') || '<tr><td colspan="2">Sin datos</td></tr>';
+
+  const filasAntiguedad = d.franjasAntiguedad.flatMap(f=>
+    f.pickings.length
+      ? f.pickings.map(p=>`
+          <tr>
+            <td>${escapeHtml(f.label)}</td>
+            <td>${escapeHtml(p.of)}</td>
+            <td>${escapeHtml(p.proyecto||'—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</td>
+            <td style="text-align:center;">${diasPendiente(p)}</td>
+            <td>${escapeHtml(p.registradoPor||'—')}</td>
+            <td>${fechaCorta(p.fecha)}</td>
+          </tr>
+        `)
+      : [`<tr><td>${escapeHtml(f.label)}</td><td colspan="5" style="color:#777;">Ninguno en esta franja ahora mismo</td></tr>`]
   ).join('');
+
   let cont = document.getElementById('pdfAntiguedad');
   if(!cont){
     cont = document.createElement('div');
@@ -12283,24 +12309,57 @@ function descargarAntiguedadPDF(){
   }
   cont.innerHTML = `
     <style>
-      #pdfAntiguedad table{ border-collapse:collapse; width:100%; font-size:13px; }
+      #pdfAntiguedad table{ border-collapse:collapse; width:100%; font-size:13px; margin-bottom:18px; }
       #pdfAntiguedad th, #pdfAntiguedad td{ border:1px solid #999; padding:6px; text-align:left; }
       #pdfAntiguedad th{ background:#eee; }
+      #pdfAntiguedad h2{ margin:0 0 4px; }
+      #pdfAntiguedad h3{ margin:20px 0 6px; }
     </style>
-    <h2 style="margin:0 0 4px;">Pendientes de entrega — 5 días o más</h2>
+    <h2>Resumen — Picking LIS-DHV</h2>
     <p style="margin:0 0 14px; color:#555;">Generado el ${new Date().toLocaleString('es-ES')}</p>
+
+    <table>
+      <thead><tr><th>Dato</th><th>Valor</th></tr></thead>
+      <tbody>
+        <tr><td>Pendientes de entrega ahora</td><td style="text-align:center;">${d.pendientes}</td></tr>
+        <tr><td>Entregados en total</td><td style="text-align:center;">${d.entregadosTotal}</td></tr>
+        <tr><td>Entregados en los últimos 7 días</td><td style="text-align:center;">${d.entregadosSemana}</td></tr>
+        <tr><td>Entregados en los últimos 30 días</td><td style="text-align:center;">${d.entregadosMes}</td></tr>
+        <tr><td>Tiempo medio entre registro y entrega</td><td style="text-align:center;">${d.tiempoMedio!==null ? d.tiempoMedio.toFixed(1).replace('.',',') + ' días' : '—'}</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Antigüedad de los pendientes</h3>
+    <table>
+      <thead><tr><th>Franja</th><th style="text-align:center;">Cantidad</th></tr></thead>
+      <tbody>
+        ${d.franjasAntiguedad.map(f=>`<tr><td>${escapeHtml(f.label)}</td><td style="text-align:center;">${f.pickings.length}</td></tr>`).join('')}
+      </tbody>
+    </table>
     <table>
       <thead>
         <tr>
+          <th>Franja</th>
           <th>OF</th>
           <th>Proyecto</th>
           <th>Días pendiente</th>
-          <th>Franja</th>
           <th>Registrado por</th>
           <th>Fecha de registro</th>
         </tr>
       </thead>
-      <tbody>${filas}</tbody>
+      <tbody>${filasAntiguedad}</tbody>
+    </table>
+
+    <h3>Registrados por persona (pendientes + entregados)</h3>
+    <table>
+      <thead><tr><th>Persona</th><th style="text-align:center;">Cantidad</th></tr></thead>
+      <tbody>${filasPorPersona(d.porRegistrado)}</tbody>
+    </table>
+
+    <h3>Entregas realizadas por persona</h3>
+    <table>
+      <thead><tr><th>Persona</th><th style="text-align:center;">Cantidad</th></tr></thead>
+      <tbody>${filasPorPersona(d.porEntregadoPor)}</tbody>
     </table>
   `;
   document.body.classList.add('imprimiendo-antiguedad');
