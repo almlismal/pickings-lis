@@ -12249,12 +12249,13 @@ function renderResumen(){
   `;
 }
 
-// Las 4 franjas de antigüedad que se ven en Resumen. Rangos [min, max],
-// ambos extremos incluidos — así un pendiente de exactamente 7 días cae en
-// "De 1 a 7 días" y en ningún otro, sin solaparse.
+// Las 4 franjas de antigüedad que se ven en Resumen. Bloques redondos de 5
+// días cada uno, rangos [min, max] con ambos extremos incluidos — así un
+// pendiente de exactamente 5 días cae en "1 a 5 días" y en ningún otro,
+// sin solaparse.
 const BUCKETS_ANTIGUEDAD = [
-  { id: 'b1_7',  label: 'De 4 a 7 días',   min: 4,  max: 7 },
-  { id: 'b8_10', label: 'De 8 a 10 días',  min: 8,  max: 10 },
+  { id: 'b1_5',  label: 'De 1 a 5 días',   min: 1,  max: 5 },
+  { id: 'b6_10', label: 'De 6 a 10 días',  min: 6,  max: 10 },
   { id: 'b11_15',label: 'De 11 a 15 días', min: 11, max: 15 },
   { id: 'b15',   label: 'Más de 15 días',  min: 16, max: Infinity }
 ];
@@ -12340,7 +12341,7 @@ function descargarResumenPDF(){
   setTimeout(()=> document.body.classList.remove('imprimiendo-antiguedad'), 500);
 }
 
-// El otro botón: el listado de los OFs pendientes de 4 días o más (las 4
+// El otro botón: el listado de los OFs pendientes de 1 día o más (las 4
 // franjas juntas, ordenados de más a menos antiguo). Sin columna de
 // franja — ese dato ya está en el PDF del resumen, aquí no hace falta
 // repetirlo en cada fila.
@@ -12348,7 +12349,7 @@ function descargarListadoOfsPDF(){
   const d = resumenDatosCache;
   if(!d){ toast('Todavía no hay datos cargados'); return; }
   const todos = d.franjasAntiguedad.flatMap(f=>f.pickings).sort((a,b)=> diasPendiente(b)-diasPendiente(a));
-  if(!todos.length){ toast('No hay pendientes de 4 días o más para descargar'); return; }
+  if(!todos.length){ toast('No hay pendientes de 1 día o más para descargar'); return; }
 
   const filas = todos.map(p=>`
     <tr>
@@ -12372,7 +12373,7 @@ function descargarListadoOfsPDF(){
       #pdfAntiguedad th, #pdfAntiguedad td{ border:1px solid #999; padding:6px; text-align:left; }
       #pdfAntiguedad th{ background:#eee; }
     </style>
-    <h2 style="margin:0 0 4px;">Listado de OFs pendientes — 4 días o más</h2>
+    <h2 style="margin:0 0 4px;">Listado de OFs pendientes — 1 día o más</h2>
     <p style="margin:0 0 14px; color:#555;">Generado el ${new Date().toLocaleString('es-ES')}</p>
     <table>
       <thead>
