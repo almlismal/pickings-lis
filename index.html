@@ -12269,128 +12269,213 @@ function seleccionarFranjaAntiguedad(id){
 // datos que se ven en pantalla en ese momento, sin tener que recalcularlos.
 let resumenDatosCache = null;
 
-// Genera el PDF con el "Guardar como PDF" del propio navegador (al
-// imprimir) — funciona igual en el móvil (Android o iPhone) que en un
-// ordenador, porque es una función del navegador, no de la app; y no
-// depende de ninguna librería externa ni de conexión, igual que el resto
-// de la app. Se mete el documento en una zona oculta que solo se ve al
-// imprimir, se imprime, y se vuelve a ocultar.
-//
-// Es el resumen de la pantalla: totales, tiempo medio, cantidad por cada
-// franja de antigüedad (sin el detalle de qué OFs son — eso va en el otro
-// botón, "listado de OFs"), y las dos tablas de por persona — en formato
-// de documento, para imprimir o archivar.
+// ---- PDF propio, sin librerías ni diálogo de impresión ----
+// Antes se usaba "imprimir → guardar como PDF" del navegador, y eso falla
+// según el dispositivo/modo (p. ej. app añadida a la pantalla de inicio, o
+// navegadores que bloquean la impresión). Ahora la app construye el archivo
+// PDF ella misma (texto + tablas, fuente Helvetica estándar) y lo entrega:
+// en móvil con el menú "Compartir/Guardar", en PC como descarga directa.
+const PDF_ANCHOS_HELV = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584];
+
+function pdfAnchoTexto(s, size, bold){
+  const base = String(s).normalize('NFD').replace(/[̀-ͯ]/g,'');
+  let w = 0;
+  for(let i=0;i<base.length;i++){
+    const c = base.charCodeAt(i);
+    w += (c>=32 && c<=126) ? PDF_ANCHOS_HELV[c-32] : 556;
+  }
+  return w * size / 1000 * (bold ? 1.07 : 1);
+}
+
+function pdfAjustar(s, anchoMax, size, bold){
+  s = String(s);
+  if(pdfAnchoTexto(s, size, bold) <= anchoMax) return s;
+  let t = s;
+  while(t.length > 1 && pdfAnchoTexto(t + '...', size, bold) > anchoMax) t = t.slice(0, -1);
+  return t + '...';
+}
+
+function pdfCodificar(s){
+  const especiales = { '—':0x97, '–':0x96, '…':0x85, '’':0x92, '‘':0x91, '“':0x93, '”':0x94 };
+  let out = '';
+  for(const ch of String(s)){
+    let c = ch.charCodeAt(0);
+    if(especiales[ch]) c = especiales[ch];
+    else if(c > 255) c = 63; // '?'
+    const car = String.fromCharCode(c);
+    out += (car==='\\' || car==='(' || car===')') ? '\\' + car : car;
+  }
+  return out;
+}
+
+// bloques: {t:'h1'|'p'|'h3', text} o {t:'table', head:[...], rows:[[...]], widths:[fracciones], align:['l'|'c',...]}
+function pdfConstruir(bloques){
+  const W = 595, H = 842, M = 40, UW = W - 2*M, RH = 18, TAM = 9.5;
+  const paginas = [];
+  let ops = null, y = 0;
+  const nueva = ()=>{ ops = []; paginas.push(ops); y = H - M; };
+  const texto = (s, x, yy, size, bold)=>
+    ops.push(`BT /${bold?'F2':'F1'} ${size} Tf ${x.toFixed(2)} ${yy.toFixed(2)} Td (${pdfCodificar(s)}) Tj ET`);
+  nueva();
+
+  const dibujarFila = (celdas, xs, ws, al, bold, gris)=>{
+    const yb = y - RH;
+    if(gris) ops.push(`0.92 g ${M} ${yb.toFixed(2)} ${UW} ${RH} re f 0 g`);
+    ops.push(`0.6 G 0.5 w ${M} ${yb.toFixed(2)} ${UW} ${RH} re S`);
+    celdas.forEach((c,i)=>{
+      if(i>0) ops.push(`${xs[i].toFixed(2)} ${yb.toFixed(2)} m ${xs[i].toFixed(2)} ${y.toFixed(2)} l S`);
+      const t = pdfAjustar(c, ws[i]-10, TAM, bold);
+      const tw = pdfAnchoTexto(t, TAM, bold);
+      const tx = al[i]==='c' ? xs[i] + (ws[i]-tw)/2 : xs[i] + 5;
+      texto(t, tx, yb + 5.5, TAM, bold);
+    });
+    y = yb;
+  };
+
+  bloques.forEach(b=>{
+    if(b.t==='h1'){ texto(b.text, M, y-16, 16, true); y -= 24; }
+    else if(b.t==='p'){ ops.push('0.35 g'); texto(b.text, M, y-10, 9.5, false); ops.push('0 g'); y -= 20; }
+    else if(b.t==='h3'){
+      if(y < M + 80) nueva();
+      y -= 10; texto(b.text, M, y-12, 12, true); y -= 20;
+    }
+    else if(b.t==='table'){
+      const ws = b.widths.map(f=>f*UW);
+      const xs = []; ws.reduce((acc,w,i)=>{ xs[i]=acc; return acc+w; }, M);
+      if(y < M + RH*3 + 20) nueva();
+      dibujarFila(b.head, xs, ws, b.align, true, true);
+      const filas = b.rows.length ? b.rows : [['Sin datos'].concat(b.head.slice(1).map(()=>''))];
+      filas.forEach(r=>{
+        if(y - RH < M + 20){ nueva(); dibujarFila(b.head, xs, ws, b.align, true, true); }
+        dibujarFila(r, xs, ws, b.align, false, false);
+      });
+      y -= 14;
+    }
+  });
+
+  // pie con número de página
+  paginas.forEach((pg,i)=>{
+    ops = pg;
+    ops.push('0.4 g');
+    texto('Picking LIS-DHV', M, 22, 8, false);
+    const t = `Página ${i+1} de ${paginas.length}`;
+    texto(t, W - M - pdfAnchoTexto(t, 8, false), 22, 8, false);
+    ops.push('0 g');
+  });
+
+  const n = paginas.length;
+  const objs = [];
+  objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+  objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
+  const kids = [];
+  paginas.forEach((pg,k)=>{
+    const pid = 5 + 2*k, cid = 6 + 2*k;
+    kids.push(pid + ' 0 R');
+    objs[pid] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${cid} 0 R >>`;
+    const s = pg.join('\n');
+    objs[cid] = `<< /Length ${s.length} >>\nstream\n${s}\nendstream`;
+  });
+  objs[2] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${n} >>`;
+
+  let out = '%PDF-1.4\n';
+  const offs = [];
+  for(let i=1;i<objs.length;i++){
+    offs[i] = out.length;
+    out += `${i} 0 obj\n${objs[i]}\nendobj\n`;
+  }
+  const xref = out.length;
+  out += `xref\n0 ${objs.length}\n0000000000 65535 f \n`;
+  for(let i=1;i<objs.length;i++) out += String(offs[i]).padStart(10,'0') + ' 00000 n \n';
+  out += `trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+
+  const bytes = new Uint8Array(out.length);
+  for(let i=0;i<out.length;i++) bytes[i] = out.charCodeAt(i) & 255;
+  return bytes;
+}
+
+async function pdfEntregar(bytes, nombre){
+  const blob = new Blob([bytes], { type:'application/pdf' });
+  const movil = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+  try{
+    if(movil && navigator.canShare && navigator.share){
+      const f = new File([blob], nombre, { type:'application/pdf' });
+      if(navigator.canShare({ files:[f] })){
+        await navigator.share({ files:[f], title:nombre });
+        return;
+      }
+    }
+  } catch(err){
+    if(err && err.name==='AbortError') return; // el usuario cerró el menú
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 60000);
+}
+
+function fechaArchivo(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// Resumen: totales, tiempo medio, cantidad por franja de antigüedad y las
+// dos tablas por persona. (El detalle de qué OFs son va en el otro botón.)
 function descargarResumenPDF(){
   const d = resumenDatosCache;
   if(!d){ toast('Todavía no hay datos cargados'); return; }
-
-  const filasPorPersona = grupos => Object.values(grupos).sort((a,b)=>b.count-a.count).map(g=>`
-    <tr><td>${escapeHtml(g.label)}</td><td style="text-align:center;">${g.count}</td></tr>
-  `).join('') || '<tr><td colspan="2">Sin datos</td></tr>';
-
-  let cont = document.getElementById('pdfAntiguedad');
-  if(!cont){
-    cont = document.createElement('div');
-    cont.id = 'pdfAntiguedad';
-    document.body.appendChild(cont);
+  const porPersona = grupos => Object.values(grupos).sort((a,b)=>b.count-a.count).map(g=>[g.label, String(g.count)]);
+  try{
+    const bytes = pdfConstruir([
+      { t:'h1', text:'Resumen — Picking LIS-DHV' },
+      { t:'p', text:'Generado el ' + new Date().toLocaleString('es-ES') },
+      { t:'table', head:['Dato','Valor'], widths:[0.75,0.25], align:['l','c'], rows:[
+        ['Pendientes de entrega ahora', String(d.pendientes)],
+        ['Entregados en total', String(d.entregadosTotal)],
+        ['Entregados en los últimos 7 días', String(d.entregadosSemana)],
+        ['Entregados en los últimos 30 días', String(d.entregadosMes)],
+        ['Tiempo medio entre registro y entrega', d.tiempoMedio!==null ? d.tiempoMedio.toFixed(1).replace('.',',') + ' días' : '—']
+      ]},
+      { t:'h3', text:'Antigüedad de los pendientes' },
+      { t:'table', head:['Franja','Cantidad'], widths:[0.75,0.25], align:['l','c'],
+        rows: d.franjasAntiguedad.map(f=>[f.label, String(f.pickings.length)]) },
+      { t:'h3', text:'Registrados por persona (pendientes + entregados)' },
+      { t:'table', head:['Persona','Cantidad'], widths:[0.75,0.25], align:['l','c'], rows: porPersona(d.porRegistrado) },
+      { t:'h3', text:'Entregas realizadas por persona' },
+      { t:'table', head:['Persona','Cantidad'], widths:[0.75,0.25], align:['l','c'], rows: porPersona(d.porEntregadoPor) }
+    ]);
+    pdfEntregar(bytes, 'Resumen-Picking-LIS-' + fechaArchivo() + '.pdf');
+  } catch(err){
+    toast('No se pudo crear el PDF: ' + (err && err.message ? err.message : 'error desconocido'));
   }
-  cont.innerHTML = `
-    <style>
-      #pdfAntiguedad table{ border-collapse:collapse; width:100%; font-size:13px; margin-bottom:18px; }
-      #pdfAntiguedad th, #pdfAntiguedad td{ border:1px solid #999; padding:6px; text-align:left; }
-      #pdfAntiguedad th{ background:#eee; }
-      #pdfAntiguedad h2{ margin:0 0 4px; }
-      #pdfAntiguedad h3{ margin:20px 0 6px; }
-    </style>
-    <h2>Resumen — Picking LIS-DHV</h2>
-    <p style="margin:0 0 14px; color:#555;">Generado el ${new Date().toLocaleString('es-ES')}</p>
-
-    <table>
-      <thead><tr><th>Dato</th><th>Valor</th></tr></thead>
-      <tbody>
-        <tr><td>Pendientes de entrega ahora</td><td style="text-align:center;">${d.pendientes}</td></tr>
-        <tr><td>Entregados en total</td><td style="text-align:center;">${d.entregadosTotal}</td></tr>
-        <tr><td>Entregados en los últimos 7 días</td><td style="text-align:center;">${d.entregadosSemana}</td></tr>
-        <tr><td>Entregados en los últimos 30 días</td><td style="text-align:center;">${d.entregadosMes}</td></tr>
-        <tr><td>Tiempo medio entre registro y entrega</td><td style="text-align:center;">${d.tiempoMedio!==null ? d.tiempoMedio.toFixed(1).replace('.',',') + ' días' : '—'}</td></tr>
-      </tbody>
-    </table>
-
-    <h3>Antigüedad de los pendientes</h3>
-    <table>
-      <thead><tr><th>Franja</th><th style="text-align:center;">Cantidad</th></tr></thead>
-      <tbody>
-        ${d.franjasAntiguedad.map(f=>`<tr><td>${escapeHtml(f.label)}</td><td style="text-align:center;">${f.pickings.length}</td></tr>`).join('')}
-      </tbody>
-    </table>
-
-    <h3>Registrados por persona (pendientes + entregados)</h3>
-    <table>
-      <thead><tr><th>Persona</th><th style="text-align:center;">Cantidad</th></tr></thead>
-      <tbody>${filasPorPersona(d.porRegistrado)}</tbody>
-    </table>
-
-    <h3>Entregas realizadas por persona</h3>
-    <table>
-      <thead><tr><th>Persona</th><th style="text-align:center;">Cantidad</th></tr></thead>
-      <tbody>${filasPorPersona(d.porEntregadoPor)}</tbody>
-    </table>
-  `;
-  document.body.classList.add('imprimiendo-antiguedad');
-  window.print();
-  setTimeout(()=> document.body.classList.remove('imprimiendo-antiguedad'), 500);
 }
 
-// El otro botón: el listado de los OFs pendientes de 1 día o más (las 4
-// franjas juntas, ordenados de más a menos antiguo). Sin columna de
-// franja — ese dato ya está en el PDF del resumen, aquí no hace falta
-// repetirlo en cada fila.
+// El otro botón: listado de OFs pendientes (todas las franjas juntas, de
+// más a menos antiguo). Sin columna de franja.
 function descargarListadoOfsPDF(){
   const d = resumenDatosCache;
   if(!d){ toast('Todavía no hay datos cargados'); return; }
   const todos = d.franjasAntiguedad.flatMap(f=>f.pickings).sort((a,b)=> diasPendiente(b)-diasPendiente(a));
-  if(!todos.length){ toast('No hay pendientes de 1 día o más para descargar'); return; }
-
-  const filas = todos.map(p=>`
-    <tr>
-      <td>${escapeHtml(p.of)}</td>
-      <td>${escapeHtml(p.proyecto||'—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</td>
-      <td style="text-align:center;">${diasPendiente(p)}</td>
-      <td>${escapeHtml(p.registradoPor||'—')}</td>
-      <td>${fechaCorta(p.fecha)}</td>
-    </tr>
-  `).join('');
-
-  let cont = document.getElementById('pdfAntiguedad');
-  if(!cont){
-    cont = document.createElement('div');
-    cont.id = 'pdfAntiguedad';
-    document.body.appendChild(cont);
+  if(!todos.length){ toast('No hay pendientes para descargar'); return; }
+  try{
+    const bytes = pdfConstruir([
+      { t:'h1', text:'Listado de OFs pendientes' },
+      { t:'p', text:'Generado el ' + new Date().toLocaleString('es-ES') + '  ·  ' + todos.length + ' pendientes, de más a menos antiguo' },
+      { t:'table', head:['OF','Proyecto','Días','Registrado por','Fecha de registro'],
+        widths:[0.17,0.33,0.1,0.2,0.2], align:['l','l','c','l','l'],
+        rows: todos.map(p=>[
+          p.of || '—',
+          (p.proyecto||'—') + (p.subproyecto ? ' · ' + p.subproyecto : ''),
+          String(diasPendiente(p)),
+          p.registradoPor || '—',
+          fechaCorta(p.fecha)
+        ]) }
+    ]);
+    pdfEntregar(bytes, 'Listado-OFs-pendientes-' + fechaArchivo() + '.pdf');
+  } catch(err){
+    toast('No se pudo crear el PDF: ' + (err && err.message ? err.message : 'error desconocido'));
   }
-  cont.innerHTML = `
-    <style>
-      #pdfAntiguedad table{ border-collapse:collapse; width:100%; font-size:13px; }
-      #pdfAntiguedad th, #pdfAntiguedad td{ border:1px solid #999; padding:6px; text-align:left; }
-      #pdfAntiguedad th{ background:#eee; }
-    </style>
-    <h2 style="margin:0 0 4px;">Listado de OFs pendientes — 1 día o más</h2>
-    <p style="margin:0 0 14px; color:#555;">Generado el ${new Date().toLocaleString('es-ES')}</p>
-    <table>
-      <thead>
-        <tr>
-          <th>OF</th>
-          <th>Proyecto</th>
-          <th>Días pendiente</th>
-          <th>Registrado por</th>
-          <th>Fecha de registro</th>
-        </tr>
-      </thead>
-      <tbody>${filas}</tbody>
-    </table>
-  `;
-  document.body.classList.add('imprimiendo-antiguedad');
-  window.print();
-  setTimeout(()=> document.body.classList.remove('imprimiendo-antiguedad'), 500);
 }
 
 function abrirEdicion(id){
