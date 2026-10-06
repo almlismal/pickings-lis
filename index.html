@@ -11410,10 +11410,36 @@ async function reintentarOperacionSuelta(opId){
   cerrarSheet();
   verColaSyncDetalle();
 }
+// Quita de este móvil un picking que se registró aquí pero NUNCA llegó a la
+// hoja (sigue con ID provisional tmp_...), junto con todo lo que tuviera en
+// cola. Antes no había forma de quitarlo: descartar la operación dejaba el
+// picking "fantasma" en la lista para siempre. Solo vale para pickings que
+// no están en la hoja — uno que ya está en la hoja no se toca.
+function descartarPickingNoSincronizado(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p) return;
+  if(!String(id).startsWith('tmp_')){ toast('Este picking sí está en la hoja — usa Reintentar'); return; }
+  if(!confirm('La OF ' + p.of + ' se registró en este móvil pero no llegó a guardarse en la hoja. Si esa OF ya está en el Excel (por ejemplo, ya entregada), descártala aquí para quitarla de la lista. Lo que solo estaba en este móvil se perderá. ¿Seguro?')) return;
+  colaSync.filter(o=>o.pickingId===id).forEach(o=>{ delete erroresOperaciones[o.id]; });
+  colaSync = colaSync.filter(o=>o.pickingId!==id);
+  guardarColaSync();
+  DB = DB.filter(x=>x.id!==id);
+  guardarDBLocal();
+  renderPendingBanner();
+  toast('Descartado');
+  ir('home');
+}
+
 function descartarOperacionSuelta(opId){
   const op = colaSync.find(o=>o.id===opId);
   if(!op) return;
   const tipo = ETIQUETAS_ACCION[op.accion] || op.accion;
+  if(op.accion === 'crearPicking' && String(op.pickingId).startsWith('tmp_')){
+    // un alta que nunca llegó: se quita también el picking provisional, si no se quedaría de fantasma
+    cerrarSheet();
+    descartarPickingNoSincronizado(op.pickingId);
+    return;
+  }
   if(!confirm('Se descarta "' + (op.etiqueta||tipo) + '" sin enviarlo nunca a la hoja de cálculo. Solo hazlo si sabes que ya no hace falta (p.ej. lo hiciste a mano en la hoja). ¿Seguro?')) return;
   colaSync = colaSync.filter(x=>x.id!==op.id);
   delete erroresOperaciones[op.id];
@@ -13246,6 +13272,7 @@ function detalleHtml(p){
     syncBanner = `<div class="attn-banner"><span class="dot">⚠️</span><span>
       No se pudo guardar en la hoja${p.syncError ? ' ('+escapeHtml(p.syncError)+')' : ''}. Lo que ves aquí está bien, pero la hoja de cálculo aún no lo tiene.
       <br><span class="undo" onclick="reintentarPicking('${p.id}')">Reintentar ahora</span>
+      ${String(p.id).startsWith('tmp_') ? ` · <span class="undo" onclick="descartarPickingNoSincronizado('${p.id}')">Descartar (no llegó a la hoja)</span>` : ''}
     </span></div>`;
   }
 
