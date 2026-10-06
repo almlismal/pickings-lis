@@ -445,7 +445,8 @@
     </div>
 
     <label>Nº de cajas</label>
-    <input type="number" id="f_cajas" min="1" value="1" inputmode="numeric" oninput="renderUbicacionPills()">
+    <input type="number" id="f_cajas" min="0" value="1" inputmode="numeric" oninput="renderUbicacionPills()">
+    <div class="hint" style="margin-top:4px;">Si no es una caja (solo componentes sueltos), pon 0.</div>
 
     <label>Componentes fuera de la caja</label>
     <div class="check-row" id="fueraRow"></div>
@@ -10878,7 +10879,8 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
     of: String(row['OF'] || ''),
     proyecto: String(row['Proyecto'] || ''),
     subproyecto: String(row['Subproyecto'] || ''),
-    cajas: Number(row['Cajas']) || 1,
+    // 0 es un valor válido (picking sin caja, solo componentes sueltos); solo si la celda está vacía o no es un número se asume 1, como siempre
+    cajas: (row['Cajas']===''||row['Cajas']==null||isNaN(Number(row['Cajas']))) ? 1 : Number(row['Cajas']),
     fuera: parseFuera(row['Fuera de la caja']),
     ubicaciones: parseUbicaciones(row['Ubicaciones']),
     observaciones: row['Observaciones'] || '',
@@ -11796,7 +11798,7 @@ function renderUbicacionPills(){
   const cont = document.getElementById('ubicacionesContainer');
   const items = itemsParaUbicar();
   const opciones = UBICACION_BASE.concat(cargarExtrasUbicacion());
-  const cajas = parseInt(document.getElementById('f_cajas').value) || 1;
+  const cajas = leerCajasForm();
   cont.innerHTML = items.map(item=>{
     const chips = opciones.map(op=>{
       const active = ubicacionesSeleccion[item] === op ? 'active' : '';
@@ -11809,8 +11811,18 @@ function renderUbicacionPills(){
     </div>`;
   }).join('');
 }
+// Nº de cajas del formulario: 0 vale (picking sin caja); si se deja vacío o
+// con algo raro, 1 como siempre.
+function leerCajasForm(){
+  const v = parseInt(document.getElementById('f_cajas').value);
+  return (isNaN(v) || v < 0) ? 1 : v;
+}
+function textoCajas(n){
+  n = Number(n);
+  return n===0 ? 'Sin caja' : (n===1 ? '1 caja' : n + ' cajas');
+}
 function itemsParaUbicar(){
-  const items = ['Cajas'];
+  const items = leerCajasForm() > 0 ? ['Cajas'] : [];
   Object.keys(fueraSeleccion).forEach(k=>{ if(fueraSeleccion[k]) items.push(k); });
   return items;
 }
@@ -12535,11 +12547,12 @@ async function guardarPicking(){
   const of = document.getElementById('f_of').value.trim();
   const proyecto = document.getElementById('f_proyecto').value.trim();
   const subproyecto = document.getElementById('f_subproyecto').value.trim();
-  const cajas = parseInt(document.getElementById('f_cajas').value) || 1;
+  const cajas = leerCajasForm();
   const obs = document.getElementById('f_obs').value.trim();
 
   if(!of){ toast('Falta el número de OF'); return; }
   if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
+  if(cajas===0 && !Object.keys(fueraSeleccion).some(k=>fueraSeleccion[k])){ toast('Sin cajas: marca qué componentes van fuera de la caja'); return; }
   const itemsFaltan = itemsParaUbicar().filter(it=>!ubicacionesSeleccion[it]);
   if(itemsFaltan.length){ toast('Falta elegir dónde va: ' + itemsFaltan.join(', ')); return; }
 
@@ -12721,7 +12734,7 @@ function resumenOfDuplicada(existente, ofBuscada){
       <div class="dup-title">⚠️ Esta OF ya tiene un picking pendiente</div>
       <p><b>${existente.registradoPor}</b> registró la OF <b>${ofBuscada}</b> el ${fechaCorta(existente.fecha)} —
       ${existente.proyecto || '—'}${existente.subproyecto ? ' · '+existente.subproyecto : ''} ·
-      ${existente.cajas} caja${existente.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}.</p>
+      ${textoCajas(existente.cajas)}${ubic ? ' · '+ubic : ''}.</p>
     </div>
     <button class="btn btn-primary" onclick="irAAmpliar('${existente.id}')">➕ Meter en su misma caja</button>
     <button class="btn btn-outline" onclick="pedirMotivoRegistroAparte()">Registrar aparte de todas formas</button>
@@ -12800,7 +12813,7 @@ function avisoOfPendienteHtml(p){
       <div class="dup-title">⚠️ Esta OF ya tiene un picking pendiente</div>
       <p><b>${p.registradoPor}</b> la registró el ${fechaCorta(p.fecha)} —
       ${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''} ·
-      ${p.cajas} caja${p.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}.</p>
+      ${textoCajas(p.cajas)}${ubic ? ' · '+ubic : ''}.</p>
       <button class="btn btn-primary" onclick="irAAmpliar('${p.id}')">➕ Meter en su misma caja</button>
       <button class="btn btn-outline" onclick="document.getElementById('avisoOfRegistro').innerHTML=''">Ya lo sé, seguir registrando aparte</button>
     </div>
@@ -12958,7 +12971,7 @@ async function confirmarEdicion(){
 // el día que llegue el papel firmado, se registre la entrega de verdad con
 // "Entrega completa" de siempre.
 function itemsParaUbicarDe(p){
-  return ['Cajas', ...fueraActivas(p)];
+  return [...(p.cajas>0 ? ['Cajas'] : []), ...fueraActivas(p)];
 }
 function abrirEntregarProduccion(id){
   const p = DB.find(x=>x.id===id);
@@ -13106,7 +13119,7 @@ function ticketHtml(p){
   const attn = !entregado && (tieneAtencion(p) || viejo);
   const chips = [];
   if(p.cajas>1) chips.push(`<span class="chip attn">${p.cajas} cajas</span>`);
-  else chips.push(`<span class="chip">${p.cajas} caja</span>`);
+  else chips.push(`<span class="chip">${textoCajas(p.cajas)}</span>`);
   if(viejo) chips.push(`<span class="chip attn">🕐 ${diasPendiente(p)} días pendiente</span>`);
   fueraActivas(p).forEach(k=> chips.push(`<span class="chip on">${k}</span>`));
   Object.entries(p.ubicaciones||{}).forEach(([k,v])=>{
@@ -13284,7 +13297,7 @@ function detalleHtml(p){
     const ultimaAmpliacion = p.ampliaciones[p.ampliaciones.length-1];
     if(ultimaAmpliacion.cajaExtra){
       ampliacionBanner = `<div class="dup-banner">
-        <div class="dup-title">📦 Ahora son ${p.cajas} cajas, no ${p.cajas - 1}</div>
+        <div class="dup-title">📦 Ahora son ${textoCajas(p.cajas)}, no ${p.cajas - 1}</div>
         <p><b>${escapeHtml(ultimaAmpliacion.agregadoPor)}</b> sumó una caja más el ${fechaCorta(ultimaAmpliacion.fecha)}: ${escapeHtml(ultimaAmpliacion.detalle)}</p>
       </div>`;
     } else {
@@ -13326,7 +13339,7 @@ function detalleHtml(p){
       <div class="detail-of">OF ${p.of}</div>
       <div class="detail-sub">${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''}</div>
       <div class="detail-grid">
-        <span class="chip">${p.cajas} caja${p.cajas>1?'s':''}</span>
+        <span class="chip">${textoCajas(p.cajas)}</span>
         ${fueraActivas(p).map(k=>`<span class="chip on">${k} fuera</span>`).join('')}
         <span class="status-tag ${entregado?'done':'pend'}">${entregado?'Entregado':'Pendiente'}</span>
       </div>
@@ -13542,7 +13555,7 @@ function resumenEscaneoEncontrado(p){
   return `
     <div class="obs-box">
       <b>OF ${p.of}</b> ya está registrada — ${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''}<br>
-      ${p.cajas} caja${p.cajas>1?'s':''}${ubic ? ' · '+ubic : ''}<br>
+      ${textoCajas(p.cajas)}${ubic ? ' · '+ubic : ''}<br>
       Registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}
     </div>
     <button class="btn btn-primary" onclick="irAAmpliarDesdeEscaner('${p.id}')" style="margin-top:10px;">➕ Meter en su misma caja</button>
@@ -14162,7 +14175,7 @@ function entregar(tipo, manteniendoEstado){
     entregaDraft = { a:'', nota:'' };
     if(tipo==='parcial' && p){
       entregaItemsEstado = {};
-      const items = ['Cajas', ...fueraActivas(p)];
+      const items = [...(p.cajas>0 ? ['Cajas'] : []), ...fueraActivas(p)];
       items.forEach(it=> entregaItemsEstado[it] = 'sin');
     }
   }
@@ -14489,7 +14502,7 @@ function confirmarAmpliacion(){
   const detalle = `Se añadieron ${cantidad} ${queEs} más al picking.` + (notaExtra ? ' ' + notaExtra : '');
 
   if(!p.ampliaciones) p.ampliaciones = [];
-  if(cajaExtra) p.cajas = (p.cajas||1) + 1;
+  if(cajaExtra) p.cajas = (Number(p.cajas)||0) + 1;
   p.ampliaciones.push({ agregadoPor: usuarioActual, fecha: new Date().toISOString(), detalle, cajaExtra });
   guardarDBLocal();
 
