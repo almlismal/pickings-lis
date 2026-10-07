@@ -13554,55 +13554,70 @@ let escaneoSeq = 0;
 function pendientesDeOf(of){
   return DB.filter(p=>p.of.trim().toLowerCase()===of.toLowerCase() && p.estado!=='completado');
 }
-async function resolverOfEscaneada(of){
-  const seq = ++escaneoSeq;
-  const resultadoEl = document.getElementById('escanerResultado');
-  const sigueAqui = ()=> seq===escaneoSeq && document.getElementById('screen-escanear').classList.contains('active');
-  let pendientes = pendientesDeOf(of);
-  if(!pendientes.length){
-    if(resultadoEl) resultadoEl.innerHTML = `<div class="hint" style="text-align:center;">Comprobando la OF ${of}…</div>`;
-    // puede haberse registrado hace un instante en otro móvil
-    try{ await cargarLigeroYActualizarDB(); }catch(err){}
-    if(!sigueAqui()) return;
-    pendientes = pendientesDeOf(of);
-  }
+function mostrarPendientesEscaneo(of, pendientes){
   if(pendientes.length===1){
     verDetalleDesdeEscaner(pendientes[0].id);
     return;
   }
-  if(pendientes.length>1){
-    if(resultadoEl) resultadoEl.innerHTML = `
-      <div class="obs-box">Hay <b>${pendientes.length}</b> pickings pendientes con la OF <b>${of}</b>. Elige cuál:</div>
-      ${pendientes.map(p=>ticketHtml(p)).join('')}
-      <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
-    return;
-  }
-  // ¿ya entregada del todo?
-  let entregadas = (entregadosCache||[]).filter(r=>String(r['OF']||'').trim().toLowerCase()===of.toLowerCase());
-  if(!entregadas.length){
-    try{
-      const res = await fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(of), {}, 15000);
-      const datos = await res.json();
-      entregadas = datos.entregados || [];
-    }catch(err){}
-    if(!sigueAqui()) return;
-  }
-  if(entregadas.length){
-    if(resultadoEl) resultadoEl.innerHTML = entregadas.map(r=>{
-      const id = r['ID'] ? String(r['ID']) : '';
-      return `<div class="obs-box">
-        <b>OF ${escapeHtml(r['OF'])}</b> — ${escapeHtml(r['Proyecto'] || '—')}${r['Subproyecto'] ? ' · '+escapeHtml(r['Subproyecto']) : ''}<br>
-        ✅ <b>Ya está entregada</b>: por ${escapeHtml(r['Entregado por'])} a ${escapeHtml(r['Entregado a'])} el ${fechaCorta(r['Fecha de entrega'])}.
-      </div>
-      ${id ? `<button class="btn btn-outline" onclick="detenerEscaner(); verPickingEntregado('${id.replace(/'/g,"\\'")}')" style="margin-top:8px;">Ver detalle completo</button>` : ''}`;
-    }).join('') + `<button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
-    return;
-  }
+  const resultadoEl = document.getElementById('escanerResultado');
+  if(resultadoEl) resultadoEl.innerHTML = `
+    <div class="obs-box">Hay <b>${pendientes.length}</b> pickings pendientes con la OF <b>${of}</b>. Elige cuál:</div>
+    ${pendientes.map(p=>ticketHtml(p)).join('')}
+    <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+}
+function mostrarEntregadasEscaneo(entregadas){
+  const resultadoEl = document.getElementById('escanerResultado');
+  if(!resultadoEl) return;
+  resultadoEl.innerHTML = entregadas.map(r=>{
+    const id = r['ID'] ? String(r['ID']) : '';
+    return `<div class="obs-box">
+      <b>OF ${escapeHtml(r['OF'])}</b> — ${escapeHtml(r['Proyecto'] || '—')}${r['Subproyecto'] ? ' · '+escapeHtml(r['Subproyecto']) : ''}<br>
+      ✅ <b>Ya está entregada</b>: por ${escapeHtml(r['Entregado por'])} a ${escapeHtml(r['Entregado a'])} el ${fechaCorta(r['Fecha de entrega'])}.
+    </div>
+    ${id ? `<button class="btn btn-outline" onclick="detenerEscaner(); verPickingEntregado('${id.replace(/'/g,"\\'")}')" style="margin-top:8px;">Ver detalle completo</button>` : ''}`;
+  }).join('') + `<button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+}
+function mostrarNoRegistradaEscaneo(of){
+  const resultadoEl = document.getElementById('escanerResultado');
   if(resultadoEl) resultadoEl.innerHTML = `
     <div class="obs-box">No hay ningún picking registrado con la OF <b>${of}</b>.</div>
+    <div id="escanerVerificando" class="hint" style="margin-top:6px;">Comprobando también en la hoja…</div>
     <button class="btn btn-primary" onclick="registrarDesdeEscaner('${of}')" style="margin-top:10px;">📦 Registrar esta OF</button>
     <button class="btn btn-outline" onclick="realizarDesdeEscaner('${of}')" style="margin-top:8px;">🧰 Realizar picking de esta OF</button>
     <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+}
+// La respuesta sale al instante con lo que ya hay en el móvil. Solo si la OF
+// no está aquí se mira, DE FONDO, en la hoja (por si se registró o entregó
+// hace un momento en otro móvil) y, si aparece, se actualiza la pantalla.
+async function resolverOfEscaneada(of){
+  const seq = ++escaneoSeq;
+  const sigueAqui = ()=> seq===escaneoSeq && document.getElementById('screen-escanear').classList.contains('active');
+  const pendientes = pendientesDeOf(of);
+  if(pendientes.length){ mostrarPendientesEscaneo(of, pendientes); return; }
+  const locales = (entregadosCache||[]).filter(r=>String(r['OF']||'').trim().toLowerCase()===of.toLowerCase());
+  if(locales.length){ mostrarEntregadasEscaneo(locales); return; }
+
+  mostrarNoRegistradaEscaneo(of);
+  const estado = txt=>{ const el = document.getElementById('escanerVerificando'); if(el) el.textContent = txt; };
+  try{ await cargarLigeroYActualizarDB(); }catch(err){
+    if(sigueAqui()) estado('Sin conexión: solo comprobado en este móvil.');
+    return;
+  }
+  if(!sigueAqui()) return;
+  const ahoraPend = pendientesDeOf(of);
+  if(ahoraPend.length){ mostrarPendientesEscaneo(of, ahoraPend); return; }
+  let entregadas = [];
+  try{
+    const res = await fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(of), {}, 15000);
+    const datos = await res.json();
+    entregadas = datos.entregados || [];
+  }catch(err){
+    if(sigueAqui()) estado('Sin conexión: solo comprobado en este móvil.');
+    return;
+  }
+  if(!sigueAqui()) return;
+  if(entregadas.length){ mostrarEntregadasEscaneo(entregadas); return; }
+  estado('✓ Comprobado también en la hoja: no está registrada.');
 }
 function realizarDesdeEscaner(of){
   detenerEscaner();
