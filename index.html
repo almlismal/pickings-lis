@@ -13551,8 +13551,11 @@ function procesarTextoQR(texto){
 // editar, añadir a la caja…); si ya se entregó, se muestra quién/a quién/
 // cuándo; si no existe, se ofrece registrarla o realizar el picking.
 let escaneoSeq = 0;
+// Cualquier picking que el móvil conozca con esa OF — pendiente O ya
+// entregado (algunos entregados siguen en la lista con estado "completado");
+// el detalle ya sabe mostrar quién lo entregó, a quién y cuándo.
 function pendientesDeOf(of){
-  return DB.filter(p=>p.of.trim().toLowerCase()===of.toLowerCase() && p.estado!=='completado');
+  return DB.filter(p=>String(p.of||'').trim().toLowerCase()===of.toLowerCase());
 }
 function mostrarPendientesEscaneo(of, pendientes){
   if(pendientes.length===1){
@@ -13561,7 +13564,7 @@ function mostrarPendientesEscaneo(of, pendientes){
   }
   const resultadoEl = document.getElementById('escanerResultado');
   if(resultadoEl) resultadoEl.innerHTML = `
-    <div class="obs-box">Hay <b>${pendientes.length}</b> pickings pendientes con la OF <b>${of}</b>. Elige cuál:</div>
+    <div class="obs-box">Hay <b>${pendientes.length}</b> pickings con la OF <b>${of}</b>. Elige cuál:</div>
     ${pendientes.map(p=>ticketHtml(p)).join('')}
     <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
 }
