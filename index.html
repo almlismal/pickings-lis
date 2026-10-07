@@ -13580,8 +13580,7 @@ function mostrarEntregadasEscaneo(entregadas){
 function mostrarNoRegistradaEscaneo(of){
   const resultadoEl = document.getElementById('escanerResultado');
   if(resultadoEl) resultadoEl.innerHTML = `
-    <div class="obs-box">No hay ningún picking registrado con la OF <b>${of}</b>.</div>
-    <div id="escanerVerificando" class="hint" style="margin-top:6px;">Comprobando también en la hoja…</div>
+    <div class="obs-box" id="escanerNoReg">La OF <b>${of}</b> no está entre los pickings pendientes de este móvil.<br><span id="escanerVerificando" class="hint">Comprobando en la hoja (pendientes y entregadas)…</span></div>
     <button class="btn btn-primary" onclick="registrarDesdeEscaner('${of}')" style="margin-top:10px;">📦 Registrar esta OF</button>
     <button class="btn btn-outline" onclick="realizarDesdeEscaner('${of}')" style="margin-top:8px;">🧰 Realizar picking de esta OF</button>
     <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
@@ -13599,25 +13598,22 @@ async function resolverOfEscaneada(of){
 
   mostrarNoRegistradaEscaneo(of);
   const estado = txt=>{ const el = document.getElementById('escanerVerificando'); if(el) el.textContent = txt; };
-  try{ await cargarLigeroYActualizarDB(); }catch(err){
-    if(sigueAqui()) estado('Sin conexión: solo comprobado en este móvil.');
-    return;
-  }
+  // Las dos consultas a la hoja van A LA VEZ (no una detrás de otra).
+  const pPend = cargarLigeroYActualizarDB().then(()=>true, ()=>false);
+  const pEntr = fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(of), {}, 15000)
+    .then(res=>res.json()).then(d=>d.entregados || null, ()=>null);
+  const okPend = await pPend;
   if(!sigueAqui()) return;
-  const ahoraPend = pendientesDeOf(of);
-  if(ahoraPend.length){ mostrarPendientesEscaneo(of, ahoraPend); return; }
-  let entregadas = [];
-  try{
-    const res = await fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(of), {}, 15000);
-    const datos = await res.json();
-    entregadas = datos.entregados || [];
-  }catch(err){
-    if(sigueAqui()) estado('Sin conexión: solo comprobado en este móvil.');
-    return;
+  if(okPend){
+    const ahoraPend = pendientesDeOf(of);
+    if(ahoraPend.length){ mostrarPendientesEscaneo(of, ahoraPend); return; }
   }
+  const entregadas = await pEntr;
   if(!sigueAqui()) return;
-  if(entregadas.length){ mostrarEntregadasEscaneo(entregadas); return; }
-  estado('✓ Comprobado también en la hoja: no está registrada.');
+  if(entregadas && entregadas.length){ mostrarEntregadasEscaneo(entregadas); return; }
+  if(!okPend || entregadas === null){ estado('Sin conexión con la hoja: solo comprobado en este móvil.'); return; }
+  const caja = document.getElementById('escanerNoReg');
+  if(caja) caja.innerHTML = `✓ Comprobado en la hoja: no hay ningún picking registrado con la OF <b>${of}</b>.`;
 }
 function realizarDesdeEscaner(of){
   detenerEscaner();
