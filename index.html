@@ -403,6 +403,10 @@
   <!-- ============ HOME ============ -->
   <section class="screen active" id="screen-home">
     <div class="home-grid">
+      <button class="home-btn" onclick="ir('escanear')">
+        <b>📷 Escanear etiqueta</b>
+        <span>Escanea cualquier etiqueta de picking y te digo qué puedes hacer: registrar, consultar, entregar…</span>
+      </button>
       <button class="home-btn" onclick="nuevoPicking()">
         <b>📦 Registrar picking</b>
         <span>Registra un picking finalizado: OF, cajas y componentes fuera de caja</span>
@@ -410,10 +414,6 @@
       <button class="home-btn alt" onclick="ir('buscar')">
         <b>🔍 Buscar / Entregar</b>
         <span>Localiza una OF registrada y gestiona su entrega</span>
-      </button>
-      <button class="home-btn" onclick="ir('escanear')">
-        <b>📷 Comprobar OF (QR)</b>
-        <span>Escanea la etiqueta para verificar si esa OF ya está registrada</span>
       </button>
       <button class="home-btn alt" onclick="nuevoRealizarPicking()">
         <b>🧰 Realizar picking</b>
@@ -533,7 +533,7 @@
   <section class="screen" id="screen-escanear">
     <div class="screen-title">
       <button class="back" onclick="cancelarComprobarOf()">←</button>
-      <h2 id="escanearTitulo">Comprobar OF</h2>
+      <h2 id="escanearTitulo">Escanear etiqueta</h2>
     </div>
     <div class="hint" id="escanearHint" style="margin-bottom:10px;">Apunta la cámara al QR de la etiqueta de picking de la caja.</div>
     <div style="position:relative; border-radius:14px; overflow:hidden; background:#000; aspect-ratio:1/1; max-width:340px; margin:0 auto;">
@@ -12645,7 +12645,7 @@ function restaurarPantallaComprobarOf(){
   const titulo = document.getElementById('escanearTitulo');
   const hint = document.getElementById('escanearHint');
   const saltarBtn = document.getElementById('escanearSaltarBtn');
-  if(titulo) titulo.textContent = 'Comprobar OF';
+  if(titulo) titulo.textContent = 'Escanear etiqueta';
   if(hint) hint.textContent = 'Apunta la cámara al QR de la etiqueta de picking de la caja.';
   if(saltarBtn) saltarBtn.style.display = 'none';
 }
@@ -13227,7 +13227,10 @@ function abrirDetalle(id){
   // de lista que hubiera, en vez de apuntar a una pantalla "rara" a la que
   // no tendría sentido volver con "←".
   const actual = document.querySelector('.screen.active');
-  if(actual && PANTALLAS_LISTA_ORIGEN.includes(actual.id)){
+  if(actual && actual.id==='screen-escanear'){
+    pantallaOrigenDetalle = 'escanear'; // "←" vuelve a escanear (cámara encendida) para poder seguir con otra etiqueta
+    scrollDetalleOrigen = 0;
+  } else if(actual && PANTALLAS_LISTA_ORIGEN.includes(actual.id)){
     pantallaOrigenDetalle = actual.id.replace('screen-','');
     scrollDetalleOrigen = window.scrollY || document.documentElement.scrollTop || 0;
   }
@@ -13239,6 +13242,7 @@ function abrirDetalle(id){
 }
 function volverDeDetalle(){
   const destino = pantallaOrigenDetalle || 'buscar';
+  if(destino==='escanear'){ ir('escanear'); window.scrollTo(0,0); return; } // sin esVolver: enciende la cámara de nuevo
   ir(destino, true);
   const y = scrollDetalleOrigen || 0;
   requestAnimationFrame(()=> window.scrollTo(0, y));
@@ -13450,6 +13454,7 @@ function pedirCamaraQR(){
 }
 
 function iniciarEscaner(){
+  escaneoSeq++; // descarta cualquier resultado pendiente de un escaneo anterior
   const estadoEl = document.getElementById('escanerEstado');
   const resultadoEl = document.getElementById('escanerResultado');
   if(resultadoEl) resultadoEl.innerHTML = '';
@@ -13538,16 +13543,72 @@ function procesarTextoQR(texto){
     return;
   }
 
-  const existente = DB.find(p=>p.of.trim().toLowerCase()===of.toLowerCase() && p.estado!=='completado');
-  if(existente){
-    if(resultadoEl) resultadoEl.innerHTML = resumenEscaneoEncontrado(existente);
-  } else {
-    if(resultadoEl) resultadoEl.innerHTML = `
-      <div class="obs-box">No hay ningún picking pendiente con la OF <b>${of}</b> todavía.</div>
-      <button class="btn btn-primary" onclick="registrarDesdeEscaner('${of}')" style="margin-top:10px;">📦 Registrar esta OF</button>
-      <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">Seguir escaneando</button>
-    `;
+  resolverOfEscaneada(of);
+}
+
+// Qué hacer con una OF escaneada desde el inicio: si ya está registrada y
+// pendiente, directo a su detalle (ahí están entregar, entrega parcial,
+// editar, añadir a la caja…); si ya se entregó, se muestra quién/a quién/
+// cuándo; si no existe, se ofrece registrarla o realizar el picking.
+let escaneoSeq = 0;
+function pendientesDeOf(of){
+  return DB.filter(p=>p.of.trim().toLowerCase()===of.toLowerCase() && p.estado!=='completado');
+}
+async function resolverOfEscaneada(of){
+  const seq = ++escaneoSeq;
+  const resultadoEl = document.getElementById('escanerResultado');
+  const sigueAqui = ()=> seq===escaneoSeq && document.getElementById('screen-escanear').classList.contains('active');
+  let pendientes = pendientesDeOf(of);
+  if(!pendientes.length){
+    if(resultadoEl) resultadoEl.innerHTML = `<div class="hint" style="text-align:center;">Comprobando la OF ${of}…</div>`;
+    // puede haberse registrado hace un instante en otro móvil
+    try{ await cargarLigeroYActualizarDB(); }catch(err){}
+    if(!sigueAqui()) return;
+    pendientes = pendientesDeOf(of);
   }
+  if(pendientes.length===1){
+    verDetalleDesdeEscaner(pendientes[0].id);
+    return;
+  }
+  if(pendientes.length>1){
+    if(resultadoEl) resultadoEl.innerHTML = `
+      <div class="obs-box">Hay <b>${pendientes.length}</b> pickings pendientes con la OF <b>${of}</b>. Elige cuál:</div>
+      ${pendientes.map(p=>ticketHtml(p)).join('')}
+      <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+    return;
+  }
+  // ¿ya entregada del todo?
+  let entregadas = (entregadosCache||[]).filter(r=>String(r['OF']||'').trim().toLowerCase()===of.toLowerCase());
+  if(!entregadas.length){
+    try{
+      const res = await fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(of), {}, 15000);
+      const datos = await res.json();
+      entregadas = datos.entregados || [];
+    }catch(err){}
+    if(!sigueAqui()) return;
+  }
+  if(entregadas.length){
+    if(resultadoEl) resultadoEl.innerHTML = entregadas.map(r=>{
+      const id = r['ID'] ? String(r['ID']) : '';
+      return `<div class="obs-box">
+        <b>OF ${escapeHtml(r['OF'])}</b> — ${escapeHtml(r['Proyecto'] || '—')}${r['Subproyecto'] ? ' · '+escapeHtml(r['Subproyecto']) : ''}<br>
+        ✅ <b>Ya está entregada</b>: por ${escapeHtml(r['Entregado por'])} a ${escapeHtml(r['Entregado a'])} el ${fechaCorta(r['Fecha de entrega'])}.
+      </div>
+      ${id ? `<button class="btn btn-outline" onclick="detenerEscaner(); verPickingEntregado('${id.replace(/'/g,"\\'")}')" style="margin-top:8px;">Ver detalle completo</button>` : ''}`;
+    }).join('') + `<button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+    return;
+  }
+  if(resultadoEl) resultadoEl.innerHTML = `
+    <div class="obs-box">No hay ningún picking registrado con la OF <b>${of}</b>.</div>
+    <button class="btn btn-primary" onclick="registrarDesdeEscaner('${of}')" style="margin-top:10px;">📦 Registrar esta OF</button>
+    <button class="btn btn-outline" onclick="realizarDesdeEscaner('${of}')" style="margin-top:8px;">🧰 Realizar picking de esta OF</button>
+    <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+}
+function realizarDesdeEscaner(of){
+  detenerEscaner();
+  nuevoRealizarPicking();
+  const campo = document.getElementById('rp_of');
+  if(campo) campo.value = of;
 }
 
 function resumenEscaneoEncontrado(p){
