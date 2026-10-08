@@ -653,9 +653,14 @@
       d.textContent = txt;
     }catch(e){}
   }
+  var errores = [];
+  window.__aviso = aviso;
   window.addEventListener('error', function(ev){
-    aviso('⚠️ Fallo en la app: ' + (ev && ev.message ? ev.message : 'error') +
-      (ev && ev.lineno ? ' (línea ' + ev.lineno + ')' : '') + ' — toca para cerrar. Si los botones no responden, haz una captura de este aviso.');
+    // Se guardan los 2 primeros errores distintos: el primero suele ser la
+    // causa de verdad y los siguientes, consecuencia.
+    var t = (ev && ev.message ? ev.message : 'error') + (ev && ev.lineno ? ' (línea ' + ev.lineno + ')' : '');
+    if(errores.indexOf(t) === -1 && errores.length < 2) errores.push(t);
+    aviso('⚠️ Fallo en la app: ' + errores.join('  ||  ') + ' — toca para cerrar. Si los botones no responden, haz una captura de este aviso.');
   });
   setTimeout(function(){
     if(!window.__appListo){
@@ -11229,25 +11234,39 @@ const LOGO_DHV_B64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADQAAABICAYA
 // cualquier cambio hecho sin conexión) manda sobre la caché "cruda" de
 // filas de la hoja, que solo se usa si todavía no hay nada local guardado.
 (function cargarDesdeCacheLocal(){
-  const cacheUsuarios = cargarCacheUsuarios();
-  if(cacheUsuarios) usuariosRemotos = cacheUsuarios;
+  // La cola de cambios sin sincronizar es lo único que NO se puede perder:
+  // se carga aparte y primero.
+  try{ colaSync = cargarColaSyncGuardada(); }catch(e){ colaSync = []; }
 
-  colaSync = cargarColaSyncGuardada();
+  // Todo lo demás son copias de lo que hay en la hoja. Si algo de eso está
+  // dañado en este móvil, NO debe impedir que la app arranque (antes un
+  // dato malo aquí dejaba TODOS los botones sin funcionar): se descarta y
+  // se vuelve a bajar de la hoja.
+  try{
+    const cacheUsuarios = cargarCacheUsuarios();
+    if(cacheUsuarios) usuariosRemotos = cacheUsuarios;
 
-  const dbLocal = cargarDBLocalGuardado();
-  if(dbLocal && dbLocal.length){
-    DB = dbLocal;
-  } else {
-    const cachePendientes = cargarCachePendientes();
-    if(cachePendientes){
-      DB = (cachePendientes.pickings || []).filter(noEsEliminado)
-        .map(row=> construirPickingDesdeRow(row, cachePendientes.entregas || [], null));
+    const dbLocal = cargarDBLocalGuardado();
+    if(dbLocal && dbLocal.length){
+      DB = dbLocal;
+    } else {
+      const cachePendientes = cargarCachePendientes();
+      if(cachePendientes){
+        DB = (cachePendientes.pickings || []).filter(noEsEliminado)
+          .map(row=> construirPickingDesdeRow(row, cachePendientes.entregas || [], null));
+      }
     }
-  }
 
-  const cacheEntregados = cargarCacheEntregados();
-  if(cacheEntregados) entregadosCache = cacheEntregados;
-  actualizarVisibilidadAdmin();
+    const cacheEntregados = cargarCacheEntregados();
+    if(cacheEntregados) entregadosCache = cacheEntregados;
+  }catch(e){
+    DB = []; usuariosRemotos = []; entregadosCache = [];
+    try{
+      [LS_DB_LOCAL, LS_CACHE_PICKINGS, LS_CACHE_ENTREGAS, LS_CACHE_ENTREGADOS, LS_CACHE_USUARIOS].forEach(k=> localStorage.removeItem(k));
+    }catch(e2){}
+    if(window.__aviso) window.__aviso('ℹ️ Había datos dañados guardados en este móvil (' + (e && e.message) + '). Se han descartado y se vuelven a cargar de la hoja.');
+  }
+  try{ actualizarVisibilidadAdmin(); }catch(e){}
 })();
 
 /* ---------- motor de la cola de sincronización ---------- */
@@ -11512,7 +11531,7 @@ function syncBadgeHtml(p){
   if(s === 'pendiente') return `<span class="chip">⏳ enviando…</span>`;
   return `<span class="chip err" onclick="event.stopPropagation(); reintentarPicking('${p.id}')" title="${escapeAtributo(p.syncError||'')}">⚠️ Sin sincronizar — reintentar</span>`;
 }
-renderPendingBanner();
+try{ renderPendingBanner(); }catch(e){}
 
 function abrirConfigurarPin(){
   if(!usuarioActual){ toast('Primero identifícate con tu nombre'); return; }
