@@ -622,6 +622,50 @@
 <div class="toast" id="toast"></div>
 
 <script>
+/* Red de seguridad (JavaScript antiguo, a propósito): 1) si el móvil bloquea
+   el almacenamiento local, usa uno en memoria para que la app no se rompa;
+   2) si la app falla o no llega a arrancar, lo dice en pantalla con el
+   motivo y el navegador, en vez de dejar los botones "muertos" sin explicar. */
+(function(){
+  try{
+    window.localStorage.setItem('__t','1'); window.localStorage.removeItem('__t');
+  }catch(e){
+    var m = {};
+    var fake = {
+      getItem:function(k){ return Object.prototype.hasOwnProperty.call(m,k) ? m[k] : null; },
+      setItem:function(k,v){ m[k] = String(v); },
+      removeItem:function(k){ delete m[k]; },
+      clear:function(){ m = {}; }
+    };
+    try{ Object.defineProperty(window,'localStorage',{ value:fake, configurable:true }); }catch(e2){}
+  }
+  function aviso(txt){
+    try{
+      var d = document.getElementById('avisoFalloApp');
+      if(!d){
+        d = document.createElement('div');
+        d.id = 'avisoFalloApp';
+        d.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#8A1F11;color:#fff;font:13px/1.4 sans-serif;padding:12px 14px;';
+        d.onclick = function(){ d.style.display = 'none'; };
+        (document.body || document.documentElement).appendChild(d);
+      }
+      d.style.display = 'block';
+      d.textContent = txt;
+    }catch(e){}
+  }
+  window.addEventListener('error', function(ev){
+    aviso('⚠️ Fallo en la app: ' + (ev && ev.message ? ev.message : 'error') +
+      (ev && ev.lineno ? ' (línea ' + ev.lineno + ')' : '') + ' — toca para cerrar. Si los botones no responden, haz una captura de este aviso.');
+  });
+  setTimeout(function(){
+    if(!window.__appListo){
+      aviso('⚠️ La app no ha llegado a arrancar en este móvil. Navegador: ' + navigator.userAgent +
+        ' — haz una captura de este aviso.');
+    }
+  }, 5000);
+})();
+</script>
+<script>
 /* jsQR (MIT) — lector de códigos QR embebido, sin depender de red. */
 (function webpackUniversalModuleDefinition(root, factory) {
 	if(typeof exports === 'object' && typeof module === 'object')
@@ -11628,6 +11672,10 @@ function abrirCambioUsuario(forzado){
   let html = `<h3>¿Quién eres?</h3>`;
   if(forzado) html += `<p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Identifícate para poder usar la app.</p>`;
   html += `<div>`;
+  if(!nombres.length){
+    html += `<div id="avisoListaUsuarios" class="hint" style="margin:0 0 10px;">Cargando la lista de usuarios… Si tarda, comprueba la conexión.
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="reintentarListaUsuarios()">🔄 Reintentar</button></div>`;
+  }
   nombres.forEach(n=>{
     html += `<span class="name-pill ${n===usuarioActual?'sel':''}" onclick="elegirUsuario('${n.replace(/'/g,"\\'")}')">${n}</span>`;
   });
@@ -11726,9 +11774,35 @@ async function entrarComoUsuario(n){
     setTimeout(comprobarBorradorBipAlArrancar, 400);
   }
 }
-function anadirNombre(){
-  const val = document.getElementById('nuevoNombre').value.trim();
-  if(!val) return;
+// Repinta la ventana de identificación cuando llegan los usuarios (solo si
+// sigue abierta y todavía no se ha escrito nada, para no pisar a nadie).
+function refrescarListaLogin(){
+  const inp = document.getElementById('nuevoNombre');
+  if(!inp || inp.value.trim() || usuarioActual) return;
+  if(!cargarNombres().length) return;
+  abrirCambioUsuario(loginForzado);
+}
+async function reintentarListaUsuarios(){
+  toast('Cargando usuarios…');
+  try{ await sincronizar(); }catch(err){}
+  if(cargarNombres().length) refrescarListaLogin();
+  else toast('Sin conexión con la hoja — inténtalo de nuevo en un momento');
+}
+async function anadirNombre(){
+  const inp = document.getElementById('nuevoNombre');
+  const val = inp.value.trim();
+  if(!val){ toast('Escribe tu nombre'); return; }
+  // Sin la lista de usuarios no se puede saber si ese nombre ya existe (y
+  // tiene PIN): se intenta cargarla antes de dejar entrar, para no saltarse
+  // el PIN de nadie ni pisar el de alguien que ya está dado de alta.
+  if(!cargarNombres().length){
+    toast('Comprobando usuarios…');
+    try{ await sincronizar(); }catch(err){}
+    if(!cargarNombres().length){
+      toast('Sin conexión con la hoja: conéctate a internet para identificarte');
+      return;
+    }
+  }
   elegirUsuario(val);
 }
 
@@ -14591,6 +14665,7 @@ function confirmarAmpliacion(){
 
 /* ---------- init ---------- */
 async function iniciar(){
+  window.__appListo = true;
   comprobarCierreSesionPorTurno();
   actualizarChipUsuario();
   renderPendingBanner();
@@ -14603,8 +14678,11 @@ async function iniciar(){
   // Solo esperamos a tener datos si hace falta mostrar la pantalla de
   // identificación (necesita saber qué usuarios existen ya).
   if(!usuarioActual){
-    try{ await sincronizar(); } catch(err){}
+    // La ventana "¿Quién eres?" sale ya, sin esperar a la hoja (con mala
+    // cobertura esa espera podía ser de hasta 25 s con la pantalla sin
+    // reaccionar). La lista de nombres se completa sola en cuanto llega.
     setTimeout(()=>abrirCambioUsuario(true), 300);
+    sincronizar().then(refrescarListaLogin).catch(refrescarListaLogin);
   } else {
     sincronizar().catch(()=>{});
     setTimeout(comprobarBorradorBipAlArrancar, 400);
@@ -14616,7 +14694,8 @@ async function iniciar(){
   setInterval(()=>{
     if(document.getElementById('sheetOverlay')) return;
     comprobarCierreSesionPorTurno();
-    const activa = document.querySelector('.screen.active')?.id;
+    const pantallaActiva = document.querySelector('.screen.active');
+    const activa = pantallaActiva ? pantallaActiva.id : '';
     if(colaSync.length) procesarColaSync().catch(()=>{});
     if(activa === 'screen-registro') return;
     sincronizar().catch(()=>{});
