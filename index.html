@@ -166,6 +166,7 @@
   .check-pill.add{
     border-style: dashed; border-color: var(--accent); color: var(--accent);
   }
+  #pendingList .ticket, #buscarResultado .ticket{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   .ticket.lote-sel{ outline:2px solid var(--accent); background:#FFF6F0; }
   .lote-check{ font-size:18px; margin-right:4px; }
   #loteBarra{ display:none; position:fixed; left:0; right:0; bottom:0; z-index:40; gap:8px; align-items:stretch;
@@ -11671,7 +11672,7 @@ function ir(pantalla, esVolver){
   // esVolver=true: se usa al volver atrás desde el Detalle — no se vuelve a
   // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
   // mismos resultados de búsqueda) y solo se restaura el scroll.
-  if(pantalla==='pendientes') actualizarBarraLote(); else ocultarBarraLote();
+  if(pantalla==='pendientes' || pantalla==='buscar') actualizarBarraLote(); else ocultarBarraLote();
   if(esVolver) return;
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
@@ -12009,6 +12010,7 @@ function continuarMismoProyecto(proyecto){
 }
 
 function entrarABuscar(){
+  loteModo = false; loteSeleccion.clear(); ultimosResultadosBuscarIds = [];
   document.getElementById('buscarInput').value = '';
   document.getElementById('buscarResultado').innerHTML = '';
   actualizarVisibilidadAdmin();
@@ -13281,6 +13283,7 @@ function fechaCorta(iso){
 async function buscarOF(){
   const val = document.getElementById('buscarInput').value.trim();
   const cont = document.getElementById('buscarResultado');
+  ultimosResultadosBuscarIds = []; // se rellena de nuevo si hay resultados
   if(!val){ cont.innerHTML=''; return; }
 
   const valBusq = val.toLowerCase();
@@ -13329,10 +13332,33 @@ async function buscarOF(){
     cont.innerHTML = `<div class="empty">No se ha encontrado ningún picking con esa OF</div>`;
     return;
   }
+  ultimosResultadosBuscarIds = resultados.map(p=>p.id);
+  renderResultadosBuscar();
+}
+// Resultados de la búsqueda en DB (por OF o proyecto). Se pueden volver a
+// pintar (p.ej. al marcar pickings para entregar en lote) sin repetir la búsqueda.
+let ultimosResultadosBuscarIds = [];
+function resultadosBuscarActuales(){
+  return ultimosResultadosBuscarIds.map(id=>DB.find(p=>p.id===id)).filter(Boolean);
+}
+function renderResultadosBuscar(){
+  const cont = document.getElementById('buscarResultado');
+  if(!cont) return;
+  const resultados = resultadosBuscarActuales();
+  if(!resultados.length) return;
+  const pendientes = resultados.filter(p=>p.estado!=='completado');
   const leyenda = resultados.length>1
     ? `<div class="hint" style="margin-bottom:10px;">${resultados.length} pickings encontrados</div>`
     : '';
-  cont.innerHTML = leyenda + resultados.map(p=>ticketHtml(p)).join('');
+  let cabecera = '';
+  if(pendientes.length>1){
+    cabecera = `<div style="grid-column:1 / -1;">
+      <button class="btn btn-outline" id="btnSeleccionarVariasBuscar" onclick="toggleLoteModo()" style="margin:0 0 10px;">${loteModo ? '✕ Salir de la selección' : '☑ Seleccionar varias para entregar'}</button>
+      ${loteModo ? `<div class="hint" style="margin-bottom:10px;">Toca cada picking pendiente para marcarlo. <span class="link-action" onclick="marcarTodosLote()">Marcar todos los pendientes</span></div>` : ''}
+    </div>`;
+  }
+  if(loteModo) podarSeleccionLote();
+  cont.innerHTML = cabecera + leyenda + resultados.map(p=> (loteModo && p.estado!=='completado') ? ticketLoteHtml(p) : ticketHtml(p)).join('');
 }
 
 /* ---------- detalle + entrega ---------- */
@@ -14400,7 +14426,69 @@ function rellenarEntregaADesdeLista(i){
 let loteModo = false;
 const loteSeleccion = new Set();
 
+/* Mantener pulsado un picking pendiente (en Pendientes o en los resultados
+   de búsqueda) activa la selección múltiple con ese picking ya marcado. Un
+   toque normal sigue abriendo el detalle. */
+let gestoLote = { timer:null, x:0, y:0, id:null, ignorarClick:false };
+function idDeTicket(ticketEl){
+  const oc = ticketEl.getAttribute('onclick') || '';
+  const m = oc.match(/'([^']+)'/);
+  return m ? m[1] : null;
+}
+function iniciarGestoLote(){
+  ['pendingList','buscarResultado'].forEach(idCont=>{
+    const cont = document.getElementById(idCont);
+    if(!cont) return;
+    const cancelar = ()=>{
+      if(gestoLote.timer){ clearTimeout(gestoLote.timer); gestoLote.timer = null; }
+      // al soltar tras una pulsación larga, solo el "click" inmediato se descarta
+      if(gestoLote.ignorarClick) setTimeout(()=>{ gestoLote.ignorarClick = false; }, 120);
+    };
+    cont.addEventListener('pointerdown', ev=>{
+      if(loteModo || (ev.pointerType==='mouse' && ev.button!==0)) return;
+      const t = ev.target.closest ? ev.target.closest('.ticket') : null;
+      if(!t || !cont.contains(t)) return;
+      const id = idDeTicket(t);
+      const p = id ? DB.find(x=>x.id===id) : null;
+      if(!p || p.estado==='completado') return;
+      cancelar();
+      gestoLote.x = ev.clientX; gestoLote.y = ev.clientY; gestoLote.id = id;
+      gestoLote.timer = setTimeout(()=>{
+        gestoLote.timer = null;
+        if(loteModo) return;
+        loteModo = true;
+        loteSeleccion.add(gestoLote.id);
+        gestoLote.ignorarClick = true;                // el "click" al soltar no debe abrir el detalle
+        try{ if(navigator.vibrate) navigator.vibrate(30); }catch(e){}
+        refrescarVistaLote();
+        actualizarBarraLote();
+      }, 500);
+    });
+    cont.addEventListener('pointermove', ev=>{
+      if(gestoLote.timer && (Math.abs(ev.clientX-gestoLote.x)>10 || Math.abs(ev.clientY-gestoLote.y)>10)){
+        clearTimeout(gestoLote.timer); gestoLote.timer = null;
+      }
+    });
+    ['pointerup','pointercancel','pointerleave'].forEach(n=> cont.addEventListener(n, cancelar));
+    cont.addEventListener('click', ev=>{
+      if(gestoLote.ignorarClick){ ev.stopPropagation(); ev.preventDefault(); gestoLote.ignorarClick = false; }
+    }, true);
+    // En Android, mantener pulsado abre el menú de copiar/seleccionar: se evita solo sobre los pickings.
+    cont.addEventListener('contextmenu', ev=>{
+      if(ev.target.closest && ev.target.closest('.ticket')) ev.preventDefault();
+    });
+  });
+}
+
+function enBuscarActivo(){
+  const b = document.getElementById('screen-buscar');
+  return !!(b && b.classList.contains('active'));
+}
+function refrescarVistaLote(){
+  if(enBuscarActivo()) renderResultadosBuscar(); else renderPendientes();
+}
 function pendientesVisiblesLote(){
+  if(enBuscarActivo()) return resultadosBuscarActuales().filter(p=>p.estado!=='completado');
   const todos = DB.filter(p=>p.estado!=='completado').sort(compararPendientes);
   const campoBusq = document.getElementById('pendientesBuscarInput');
   const val = campoBusq ? campoBusq.value.trim().toLowerCase() : '';
@@ -14424,17 +14512,17 @@ function ticketLoteHtml(p){
 function toggleLoteModo(){
   loteModo = !loteModo;
   if(!loteModo) loteSeleccion.clear();
-  renderPendientes();
+  refrescarVistaLote();
   actualizarBarraLote();
 }
 function toggleLote(id){
   if(loteSeleccion.has(id)) loteSeleccion.delete(id); else loteSeleccion.add(id);
-  renderPendientes();
+  refrescarVistaLote();
   actualizarBarraLote();
 }
 function marcarTodosLote(){
   pendientesVisiblesLote().forEach(p=> loteSeleccion.add(p.id));
-  renderPendientes();
+  refrescarVistaLote();
   actualizarBarraLote();
 }
 function ocultarBarraLote(){
@@ -14445,6 +14533,8 @@ function ocultarBarraLote(){
 function actualizarBarraLote(){
   const btnModo = document.getElementById('btnSeleccionarVarias');
   if(btnModo) btnModo.textContent = loteModo ? '✕ Salir de la selección' : '☑ Seleccionar varias';
+  const btnModoB = document.getElementById('btnSeleccionarVariasBuscar');
+  if(btnModoB) btnModoB.textContent = loteModo ? '✕ Salir de la selección' : '☑ Seleccionar varias para entregar';
   const b = document.getElementById('loteBarra');
   if(!b) return;
   if(!loteModo){ ocultarBarraLote(); return; }
@@ -14518,7 +14608,7 @@ function entregarLote(manteniendoEstado){
 function quitarDeEntregaLote(id){
   guardarBorradorEntrega();
   loteSeleccion.delete(id);
-  renderPendientes();
+  refrescarVistaLote();
   actualizarBarraLote();
   entregarLote(true);
 }
@@ -14548,7 +14638,7 @@ async function confirmarEntregaLote(){
     loteSeleccion.clear();
     loteModo = false;
     cerrarSheet();
-    renderPendientes();
+    refrescarVistaLote();
     actualizarBarraLote();
     toast(hechos.length + ' entrega' + (hechos.length===1?'':'s') + ' registrada' + (hechos.length===1?'':'s') + ' — recuerda las firmas');
 
@@ -14917,6 +15007,7 @@ function confirmarAmpliacion(){
 /* ---------- init ---------- */
 async function iniciar(){
   window.__appListo = true;
+  try{ iniciarGestoLote(); }catch(e){}
   comprobarCierreSesionPorTurno();
   actualizarChipUsuario();
   renderPendingBanner();
