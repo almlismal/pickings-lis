@@ -166,6 +166,11 @@
   .check-pill.add{
     border-style: dashed; border-color: var(--accent); color: var(--accent);
   }
+  .ticket.lote-sel{ outline:2px solid var(--accent); background:#FFF6F0; }
+  .lote-check{ font-size:18px; margin-right:4px; }
+  #loteBarra{ display:none; position:fixed; left:0; right:0; bottom:0; z-index:40; gap:8px; align-items:stretch;
+    background:var(--panel); border-top:1px solid var(--line); padding:10px 16px; }
+  body.lote-activo{ padding-bottom:90px; }
   .quitar-extra{
     display:inline-block; margin-left:6px; color:#B33A3A; font-weight:700;
   }
@@ -486,6 +491,7 @@
       <h2>Pendientes de entrega</h2>
     </div>
     <button class="btn btn-outline" onclick="actualizarPendientes()" id="btnActualizarPendientes">🔄 Actualizar</button>
+    <button class="btn btn-outline" onclick="toggleLoteModo()" id="btnSeleccionarVarias" style="margin-top:8px;">☑ Seleccionar varias</button>
     <input type="text" class="mono" id="pendientesBuscarInput" placeholder="Filtrar por OF o proyecto" style="margin-top:12px;" oninput="renderPendientes()">
     <div class="pending-strip">
       <div id="pendingList"></div>
@@ -620,6 +626,10 @@
 </main>
 
 <div class="toast" id="toast"></div>
+<div id="loteBarra">
+  <button class="btn btn-primary" id="loteBtnEntregar" onclick="abrirEntregaLote()" style="margin:0; flex:1;" disabled>Marca los pickings a entregar</button>
+  <button class="btn btn-outline" onclick="toggleLoteModo()" style="margin:0; width:auto; padding:0 16px;">Cancelar</button>
+</div>
 
 <script>
 /* Red de seguridad (JavaScript antiguo, a propósito): 1) si el móvil bloquea
@@ -11057,7 +11067,7 @@ async function cargarEntregadosYActualizar(){
 }
 
 function procesarDatos(datos){
-  usuariosRemotos = datos.usuarios || [];
+  usuariosRemotos = limpiarUsuarios(datos.usuarios);
   guardarCacheUsuarios(usuariosRemotos);
   actualizarVisibilidadAdmin();
   DB = construirDB(datos);
@@ -11106,8 +11116,19 @@ const UBICACION_BASE = ['Carpa','Almacén','Estantería de perfiles','Estanterí
 
 // Compara nombres ignorando may\u00fasculas/min\u00fasculas Y tildes, para que d\u00e9
 // igual c\u00f3mo lo escriba cada uno ("Mar\u00eda", "maria", "MARIA" son la misma persona).
+// Google Sheets guarda como NÚMERO lo que parece un número (un usuario
+// llamado "1234" llega como 1234, no como texto) — y la app esperaba
+// siempre texto. Aquí todo nombre y PIN se convierte a texto al entrar.
+function limpiarUsuarios(lista){
+  if(!Array.isArray(lista)) return [];
+  return lista.filter(u=> u && u['Nombre']!==undefined && u['Nombre']!==null && String(u['Nombre']).trim()!=='')
+    .map(u=> Object.assign({}, u, {
+      'Nombre': String(u['Nombre']).trim(),
+      'PIN': (u['PIN']===undefined || u['PIN']===null) ? '' : String(u['PIN']).trim()
+    }));
+}
 function normalizarNombre(s){
-  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  return String(s===undefined || s===null ? '' : s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
 }
 function claveNombre(n){
   return normalizarNombre(n);
@@ -11244,7 +11265,7 @@ const LOGO_DHV_B64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADQAAABICAYA
   // se vuelve a bajar de la hoja.
   try{
     const cacheUsuarios = cargarCacheUsuarios();
-    if(cacheUsuarios) usuariosRemotos = cacheUsuarios;
+    if(cacheUsuarios) usuariosRemotos = limpiarUsuarios(cacheUsuarios);
 
     const dbLocal = cargarDBLocalGuardado();
     if(dbLocal && dbLocal.length){
@@ -11583,7 +11604,7 @@ async function guardarPinUsuario(obligatorio){
 
   try{
     const resultado = await llamarBackend('guardarUsuario', { nombre: usuarioActual, pin: val, por: usuarioActual });
-    if(resultado && resultado.usuarios) usuariosRemotos = resultado.usuarios;
+    if(resultado && resultado.usuarios) usuariosRemotos = limpiarUsuarios(resultado.usuarios);
   } catch(err){
     // si falla de verdad, la sincronización periódica ya lo reintentará
   }
@@ -11637,7 +11658,7 @@ function guardarExtrasUbicacion(lista){
 }
 
 function cargarNombres(){
-  return usuariosRemotos.map(u=>u['Nombre']).filter(Boolean);
+  return usuariosRemotos.map(u=>String(u['Nombre']===undefined||u['Nombre']===null?'':u['Nombre'])).filter(Boolean);
 }
 
 /* ---------- navegación ---------- */
@@ -11650,6 +11671,7 @@ function ir(pantalla, esVolver){
   // esVolver=true: se usa al volver atrás desde el Detalle — no se vuelve a
   // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
   // mismos resultados de búsqueda) y solo se restaura el scroll.
+  if(pantalla==='pendientes') actualizarBarraLote(); else ocultarBarraLote();
   if(esVolver) return;
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
@@ -11770,7 +11792,7 @@ async function entrarComoUsuario(n){
   if(!usuariosRemotos.some(u=>claveNombre(u['Nombre'])===claveNombre(n))){
     try{
       const resultado = await llamarBackend('guardarUsuario', { nombre: n, pin: '', por: n });
-      if(resultado && resultado.usuarios) usuariosRemotos = resultado.usuarios;
+      if(resultado && resultado.usuarios) usuariosRemotos = limpiarUsuarios(resultado.usuarios);
       else usuariosRemotos.push({ 'Nombre': n, 'PIN': '' });
     } catch(err){
       // Sin conexión ahora mismo: se deja entrar igual (como siempre), y el
@@ -11993,6 +12015,7 @@ function entrarABuscar(){
 }
 
 function entrarAPendientes(){
+  loteModo = false; loteSeleccion.clear(); actualizarBarraLote();
   // Se ve al instante con lo que ya hay en el móvil, y de fondo se
   // actualiza sola — no hace falta tocar "Actualizar" cada vez que se entra.
   renderPendientes();
@@ -13144,6 +13167,12 @@ function renderPendientes(){
   const leyenda = val
     ? `<div class="hint" style="margin-bottom:10px;">${pendientes.length} de ${todos.length} pendientes</div>`
     : `<div class="hint" style="margin-bottom:10px;">${pendientes.length} picking${pendientes.length===1?'':'s'} pendiente${pendientes.length===1?'':'s'} de entrega</div>`;
+  if(loteModo){
+    podarSeleccionLote();
+    const marcarTodos = `<div class="hint" style="margin-bottom:10px;">Toca cada picking para marcarlo. <span class="link-action" onclick="marcarTodosLote()">Marcar todos los que se ven</span></div>`;
+    cont.innerHTML = leyenda + marcarTodos + pendientes.map(p=>ticketLoteHtml(p)).join('');
+    return;
+  }
   cont.innerHTML = leyenda + pendientes.map(p=>ticketHtml(p)).join('');
 }
 
@@ -14331,11 +14360,212 @@ function verHojaPickingDetalle(id){
   toast('Esta OF no tiene hoja de picking');
 }
 
+/* ============================================================
+   ENTREGA EN LOTE + últimos destinatarios
+   - Los últimos nombres a quienes se entregó se recuerdan en este móvil y
+     salen como botones, para no escribir el nombre cada vez (y que quede
+     siempre escrito igual).
+   - En Pendientes se pueden marcar varios pickings y entregarlos de una vez
+     a la misma persona. Cada OF queda con su propia entrega completa, igual
+     que si se hubieran hecho una a una.
+   ============================================================ */
+const LS_DESTINATARIOS = 'pickings_lis_destinatarios_v1';
+let destinatariosActuales = [];
+function cargarDestinatarios(){
+  try{
+    const a = JSON.parse(localStorage.getItem(LS_DESTINATARIOS));
+    return Array.isArray(a) ? a.map(x=>String(x)).filter(Boolean) : [];
+  }catch(e){ return []; }
+}
+function recordarDestinatario(nombre){
+  try{
+    const n = String(nombre||'').trim();
+    if(!n || normalizarNombre(n)==='produccion') return; // "Producción" ya tiene su atajo
+    const resto = cargarDestinatarios().filter(x=>normalizarNombre(x)!==normalizarNombre(n));
+    resto.unshift(n);
+    localStorage.setItem(LS_DESTINATARIOS, JSON.stringify(resto.slice(0, 8)));
+  }catch(e){}
+}
+function chipsDestinatariosHtml(){
+  destinatariosActuales = cargarDestinatarios();
+  if(!destinatariosActuales.length) return '';
+  return `<div class="hint" style="margin:8px 0 4px;">Últimos a quienes se entregó:</div>
+    <div>${destinatariosActuales.map((n,i)=>`<span class="name-pill" onclick="rellenarEntregaADesdeLista(${i})">${escapeHtml(n)}</span>`).join('')}</div>`;
+}
+function rellenarEntregaADesdeLista(i){
+  const n = destinatariosActuales[i];
+  if(n !== undefined) rellenarEntregaA(n);
+}
+
+let loteModo = false;
+const loteSeleccion = new Set();
+
+function pendientesVisiblesLote(){
+  const todos = DB.filter(p=>p.estado!=='completado').sort(compararPendientes);
+  const campoBusq = document.getElementById('pendientesBuscarInput');
+  const val = campoBusq ? campoBusq.value.trim().toLowerCase() : '';
+  return !val ? todos : todos.filter(p=>
+    p.of.toLowerCase().includes(val) ||
+    String(p.proyecto||'').toLowerCase().includes(val) ||
+    String(p.subproyecto||'').toLowerCase().includes(val));
+}
+function podarSeleccionLote(){
+  const vigentes = new Set(DB.filter(p=>p.estado!=='completado').map(p=>p.id));
+  Array.from(loteSeleccion).forEach(id=>{ if(!vigentes.has(id)) loteSeleccion.delete(id); });
+}
+function ticketLoteHtml(p){
+  const marcado = loteSeleccion.has(p.id);
+  let h = ticketHtml(p);
+  h = h.replace(`onclick="abrirDetalle('${p.id}')"`, `onclick="toggleLote('${p.id}')"`);
+  h = h.replace('<div class="ticket ', `<div class="ticket ${marcado ? 'lote-sel ' : ''}`);
+  h = h.replace('<span class="ticket-of">', `<span class="ticket-of"><span class="lote-check">${marcado ? '☑' : '☐'}</span> `);
+  return h;
+}
+function toggleLoteModo(){
+  loteModo = !loteModo;
+  if(!loteModo) loteSeleccion.clear();
+  renderPendientes();
+  actualizarBarraLote();
+}
+function toggleLote(id){
+  if(loteSeleccion.has(id)) loteSeleccion.delete(id); else loteSeleccion.add(id);
+  renderPendientes();
+  actualizarBarraLote();
+}
+function marcarTodosLote(){
+  pendientesVisiblesLote().forEach(p=> loteSeleccion.add(p.id));
+  renderPendientes();
+  actualizarBarraLote();
+}
+function ocultarBarraLote(){
+  const b = document.getElementById('loteBarra');
+  if(b) b.style.display = 'none';
+  document.body.classList.remove('lote-activo');
+}
+function actualizarBarraLote(){
+  const btnModo = document.getElementById('btnSeleccionarVarias');
+  if(btnModo) btnModo.textContent = loteModo ? '✕ Salir de la selección' : '☑ Seleccionar varias';
+  const b = document.getElementById('loteBarra');
+  if(!b) return;
+  if(!loteModo){ ocultarBarraLote(); return; }
+  podarSeleccionLote();
+  const n = loteSeleccion.size;
+  b.style.display = 'flex';
+  document.body.classList.add('lote-activo');
+  const btn = document.getElementById('loteBtnEntregar');
+  btn.textContent = n ? `Entregar ${n} seleccionado${n===1?'':'s'}` : 'Marca los pickings a entregar';
+  btn.disabled = !n;
+}
+
+function motivosAtencionLote(p){
+  const m = [];
+  if(p.cajas>1) m.push(`${p.cajas} cajas`);
+  fueraActivas(p).forEach(k=> m.push(`${k.toLowerCase()} fuera de la caja`));
+  if(esPickingViejo(p)) m.push(`${diasPendiente(p)} días pendiente`);
+  if(p.entregas && p.entregas.length) m.push('ya tiene una entrega parcial');
+  if(p.observaciones) m.push('observaciones: ' + p.observaciones);
+  return m;
+}
+function idsLoteVigentes(){
+  return Array.from(loteSeleccion).filter(id=>{ const p = DB.find(x=>x.id===id); return p && p.estado!=='completado'; });
+}
+function abrirEntregaLote(){
+  entregarLote(false);
+}
+function entregarLote(manteniendoEstado){
+  const ids = idsLoteVigentes();
+  if(!ids.length){ cerrarSheet(); toast('No hay pickings seleccionados'); return; }
+  if(!manteniendoEstado){
+    entregaPorActivo = null;
+    entregaDraft = { a:'', nota:'' };
+  }
+  const quienEntrega = entregaPorActivo || usuarioActual;
+  const filas = ids.map(id=>{
+    const p = DB.find(x=>x.id===id);
+    const motivos = motivosAtencionLote(p);
+    return `<div style="display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--line);">
+      <div style="flex:1;">
+        <div><b style="font-family:var(--mono);">OF ${escapeHtml(p.of)}</b> · ${escapeHtml(p.proyecto || '—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</div>
+        ${motivos.length ? `<div style="font-size:12px; color:var(--warn-ink);">⚠️ ${escapeHtml(motivos.join(' · '))}</div>` : ''}
+      </div>
+      <span class="link-action" style="color:#B33A3A;" onclick="quitarDeEntregaLote('${p.id}')">Quitar</span>
+    </div>`;
+  }).join('');
+  mostrarSheet(`
+    <h3>Entregar ${ids.length} picking${ids.length===1?'':'s'}</h3>
+    <div style="max-height:30vh; overflow:auto; margin-bottom:12px;">${filas}</div>
+    <label>¿Quién entrega?</label>
+    <div class="hint" style="margin:0 0 4px;">La entrega queda registrada a nombre de: <b>${escapeHtml(quienEntrega)}</b>${entregaPorActivo ? ' (verificado con su PIN)' : ''}</div>
+    <div class="hint" style="margin:0 0 14px;"><span class="link-action" onclick="abrirCambioEntregaPor('lote')">¿Entrega otra persona? Cambiar</span></div>
+
+    <label>¿A quién de DHV se entregan?</label>
+    <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="actualizarTextoFirma()">
+    <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">📍 Se dejaron en Producción, sin una persona concreta</span></div>
+    ${chipsDestinatariosHtml()}
+
+    <div class="sign-banner">
+      <label>
+        <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()">
+        <span>✍️ Confirmo que <b id="signLabelName">la persona de DHV</b> firmará las hojas de picking antes de irme</span>
+      </label>
+    </div>
+    <button class="btn btn-primary" id="btnConfirmarEntrega" onclick="confirmarEntregaLote()" style="opacity:0.5;">Confirmar ${ids.length} entrega${ids.length===1?'':'s'}</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+  actualizarTextoFirma();
+  toggleBtnEntrega();
+}
+function quitarDeEntregaLote(id){
+  guardarBorradorEntrega();
+  loteSeleccion.delete(id);
+  renderPendientes();
+  actualizarBarraLote();
+  entregarLote(true);
+}
+async function confirmarEntregaLote(){
+  try{
+    const por = entregaPorActivo || usuarioActual;
+    const campoA = document.getElementById('entregaA');
+    const a = campoA ? campoA.value.trim() : '';
+    const chk = document.getElementById('confirmFirma');
+    if(!por){ toast('Falta quién entrega'); return; }
+    if(!a){ toast('Falta a quién se entrega'); return; }
+    if(!chk || !chk.checked){ toast('Confirma que va a firmar las hojas de picking'); return; }
+
+    const ahora = new Date().toISOString();
+    const hechos = [];
+    idsLoteVigentes().forEach(id=>{
+      const p = DB.find(x=>x.id===id);
+      if(!p) return;
+      p.entregas.push({ tipo:'completa', entregadoPor: por, entregadoA: a, nota:'', fecha: ahora });
+      p.estado = 'completado';
+      hechos.push(p);
+    });
+    if(!hechos.length){ cerrarSheet(); toast('Esos pickings ya estaban entregados'); return; }
+    guardarDBLocal();
+    recordarDestinatario(a);
+
+    loteSeleccion.clear();
+    loteModo = false;
+    cerrarSheet();
+    renderPendientes();
+    actualizarBarraLote();
+    toast(hechos.length + ' entrega' + (hechos.length===1?'':'s') + ' registrada' + (hechos.length===1?'':'s') + ' — recuerda las firmas');
+
+    hechos.forEach(p=>{
+      encolarOperacion('entregar', { pickingId: p.id, tipo:'completa', entregadoPor: por, entregadoA: a, nota:'' }, p.id, 'Entregar OF ' + p.of);
+    });
+  }catch(err){
+    toast('Algo falló al confirmar — inténtalo de nuevo');
+  }
+}
+
 let entregaItemsEstado = {};
 let entregaPorActivo = null; // null = quien tiene la sesión abierta; si no, nombre ya verificado con su PIN
 let entregaDraft = { a:'', nota:'' };
 
 function entregar(tipo, manteniendoEstado){
+  if(tipo==='lote'){ entregarLote(true); return; } // "Cancelar" / volver desde el cambio de quién entrega en una entrega en lote
   const p = DB.find(x=>x.id===ofEnDetalle);
 
   if(!manteniendoEstado){
@@ -14372,6 +14602,7 @@ function entregar(tipo, manteniendoEstado){
     <label>¿A quién de DHV se entrega?</label>
     <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="actualizarTextoFirma()">
     <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">📍 Se dejó en Producción, sin una persona concreta</span></div>
+    ${chipsDestinatariosHtml()}
 
     ${bloqueItems}
 
@@ -14525,6 +14756,7 @@ async function confirmarEntrega(tipo){
     p.entregas.push(entregaLocal);
     if(tipo==='completa') p.estado = 'completado';
     guardarDBLocal();
+    recordarDestinatario(a);
 
     cerrarSheet();
     toast('Entrega registrada — recuerda la firma en la hoja');
