@@ -14409,18 +14409,44 @@ function recordarDestinatario(nombre){
     if(!n || normalizarNombre(n)==='produccion') return; // "Producción" ya tiene su atajo
     const resto = cargarDestinatarios().filter(x=>normalizarNombre(x)!==normalizarNombre(n));
     resto.unshift(n);
-    localStorage.setItem(LS_DESTINATARIOS, JSON.stringify(resto.slice(0, 8)));
+    localStorage.setItem(LS_DESTINATARIOS, JSON.stringify(resto.slice(0, 200)));
   }catch(e){}
 }
-function chipsDestinatariosHtml(){
-  destinatariosActuales = cargarDestinatarios();
+// Se guardan muchos nombres (los 200 últimos), pero solo se enseñan 3 cuando el
+// campo está vacío; al escribir, se filtran todos los guardados (sin importar
+// mayúsculas ni tildes): "jua" encuentra Juan, Juárez, Ana Juárez…
+function listaDestinatariosFiltrada(q){
+  const todos = cargarDestinatarios();           // del más reciente al más antiguo
+  const nq = normalizarNombre(q);
+  if(!nq) return todos.slice(0, 3);
+  const empieza = n=>{ const t = normalizarNombre(n); return t.startsWith(nq) || t.split(/\s+/).some(w=>w.startsWith(nq)); };
+  const coinc = todos.filter(n=> normalizarNombre(n).indexOf(nq) !== -1);
+  const primeros = coinc.filter(empieza), resto = coinc.filter(n=>!empieza(n));
+  return primeros.concat(resto).slice(0, 6);
+}
+function htmlChipsDestinatarios(q){
+  destinatariosActuales = listaDestinatariosFiltrada(q);
   if(!destinatariosActuales.length) return '';
-  return `<div class="hint" style="margin:8px 0 4px;">Últimos a quienes se entregó:</div>
+  const nq = normalizarNombre(q);
+  if(nq && destinatariosActuales.length===1 && normalizarNombre(destinatariosActuales[0])===nq) return ''; // ya está escrito entero
+  return `<div class="hint" style="margin:8px 0 4px;">${nq ? 'Coincidencias:' : 'Últimos a quienes se entregó:'}</div>
     <div>${destinatariosActuales.map((n,i)=>`<span class="name-pill" onclick="rellenarEntregaADesdeLista(${i})">${escapeHtml(n)}</span>`).join('')}</div>`;
+}
+function chipsDestinatariosHtml(){
+  return `<div id="chipsDestinatarios">${htmlChipsDestinatarios('')}</div>`;
+}
+function alEscribirEntregaA(){
+  actualizarTextoFirma();
+  const c = document.getElementById('chipsDestinatarios');
+  const campo = document.getElementById('entregaA');
+  if(c && campo) c.innerHTML = htmlChipsDestinatarios(campo.value.trim());
 }
 function rellenarEntregaADesdeLista(i){
   const n = destinatariosActuales[i];
-  if(n !== undefined) rellenarEntregaA(n);
+  if(n === undefined) return;
+  rellenarEntregaA(n);
+  const c = document.getElementById('chipsDestinatarios');
+  if(c) c.innerHTML = '';
 }
 
 let loteModo = false;
@@ -14589,7 +14615,7 @@ function entregarLote(manteniendoEstado){
     <div class="hint" style="margin:0 0 14px;"><span class="link-action" onclick="abrirCambioEntregaPor('lote')">¿Entrega otra persona? Cambiar</span></div>
 
     <label>¿A quién de DHV se entregan?</label>
-    <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="actualizarTextoFirma()">
+    <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="alEscribirEntregaA()">
     <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">📍 Se dejaron en Producción, sin una persona concreta</span></div>
     ${chipsDestinatariosHtml()}
 
@@ -14690,7 +14716,7 @@ function entregar(tipo, manteniendoEstado){
     <div class="hint" style="margin:0 0 14px;"><span class="link-action" onclick="abrirCambioEntregaPor('${tipo}')">¿Entrega otra persona? Cambiar</span></div>
 
     <label>¿A quién de DHV se entrega?</label>
-    <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="actualizarTextoFirma()">
+    <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="alEscribirEntregaA()">
     <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">📍 Se dejó en Producción, sin una persona concreta</span></div>
     ${chipsDestinatariosHtml()}
 
