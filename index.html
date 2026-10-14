@@ -12344,7 +12344,7 @@ function renderResumen(){
   const franjasAntiguedad = BUCKETS_ANTIGUEDAD.map(b=>({
     ...b,
     pickings: pendientes.filter(p=>{ const d = diasPendiente(p); return d>=b.min && d<=b.max; }).sort((a,b2)=> diasPendiente(b2)-diasPendiente(a))
-  }));
+  })).filter(f=>f.pickings.length>0); // las franjas sin ninguna OF no se muestran (ni en pantalla ni en los PDF)
   if(bucketAntiguedadSeleccionado && !franjasAntiguedad.some(f=>f.id===bucketAntiguedadSeleccionado && f.pickings.length)){
     // si la franja que tenía abierta se quedó sin pickings, se cierra sola
     bucketAntiguedadSeleccionado = null;
@@ -12388,7 +12388,7 @@ function renderResumen(){
 
     <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">⏳ Antigüedad de los pendientes — toca un número para ver cuáles son</div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-      ${franjasAntiguedad.map(f=>tarjetaFranja(f)).join('')}
+      ${franjasAntiguedad.map(f=>tarjetaFranja(f)).join('') || '<div class="hint" style="grid-column:1/-1;">No hay pendientes.</div>'}
     </div>
     <button class="btn btn-outline" onclick="descargarListadoOfsPDF()" style="margin-top:10px;">📋 Descargar listado de OFs pendientes</button>
     <div style="margin-top:10px;">
@@ -12410,10 +12410,11 @@ function renderResumen(){
 // pendiente de exactamente 5 días cae en "1 a 5 días" y en ningún otro,
 // sin solaparse.
 const BUCKETS_ANTIGUEDAD = [
-  { id: 'b1_5',  label: 'De 1 a 5 días',   min: 1,  max: 5 },
+  { id: 'b1_5',  label: 'Hasta 5 días',    min: 0,  max: 5 },
   { id: 'b6_10', label: 'De 6 a 10 días',  min: 6,  max: 10 },
   { id: 'b11_15',label: 'De 11 a 15 días', min: 11, max: 15 },
-  { id: 'b15',   label: 'Más de 15 días',  min: 16, max: Infinity }
+  { id: 'b16_30',label: 'De 16 a 30 días', min: 16, max: 30 },
+  { id: 'b30',   label: 'Más de 1 mes',    min: 31, max: Infinity }
 ];
 let bucketAntiguedadSeleccionado = null;
 function seleccionarFranjaAntiguedad(id){
