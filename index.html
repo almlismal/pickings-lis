@@ -11787,7 +11787,14 @@ function aplicarConfirmacionOperacion(op, resultado){
     // entregada del todo -> la hoja de picking se rehace con el nombre de DHV;
     // entrega deshecha -> se rehace sin él
     const pk = DB.find(x=>x.id===op.pickingId);
-    if(op.accion==='entregar' && op.datos && op.datos.tipo==='completa') encolarRegenHoja(pk, op.datos.entregadoA, true);
+    if(op.accion==='entregar' && op.datos && op.datos.tipo==='completa'){
+      // Si este móvil tiene las líneas del picking, van con la orden: la hoja con la
+      // firma de DHV no depende de lo que haya guardado la hoja de cálculo.
+      const loc = (pk && pk.componentesPicking && pk.componentesPicking.length)
+        ? { componentes: conDescripciones(pk.componentesPicking), incidencias: conDescripciones(pk.incidenciasPicking || []) } : null;
+      encolarRegenHoja(pk, op.datos.entregadoA, true, null, loc);
+      if(loc) procesarRegenHojas();
+    }
     if(op.accion==='deshacerEntrega' && op.datos && op.datos.tipoOriginal==='completa') encolarRegenHoja(pk, '', false);
   }catch(e){}
 }
@@ -11805,7 +11812,7 @@ function fechaDDMMAAAA(d){
   return String(x.getDate()).padStart(2,'0') + '/' + String(x.getMonth()+1).padStart(2,'0') + '/' + x.getFullYear();
 }
 function encolarRegenHoja(p, firmaDhv, entregado, fechaISO, extra){
-  if(!p || !p.hojaPickingUrl) return null;      // sin PDF en Drive no hay nada que rehacer
+  if(!p) return null;      // la hoja de cálculo decide si hay líneas de las que rehacerla
   const hechoPor = p.hechoPorPicking || p.registradoPor || '';
   const item = {
     clave: p.id, opId: 'rg_' + p.id + '_' + Date.now().toString(36), intentos: 0,
@@ -11836,12 +11843,13 @@ function avisoSinLineasGuardadas(id){
       La OF <b style="color:var(--ink);">sí tiene su hoja de picking</b> y se puede abrir con "Ver hoja de picking". Pero es de antes de que la hoja de cálculo guardara las líneas de cada picking, así que no hay de dónde rehacerla con las iniciales, la descripción y la firma de DHV.
     </p>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">La hoja que ya tiene sigue siendo válida tal como está.</p>
-    <button class="btn btn-primary" onclick="cerrarSheet(); if(ofEnDetalle) abrirDetalle(ofEnDetalle);">Entendido</button>
+    <button class="btn btn-primary" onclick="cerrarSheet(); reabrirDetalleSeguro(ofEnDetalle);">Entendido</button>
   `);
 }
 async function actualizarHojaPicking(id){
-  const p = DB.find(x=>x.id===id);
-  if(!p || !p.hojaPickingUrl){ toast('Esta OF no tiene hoja de picking'); return; }
+  const p = await asegurarPickingEnDB(id);
+  if(!p){ toast('No se pudo cargar esa OF — comprueba la conexión e inténtalo de nuevo'); return; }
+  if(!p.hojaPickingUrl){ toast('Esta OF no tiene hoja de picking'); return; }
   if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
   if(navigator.onLine === false){ toast('Sin conexión — inténtalo cuando la tengas'); return; }
   if(p.sync==='pendiente' || String(p.id).indexOf('tmp_')===0){ toast('Espera a que termine de guardarse esta OF'); return; }
@@ -11875,7 +11883,7 @@ async function actualizarHojaPicking(id){
   if(r.omitido){ toast('Esta OF tiene hojas aparte (anexos): su hoja principal no se toca'); return; }
   if(r.sinHoja){ avisoSinLineasGuardadas(p.id); return; }
   toast('Hoja actualizada ✓');
-  if(ofEnDetalle === p.id) abrirDetalle(p.id);
+  if(ofEnDetalle === p.id) reabrirDetalleSeguro(p.id);
 }
 async function procesarRegenHojas(){
   if(regenEnCurso || !regenHojas.length) return;
@@ -12703,6 +12711,29 @@ async function verPickingEntregado(id){
   } catch(err){
     toast('No se pudo cargar ese picking: ' + (err && err.message ? err.message : 'error desconocido'));
   }
+}
+
+// Las OF ya entregadas solo se meten en DB "un momento" para verlas; cualquier
+// actualización en segundo plano de la lista las saca. Antes de usarlas se
+// vuelven a pedir si hace falta, para que no salga "No se encontró esa OF".
+async function asegurarPickingEnDB(id){
+  let p = DB.find(x=>x.id===id);
+  if(p) return p;
+  try{
+    const res = await fetchConLimite(GAS_URL + '?detallePicking=' + encodeURIComponent(id), {}, 25000);
+    const datos = await res.json();
+    if(datos && datos.ok && datos.picking){
+      p = construirPickingDesdeRow(datos.picking, datos.entregas || [], datos.historial || []);
+      DB = DB.filter(x=>x.id!==p.id);
+      DB.push(p);
+      return p;
+    }
+  }catch(e){}
+  return null;
+}
+function reabrirDetalleSeguro(id){
+  if(!id) return;
+  if(DB.find(x=>x.id===id)) abrirDetalle(id); else verPickingEntregado(id);
 }
 
 function entrarAEntregados(){
@@ -15008,10 +15039,25 @@ function continuarARegistroDesdeDoc(){
 }
 function verHojaPickingDetalle(id){
   const p = DB.find(x=>x.id===id);
-  if(!p){ toast('No se encontró esa OF'); return; }
+  if(p){ abrirHojaDePicking(p); return; }     // camino normal: sin esperas, para que el navegador deje abrir el PDF
+  toast('Cargando…');
+  asegurarPickingEnDB(id).then(pc=>{
+    if(!pc){ toast('No se pudo cargar esa OF — comprueba la conexión e inténtalo de nuevo'); return; }
+    abrirHojaDePicking(pc);
+  });
+}
+function abrirHojaDePicking(p){
   // Ya está el PDF de verdad guardado en la nube: se abre directamente ahí.
   if(p.hojaPickingUrl){
-    window.open(p.hojaPickingUrl, '_blank');
+    const w = window.open(p.hojaPickingUrl, '_blank');
+    if(!w){
+      // el navegador bloqueó la ventana (pasa si hubo una espera): botón para abrirla
+      mostrarSheet(`
+        <h3>Hoja de picking de la OF ${escapeHtml(p.of)}</h3>
+        <a class="btn btn-primary" style="display:block; text-align:center; text-decoration:none;" href="${escapeAtributo(p.hojaPickingUrl)}" target="_blank" onclick="setTimeout(cerrarSheet,200)">📋 Abrir la hoja de picking</a>
+        <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>
+      `);
+    }
     return;
   }
   // Todavía no se ha sincronizado (o Drive falló al generarlo) — se enseña
