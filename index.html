@@ -11825,6 +11825,20 @@ function encolarRegenHoja(p, firmaDhv, entregado, fechaISO, extra){
 // Botón "Actualizar hoja de picking" del detalle: rehace la hoja de una OF que
 // ya tenía PDF (iniciales, descripciones del catálogo y, si está entregada, la
 // firma de DHV con la fecha de su entrega).
+const LS_SIN_LINEAS = 'pickings_lis_sin_lineas_v1';
+function idsSinLineas(){ try{ const a = JSON.parse(localStorage.getItem(LS_SIN_LINEAS)); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+function marcarSinLineas(id){ try{ const a = idsSinLineas(); if(!a.includes(id)){ a.push(id); localStorage.setItem(LS_SIN_LINEAS, JSON.stringify(a.slice(-500))); } }catch(e){} }
+function avisoSinLineasGuardadas(id){
+  marcarSinLineas(id);
+  mostrarSheet(`
+    <h3>Esta hoja no se puede rehacer</h3>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
+      La OF <b style="color:var(--ink);">sí tiene su hoja de picking</b> y se puede abrir con "Ver hoja de picking". Pero es de antes de que la hoja de cálculo guardara las líneas de cada picking, así que no hay de dónde rehacerla con las iniciales, la descripción y la firma de DHV.
+    </p>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">La hoja que ya tiene sigue siendo válida tal como está.</p>
+    <button class="btn btn-primary" onclick="cerrarSheet(); if(ofEnDetalle) abrirDetalle(ofEnDetalle);">Entendido</button>
+  `);
+}
 async function actualizarHojaPicking(id){
   const p = DB.find(x=>x.id===id);
   if(!p || !p.hojaPickingUrl){ toast('Esta OF no tiene hoja de picking'); return; }
@@ -11846,7 +11860,8 @@ async function actualizarHojaPicking(id){
       }
     }
   }catch(e){}
-  if(!comps || !comps.length){ toast('De esta OF no hay líneas guardadas en la hoja de cálculo, no se puede rehacer su hoja'); return; }
+  if(comps === null){ toast('No he podido consultar la hoja de cálculo — inténtalo de nuevo en unos segundos'); return; }
+  if(!comps.length){ avisoSinLineasGuardadas(p.id); return; }
   const item = encolarRegenHoja(p, entrega ? entrega.entregadoA : '', !!entrega, entrega ? entrega.fecha : null,
     { componentes: conDescripciones(comps), incidencias: conDescripciones(incs) });
   if(regenEnCurso){ toast('Otra hoja se está rehaciendo; esta se hará justo después'); }
@@ -11854,7 +11869,7 @@ async function actualizarHojaPicking(id){
   if(regenHojas.includes(item)){ toast('No se pudo ahora — se reintentará sola cuando haya conexión'); return; }
   const r = item.resultado || {};
   if(r.omitido){ toast('Esta OF tiene hojas aparte (anexos): su hoja principal no se toca'); return; }
-  if(r.sinHoja){ toast('Esta OF no tiene líneas guardadas para rehacer la hoja'); return; }
+  if(r.sinHoja){ avisoSinLineasGuardadas(p.id); return; }
   toast('Hoja actualizada ✓');
   if(ofEnDetalle === p.id) abrirDetalle(p.id);
 }
@@ -14043,7 +14058,7 @@ function detalleHtml(p){
       ${p.observaciones ? `<div class="obs-box">${p.observaciones}</div>` : ''}
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">📋 Ver hoja de picking</button>` : ''}
-      ${p.hojaPickingUrl ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">🔄 Actualizar hoja de picking</button>` : ''}
+      ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">🔄 Actualizar hoja de picking</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">⚠️ No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${p.estado!=='completado' ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="empezarBipadoParaPickingExistente('${p.id}')">📋➕ Escanear componentes pendientes</button>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
