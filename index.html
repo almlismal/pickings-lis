@@ -11861,6 +11861,10 @@ async function actualizarHojaPicking(id){
     }
   }catch(e){}
   if(comps === null){ toast('No he podido consultar la hoja de cálculo — inténtalo de nuevo en unos segundos'); return; }
+  // Si la hoja de cálculo no las tiene pero este móvil sí (las bipó aquí), se usan las de este móvil
+  if(!comps.length && p.componentesPicking && p.componentesPicking.length){
+    comps = p.componentesPicking; incs = p.incidenciasPicking || [];
+  }
   if(!comps.length){ avisoSinLineasGuardadas(p.id); return; }
   const item = encolarRegenHoja(p, entrega ? entrega.entregadoA : '', !!entrega, entrega ? entrega.fecha : null,
     { componentes: conDescripciones(comps), incidencias: conDescripciones(incs) });
