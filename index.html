@@ -10866,7 +10866,7 @@ function fetchConLimite(url, opciones, msLimite){
     xhr.send((opciones && opciones.body) || null);
   });
 }
-async function llamarBackend(accion, datos, opId){
+async function llamarBackend(accion, datos, opId, msLimite){
   // opId identifica esta operación de forma única — si por lo que sea se
   // reintenta una que la hoja ya había recibido y aplicado bien (se perdió
   // solo la respuesta, no el guardado), la hoja detecta que es la misma y
@@ -10875,7 +10875,7 @@ async function llamarBackend(accion, datos, opId){
     method: 'POST',
     headers: {'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({ accion, datos, opId: opId || '' })
-  }, 25000);
+  }, msLimite || 25000);
   return res.json();
 }
 async function cargarDesdeSheet(){
@@ -11783,9 +11783,114 @@ function aplicarConfirmacionOperacion(op, resultado){
       }
     }
   }
+  try{
+    // entregada del todo -> la hoja de picking se rehace con el nombre de DHV;
+    // entrega deshecha -> se rehace sin él
+    const pk = DB.find(x=>x.id===op.pickingId);
+    if(op.accion==='entregar' && op.datos && op.datos.tipo==='completa') encolarRegenHoja(pk, op.datos.entregadoA, true);
+    if(op.accion==='deshacerEntrega' && op.datos && op.datos.tipoOriginal==='completa') encolarRegenHoja(pk, '', false);
+  }catch(e){}
 }
 
 let sincronizandoCola = false;
+// ---- hoja de picking con la firma de DHV una vez entregado ----
+// Cola aparte (no frena el resto de envíos): generar un PDF tarda unos segundos.
+const LS_REGEN = 'pickings_lis_regen_hojas_v1';
+let regenHojas = [];
+let regenEnCurso = false;
+try{ regenHojas = JSON.parse(localStorage.getItem(LS_REGEN)) || []; if(!Array.isArray(regenHojas)) regenHojas = []; }catch(e){ regenHojas = []; }
+function guardarRegen(){ try{ localStorage.setItem(LS_REGEN, JSON.stringify(regenHojas)); }catch(e){} }
+function fechaDDMMAAAA(d){
+  const x = d || new Date();
+  return String(x.getDate()).padStart(2,'0') + '/' + String(x.getMonth()+1).padStart(2,'0') + '/' + x.getFullYear();
+}
+function encolarRegenHoja(p, firmaDhv, entregado, fechaISO, extra){
+  if(!p || !p.hojaPickingUrl) return null;      // sin PDF en Drive no hay nada que rehacer
+  const hechoPor = p.hechoPorPicking || p.registradoPor || '';
+  const item = {
+    clave: p.id, opId: 'rg_' + p.id + '_' + Date.now().toString(36), intentos: 0,
+    datos: {
+      pickingId: p.id, firmaDhv: firmaDhv || '', fechaEntrega: entregado ? fechaDDMMAAAA(fechaISO ? new Date(fechaISO) : new Date()) : '',
+      semana: p.semanaPicking || semanaISO(new Date(p.fecha || Date.now())),
+      hechoPor, iniciales: inicialesLis(hechoPor)
+    }
+  };
+  if(extra){ item.datos.componentes = extra.componentes; item.datos.incidencias = extra.incidencias; }
+  regenHojas = regenHojas.filter(x=>x.clave!==item.clave);   // solo vale lo último que se pidió
+  regenHojas.push(item);
+  guardarRegen();
+  if(!extra) procesarRegenHojas();
+  return item;
+}
+// Botón "Actualizar hoja de picking" del detalle: rehace la hoja de una OF que
+// ya tenía PDF (iniciales, descripciones del catálogo y, si está entregada, la
+// firma de DHV con la fecha de su entrega).
+async function actualizarHojaPicking(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p || !p.hojaPickingUrl){ toast('Esta OF no tiene hoja de picking'); return; }
+  if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
+  if(navigator.onLine === false){ toast('Sin conexión — inténtalo cuando la tengas'); return; }
+  if(p.sync==='pendiente' || String(p.id).indexOf('tmp_')===0){ toast('Espera a que termine de guardarse esta OF'); return; }
+  toast('Actualizando la hoja… tarda unos segundos');
+  let comps = null, incs = [], entrega = null;
+  try{
+    const res = await fetchConLimite(GAS_URL + '?detallePicking=' + encodeURIComponent(p.id), {}, 25000);
+    const j = await res.json();
+    if(j && j.ok !== false && j.picking){
+      try{ comps = JSON.parse(j.picking['Componentes JSON'] || '[]'); }catch(e){ comps = null; }
+      try{ incs = JSON.parse(j.picking['Incidencias JSON'] || '[]'); }catch(e){ incs = []; }
+      const completas = (j.entregas || []).filter(e=>String(e['Tipo'])==='completa');
+      if(String(j.picking['Estado'])==='completado' && completas.length){
+        const u = completas[completas.length-1];
+        entrega = { entregadoA: String(u['Entregado a']||''), fecha: u['Fecha'] };
+      }
+    }
+  }catch(e){}
+  if(!comps || !comps.length){ toast('De esta OF no hay líneas guardadas en la hoja de cálculo, no se puede rehacer su hoja'); return; }
+  const item = encolarRegenHoja(p, entrega ? entrega.entregadoA : '', !!entrega, entrega ? entrega.fecha : null,
+    { componentes: conDescripciones(comps), incidencias: conDescripciones(incs) });
+  if(regenEnCurso){ toast('Otra hoja se está rehaciendo; esta se hará justo después'); }
+  await procesarRegenHojas();
+  if(regenHojas.includes(item)){ toast('No se pudo ahora — se reintentará sola cuando haya conexión'); return; }
+  const r = item.resultado || {};
+  if(r.omitido){ toast('Esta OF tiene hojas aparte (anexos): su hoja principal no se toca'); return; }
+  if(r.sinHoja){ toast('Esta OF no tiene líneas guardadas para rehacer la hoja'); return; }
+  toast('Hoja actualizada ✓');
+  if(ofEnDetalle === p.id) abrirDetalle(p.id);
+}
+async function procesarRegenHojas(){
+  if(regenEnCurso || !regenHojas.length) return;
+  if(navigator.onLine === false) return;
+  regenEnCurso = true;
+  try{
+    for(const item of [...regenHojas]){
+      if(!regenHojas.includes(item)) continue;
+      item.datos.pickingId = mapaIdsReales[item.datos.pickingId] || item.datos.pickingId;
+      try{
+        const r = await llamarBackend('regenerarHojaEntregada', item.datos, item.opId, 90000);
+        if(r && r.ok !== false){
+          const p = DB.find(x=>x.id===item.datos.pickingId);
+          if(p && r.hojaPickingUrl){ p.hojaPickingUrl = r.hojaPickingUrl; guardarDBLocal(); }
+          item.resultado = r;
+          regenHojas = regenHojas.filter(x=>x!==item);
+        } else {
+          item.intentos++;
+          if(item.intentos >= 4) regenHojas = regenHojas.filter(x=>x!==item);   // no se insiste para siempre
+        }
+      }catch(e){
+        item.intentos++;   // sin cobertura / tardó demasiado: se reintenta más tarde
+        if(item.intentos >= 6) regenHojas = regenHojas.filter(x=>x!==item);
+        break;
+      }
+      guardarRegen();
+    }
+  }finally{
+    guardarRegen();
+    regenEnCurso = false;
+  }
+}
+setInterval(()=>{ try{ procesarRegenHojas(); }catch(e){} }, 90000);
+
 async function procesarColaSync(){
   if(sincronizandoCola) return;
   sincronizandoCola = true;
@@ -13938,6 +14043,7 @@ function detalleHtml(p){
       ${p.observaciones ? `<div class="obs-box">${p.observaciones}</div>` : ''}
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">📋 Ver hoja de picking</button>` : ''}
+      ${p.hojaPickingUrl ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">🔄 Actualizar hoja de picking</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">⚠️ No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${p.estado!=='completado' ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="empezarBipadoParaPickingExistente('${p.id}')">📋➕ Escanear componentes pendientes</button>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
@@ -15566,6 +15672,7 @@ async function iniciar(){
   window.__appListo = true;
   try{ iniciarCatalogo(); }catch(e){}
   try{ cargarPausados(); actualizarBadgePausados(); programarSincPausados(3000); }catch(e){}
+  try{ setTimeout(procesarRegenHojas, 5000); }catch(e){}
   try{ iniciarGestoLote(); }catch(e){}
   comprobarCierreSesionPorTurno();
   actualizarChipUsuario();
