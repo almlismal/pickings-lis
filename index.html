@@ -13417,7 +13417,7 @@ function detalleHtml(p){
     const cierre = [...p.entregas].reverse().find(e=>e.tipo==='completa') || p.entregas[p.entregas.length-1];
     doneBanner = `<div class="done-banner"><span class="dot">✅</span><span class="txt">
       Esta OF ya se entregó de forma completa — no requiere ninguna entrega adicional.<br>
-      <b>${cierre.entregadoPor}</b> se la entregó a <b>${cierre.entregadoA}</b> el ${fechaCorta(cierre.fecha)}.
+      <b>${cierre.entregadoPor}</b> se la entregó a <b>${cierre.entregadoA}</b> el ${fechaCorta(cierre.fecha)}.${(()=>{ const t = parsearItemsEntrega(cierre.nota).notaLimpia; return t ? '<br>💬 '+escapeHtml(t) : ''; })()}
     </span></div>`;
   }
 
@@ -14637,6 +14637,9 @@ function entregarLote(manteniendoEstado){
     <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">📍 Se dejaron en Producción, sin una persona concreta</span></div>
     ${chipsDestinatariosHtml()}
 
+    <label style="margin-top:12px;">Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional, se anota en todas)</span></label>
+    <textarea id="entregaNota" placeholder="Ej. Lo firma Pedro pero lo retira Luis">${escapeHtml(entregaDraft.nota)}</textarea>
+
     <div class="sign-banner">
       <label>
         <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()">
@@ -14661,6 +14664,8 @@ async function confirmarEntregaLote(){
     const por = entregaPorActivo || usuarioActual;
     const campoA = document.getElementById('entregaA');
     const a = campoA ? campoA.value.trim() : '';
+    const campoNotaLote = document.getElementById('entregaNota');
+    const notaLote = campoNotaLote ? limpiarComentarioEntrega(campoNotaLote.value) : '';
     const chk = document.getElementById('confirmFirma');
     if(!por){ toast('Falta quién entrega'); return; }
     if(!a){ toast('Falta a quién se entrega'); return; }
@@ -14671,7 +14676,7 @@ async function confirmarEntregaLote(){
     idsLoteVigentes().forEach(id=>{
       const p = DB.find(x=>x.id===id);
       if(!p) return;
-      p.entregas.push({ tipo:'completa', entregadoPor: por, entregadoA: a, nota:'', fecha: ahora });
+      p.entregas.push({ tipo:'completa', entregadoPor: por, entregadoA: a, nota: notaLote, fecha: ahora });
       p.estado = 'completado';
       hechos.push(p);
     });
@@ -14687,13 +14692,18 @@ async function confirmarEntregaLote(){
     toast(hechos.length + ' entrega' + (hechos.length===1?'':'s') + ' registrada' + (hechos.length===1?'':'s') + ' — recuerda las firmas');
 
     hechos.forEach(p=>{
-      encolarOperacion('entregar', { pickingId: p.id, tipo:'completa', entregadoPor: por, entregadoA: a, nota:'' }, p.id, 'Entregar OF ' + p.of);
+      encolarOperacion('entregar', { pickingId: p.id, tipo:'completa', entregadoPor: por, entregadoA: a, nota: notaLote }, p.id, 'Entregar OF ' + p.of);
     });
   }catch(err){
     toast('Algo falló al confirmar — inténtalo de nuevo');
   }
 }
 
+// Comentario libre de una entrega completa. Los corchetes se cambian por
+// paréntesis para que nunca se confundan con la marca interna [item:estado].
+function limpiarComentarioEntrega(t){
+  return String(t||'').replace(/\[/g,'(').replace(/\]/g,')').trim();
+}
 let entregaItemsEstado = {};
 let entregaPorActivo = null; // null = quien tiene la sesión abierta; si no, nombre ya verificado con su PIN
 let entregaDraft = { a:'', nota:'' };
@@ -14741,7 +14751,8 @@ function entregar(tipo, manteniendoEstado){
     ${bloqueItems}
 
     ${tipo==='parcial' ? `<label>Observaciones</label>
-    <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar">${escapeHtml(entregaDraft.nota)}</textarea>` : ''}
+    <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar">${escapeHtml(entregaDraft.nota)}</textarea>` : `<label>Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional)</span></label>
+    <textarea id="entregaNota" placeholder="Ej. Lo firma Pedro pero lo retira Luis">${escapeHtml(entregaDraft.nota)}</textarea>`}
 
     <div class="sign-banner">
       <label>
@@ -14871,7 +14882,8 @@ async function confirmarEntrega(tipo){
     if(!p){ toast('No se encontró la OF, vuelve a abrirla'); return; }
     const por = entregaPorActivo || usuarioActual;
     const a = document.getElementById('entregaA').value.trim();
-    let nota = tipo==='parcial' ? document.getElementById('entregaNota').value.trim() : '';
+    const campoNotaEl = document.getElementById('entregaNota');
+    let nota = campoNotaEl ? (tipo==='parcial' ? campoNotaEl.value.trim() : limpiarComentarioEntrega(campoNotaEl.value)) : '';
     const firmaConfirmada = document.getElementById('confirmFirma').checked;
 
     if(!por){ toast('Falta quién entrega'); return; }
