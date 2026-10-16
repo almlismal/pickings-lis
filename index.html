@@ -14263,14 +14263,53 @@ function abrirIncidencia(codigoPrellenado){
     <h3>Registrar incidencia</h3>
     <label>Código</label>
     <div class="row2">
-      <div><input type="text" class="mono" id="incidenciaCodigo" placeholder="Ej. SPC-MC-6370" value="${escapeAtributo(codigoPrellenado||'')}"></div>
+      <div><input type="text" class="mono" id="incidenciaCodigo" placeholder="Ej. SPC-MC-6370" value="${escapeAtributo(codigoPrellenado||'')}" oninput="sugerirCodigoIncidencia()" autocomplete="off"></div>
       <div style="flex:0 0 auto;"><button class="btn btn-outline" style="margin-top:0; width:auto; padding:12px 14px;" onclick="biparCodigoIncidencia()">📷</button></div>
     </div>
+    <div id="incidenciaDescripcion" class="hint" style="margin:4px 0 0; font-size:13px;"></div>
+    <div id="incidenciaSugerencias"></div>
     <label>Motivo</label>
     <div id="motivoIncidenciaChips"></div>
     <button class="btn btn-primary" onclick="confirmarIncidencia()">Guardar incidencia</button>
   `);
   renderMotivosIncidencia();
+  mostrarDescripcionIncidencia();
+}
+// Descripción del código que hay escrito, si está en el catálogo
+function mostrarDescripcionIncidencia(){
+  const campo = document.getElementById('incidenciaCodigo');
+  const el = document.getElementById('incidenciaDescripcion');
+  if(!campo || !el) return;
+  const v = campo.value.trim();
+  el.innerHTML = (v && catalogoListo() && buscarEnCatalogo(v)) ? descripcionCatalogoHtml(v) : '';
+}
+let sugerenciasIncidenciaActuales = [];
+function sugerirCodigoIncidencia(){
+  const campo = document.getElementById('incidenciaCodigo');
+  const cont = document.getElementById('incidenciaSugerencias');
+  if(!campo || !cont) return;
+  mostrarDescripcionIncidencia();
+  const texto = campo.value.trim();
+  const r = sugerenciasCatalogo(texto, 30);
+  sugerenciasIncidenciaActuales = r.lista;
+  // si lo escrito ya es un código completo del catálogo, no hace falta seguir sugiriendo
+  if(r.lista.length===1 && r.lista[0].c.toUpperCase()===texto.toUpperCase()){ cont.innerHTML = ''; return; }
+  if(!r.lista.length){ cont.innerHTML = ''; return; }
+  cont.innerHTML = `<div class="hint" style="margin:8px 0 2px;">${r.total===1 ? '1 coincidencia' : (r.total>r.lista.length ? r.total.toLocaleString('es-ES')+' coincidencias — sigue escribiendo para afinar' : r.total+' coincidencias')}</div>
+    <div style="max-height:26vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">${r.lista.map((e,i)=>
+    `<div class="ticket" style="cursor:pointer; padding:8px 10px; margin-top:6px;" onclick="elegirSugerenciaIncidencia(${i})">
+      <div class="ticket-of" style="font-size:14px;">${escapeHtml(e.c)}</div>
+      <div class="ticket-proj" style="font-size:12px;">${e.d ? escapeHtml(e.d) : '<i>sin descripción</i>'}</div>
+    </div>`).join('')}</div>`;
+}
+function elegirSugerenciaIncidencia(i){
+  const e = sugerenciasIncidenciaActuales[i];
+  const campo = document.getElementById('incidenciaCodigo');
+  const cont = document.getElementById('incidenciaSugerencias');
+  if(!e || !campo) return;
+  campo.value = e.c;
+  if(cont) cont.innerHTML = '';
+  mostrarDescripcionIncidencia();
 }
 function biparCodigoIncidencia(){
   const campo = document.getElementById('incidenciaCodigo');
@@ -14317,8 +14356,10 @@ function confirmarAnadirMotivoIncidencia(){
   abrirIncidencia(rpIncidenciaCodigoPendiente);
 }
 function confirmarIncidencia(){
-  const codigo = document.getElementById('incidenciaCodigo').value.trim();
+  let codigo = document.getElementById('incidenciaCodigo').value.trim();
   if(!codigo){ toast('Escribe o escanea el código'); return; }
+  const oficialInc = buscarEnCatalogo(codigo);
+  if(oficialInc) codigo = oficialInc.c;
   if(!motivoIncidenciaSeleccionado){ toast('Elige un motivo'); return; }
   sesionPicking.incidencias.push({ codigo, motivo: motivoIncidenciaSeleccionado });
   cerrarSheet();
@@ -14352,7 +14393,7 @@ function resumenPickingHtml(){
       </div>
     `).join('') || '<div class="empty">No se escaneó ningún componente</div>'}</div>
     ${s.incidencias.length ? `<label>Incidencias (${s.incidencias.length})</label>
-    <div class="obs-box">${s.incidencias.map(i=>`${escapeHtml(i.codigo)} — ${escapeHtml(i.motivo)}`).join('<br>')}</div>` : ''}
+    <div class="obs-box">${s.incidencias.map(i=>{ const d = descripcionCatalogoTexto(i.codigo); return `${escapeHtml(i.codigo)}${d ? ' ('+escapeHtml(d)+')' : ''} — ${escapeHtml(i.motivo)}`; }).join('<br>')}</div>` : ''}
     <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
     ${s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ Añadir a la OF ${escapeHtml(s.of)}</button>`
@@ -14435,7 +14476,7 @@ const INICIALES_LIS = [
   { claves: ['maria'], iniciales: 'MHJ' },
   { claves: ['delia'], iniciales: 'Delia' },
   { claves: ['juanpi', 'juan pablo', 'juan'], iniciales: 'JPB' },
-  { claves: ['adrian'], iniciales: 'ASE' }
+  { claves: ['adrian'], iniciales: 'ASD' }
 ];
 function inicialesLis(nombre){
   const n = normalizarNombre(String(nombre||'')).replace(/\s+/g,' ');
@@ -14447,7 +14488,7 @@ function generarHojaPickingHtml(datos){
   const filas = datos.componentes.map(c=>`
     <tr><td>${escapeHtml(c.codigo)}</td><td>${escapeHtml(descripcionCatalogoTexto(c.codigo))}</td><td>${escapeHtml(c.lote||'N/A')}</td><td>${c.cantidad}</td></tr>
   `).join('') || `<tr><td colspan="4" style="text-align:center; color:#888; font-weight:400;">Sin componentes bipados</td></tr>`;
-  const faltante = datos.incidencias.map(i=>`${escapeHtml(i.codigo)} (${escapeHtml(i.motivo)})`).join(' · ');
+  const faltante = datos.incidencias.map(i=>{ const d = descripcionCatalogoTexto(i.codigo); return `${escapeHtml(i.codigo)}${d ? ' — '+escapeHtml(d) : ''} (${escapeHtml(i.motivo)})`; }).join(' · ');
   const hoy = fechaCorta(new Date().toISOString());
   return `
     <div class="print-doc">
