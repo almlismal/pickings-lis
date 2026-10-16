@@ -414,8 +414,8 @@
         <span>Escanea cualquier etiqueta de picking y te digo qué puedes hacer: registrar, consultar, entregar…</span>
       </button>
       <button class="home-btn" onclick="nuevoPicking()">
-        <b>📦 Registrar picking</b>
-        <span>Registra un picking finalizado: OF, cajas y componentes fuera de caja</span>
+        <b>📦 Registrar OF</b>
+        <span>Registra una OF ya terminada: cajas y componentes fuera de caja</span>
       </button>
       <button class="home-btn alt" onclick="ir('buscar')">
         <b>🔍 Buscar / Entregar</b>
@@ -432,7 +432,7 @@
   <section class="screen" id="screen-registro">
     <div class="screen-title">
       <button class="back" onclick="ir('home')">←</button>
-      <h2 id="formTitle">Registrar picking</h2>
+      <h2 id="formTitle">Registrar OF</h2>
     </div>
 
     <label>OF</label>
@@ -463,7 +463,7 @@
     <label>Observaciones</label>
     <textarea id="f_obs" placeholder="Detalles relevantes para quien realice la entrega"></textarea>
 
-    <button class="btn btn-primary" onclick="guardarPicking()" id="btnGuardarPicking">Registrar picking</button>
+    <button class="btn btn-primary" onclick="guardarPicking()" id="btnGuardarPicking">Registrar OF</button>
   </section>
 
   <!-- ============ BUSCAR ============ -->
@@ -11229,8 +11229,8 @@ function reanudarBorradorBip(){
     editingId = null;
     ir('registro');
     resetFormRegistro();
-    document.getElementById('formTitle').textContent = 'Registrar picking';
-    document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+    document.getElementById('formTitle').textContent = 'Registrar OF';
+    document.getElementById('btnGuardarPicking').textContent = 'Registrar OF';
     document.getElementById('f_of').value = b.of || '';
     document.getElementById('f_proyecto').value = b.proyecto || '';
     document.getElementById('f_subproyecto').value = b.subproyecto || '';
@@ -11439,7 +11439,7 @@ async function reintentarPicking(id){
    había forma de saber qué era. Esto muestra cada operación pendiente,
    con su error si lo tiene, y deja reintentarla o descartarla suelta. ---- */
 const ETIQUETAS_ACCION = {
-  crearPicking: 'Registrar picking', editarPicking: 'Editar picking',
+  crearPicking: 'Registrar OF', editarPicking: 'Editar picking',
   entregar: 'Entrega', deshacerEntrega: 'Deshacer entrega',
   borrarPicking: 'Borrar picking', ampliarPicking: 'Ampliar picking'
 };
@@ -11986,8 +11986,8 @@ function nuevoPicking(){
   editingId = null;
   ir('registro');
   resetFormRegistro();
-  document.getElementById('formTitle').textContent = 'Registrar picking';
-  document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+  document.getElementById('formTitle').textContent = 'Registrar OF';
+  document.getElementById('btnGuardarPicking').textContent = 'Registrar OF';
   // Se sincroniza por detrás mientras se rellena el formulario, así el
   // aviso de OF duplicada usa datos frescos sin haber hecho esperar al abrir.
   sincronizar().catch(()=>{});
@@ -12002,8 +12002,8 @@ function continuarMismoProyecto(proyecto){
   ir('registro');
   resetFormRegistro(true);
   document.getElementById('f_proyecto').value = proyecto || '';
-  document.getElementById('formTitle').textContent = 'Registrar picking';
-  document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+  document.getElementById('formTitle').textContent = 'Registrar OF';
+  document.getElementById('btnGuardarPicking').textContent = 'Registrar OF';
   const campoOf = document.getElementById('f_of');
   if(campoOf) campoOf.focus();
   sincronizar().catch(()=>{});
@@ -13809,7 +13809,7 @@ function registrarDesdeEscaner(of){
 }
 
 /* ================= REALIZAR PICKING (bipado en vivo) =================
-   Pantalla nueva y APARTE de "Registrar picking": aquí se van bipando los
+   Pantalla nueva y APARTE de "Registrar OF": aquí se van bipando los
    componentes mientras se hace el picking físico. Usa su propia cámara
    (rpStream/rpRAF/rpEscaneando), separada por completo de la de "Comprobar
    OF", para no interferir nunca con ella. Al terminar, genera la hoja de
@@ -13841,7 +13841,7 @@ function empezarBipado(){
 // Bipar más componentes para un picking que YA está registrado (se
 // encontró algo que faltaba, o hay que ampliar días después). Reutiliza
 // toda la misma pantalla y cámara de bipado — lo único que cambia es que,
-// al terminar, en vez de ir a "Registrar picking" se pregunta cómo
+// al terminar, en vez de ir a "Registrar OF" se pregunta cómo
 // actualizar la hoja de picking del que ya existe.
 function empezarBipadoParaPickingExistente(id){
   const p = DB.find(x=>x.id===id);
@@ -14171,7 +14171,7 @@ function resumenPickingHtml(){
     <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
     ${s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ Añadir a la OF ${escapeHtml(s.of)}</button>`
-      : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar picking y generar hoja</button>`}
+      : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar OF y generar hoja</button>`}
   `;
 }
 function registrarPickingRealizado(){
@@ -14371,8 +14371,8 @@ function continuarARegistroDesdeDoc(){
   guardarBorradorBip('registro', { of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto });
   ir('registro');
   resetFormRegistro();
-  document.getElementById('formTitle').textContent = 'Registrar picking';
-  document.getElementById('btnGuardarPicking').textContent = 'Registrar picking';
+  document.getElementById('formTitle').textContent = 'Registrar OF';
+  document.getElementById('btnGuardarPicking').textContent = 'Registrar OF';
   document.getElementById('f_of').value = datos.of;
   document.getElementById('f_proyecto').value = datos.proyecto || '';
   document.getElementById('f_subproyecto').value = datos.subproyecto || '';
