@@ -44,6 +44,21 @@
   .pt-s{ background:transparent; border:1.5px solid #8A94A1; width:9px; height:9px; }
   .okmark{ width:46px; height:46px; line-height:46px; margin:0 auto; border-radius:50%; background:var(--ok); color:#fff; font-size:24px; font-weight:700; text-align:center; }
 
+  /* ---- OF duplicadas ---- */
+  .badge-rojo{ display:inline-block; min-width:20px; height:20px; line-height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#C62828; color:#fff; font-size:12px; font-weight:800; text-align:center; vertical-align:middle; }
+  .dup-grupo{ background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:12px 14px; margin-bottom:12px; }
+  .dup-grupo.rojo{ border:2px solid #C62828; background:#FFF5F4; }
+  .dup-grupo .dup-cab{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .dup-grupo .dup-of{ font-family:var(--mono); font-weight:700; font-size:16px; }
+  .dup-aviso{ margin-top:8px; padding:6px 8px; background:#C62828; color:#fff; font-size:12px; font-weight:800; letter-spacing:0.03em; border-radius:3px; }
+  .dup-reg{ border-top:1px solid var(--line); margin-top:10px; padding-top:10px; font-size:13px; }
+  .dup-reg .dup-tag{ display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:3px; border:1px solid var(--line); color:var(--ink-soft); margin-right:6px; }
+  .dup-reg .dup-tag.motivo{ border-color:var(--ok); color:var(--ok); }
+  .dup-reg .dup-tag.error{ background:#C62828; border-color:#C62828; color:#fff; }
+  .dup-reg .dup-com{ margin-top:4px; color:var(--ink); }
+  .dup-reg .dup-btns{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .dup-reg .dup-btns button{ flex:1 1 auto; margin:0; padding:8px 10px; font-size:13px; width:auto; }
+
   /* ---- cabecera ---- */
   header{
     background: var(--ink);
@@ -405,7 +420,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v16oct-1250</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v16oct-2150</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -493,6 +508,7 @@
     <button class="btn btn-outline" onclick="ir('ubicaciones')" style="margin-top:10px;">Ver por ubicación</button>
     <button class="btn btn-outline" onclick="ir('entregados')" style="margin-top:10px;">Ver entregados</button>
     <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">Ver resumen</button>
+    <button class="btn btn-outline" id="btnVerDuplicadas" onclick="ir('duplicadas')" style="margin-top:10px; display:none;">OF duplicadas<span id="badgeDuplicadas" class="badge-rojo" style="display:none;"></span></button>
   </section>
 
   <!-- ============ PENDIENTES ============ -->
@@ -544,6 +560,16 @@
     </div>
     <button class="btn btn-outline" onclick="actualizarResumen()" id="btnActualizarResumen">Actualizar</button>
     <div id="resumenContenido" style="margin-top:16px;"></div>
+  </section>
+
+  <!-- ============ OF DUPLICADAS (solo administradores) ============ -->
+  <section class="screen" id="screen-duplicadas">
+    <div class="screen-title">
+      <button class="back" onclick="ir('buscar')">←</button>
+      <h2>OF duplicadas</h2>
+    </div>
+    <button class="btn btn-outline" onclick="actualizarDuplicadas()" id="btnActualizarDuplicadas">Actualizar</button>
+    <div id="duplicadasContenido" style="margin-top:16px;"></div>
   </section>
 
   <!-- ============ COMPROBAR OF (QR) ============ -->
@@ -10925,10 +10951,15 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
   const id = (row['ID'] && String(row['ID']).trim())
     ? row['ID']
     : 'legacy_' + String(row['OF']||'').trim() + '_' + String(row['Fecha']||'').trim();
-  const entregasDe = entregas.filter(e=>e['ID del picking']===id).map(e=>({
+  const entregasDe = entregas.filter(e=>String(e['ID del picking'])===String(id)).map(e=>({
     tipo: e['Tipo'], entregadoPor: e['Entregado por'], entregadoA: e['Entregado a'],
     nota: e['Nota'] || '', fecha: e['Fecha']
   }));
+  // Si la OF figura como entregada pero su apunte en "Entregas" no aparece, se
+  // reconstruye con los datos de la propia fila para que el detalle abra siempre.
+  if(!entregasDe.length && String(row['Estado']||'').trim()==='completado' && (row['Entregado a'] || row['Entregado por'])){
+    entregasDe.push({ tipo:'completa', entregadoPor: row['Entregado por']||'', entregadoA: row['Entregado a']||'', nota:'', fecha: row['Fecha de entrega'] || row['Fecha'] });
+  }
   let ediciones, deshechas, ampliaciones;
   if(historial){
     const historialDe = historial.filter(h=>h['ID del picking']===id);
@@ -10961,7 +10992,8 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
     observaciones: row['Observaciones'] || '',
     registradoPor: row['Registrado por'] || '',
     fecha: row['Fecha'],
-    estado: row['Estado'] || 'pendiente',
+    // si la columna Estado está vacía pero consta una entrega completa, está entregada
+    estado: row['Estado'] || (entregasDe.some(e=>e.tipo==='completa') ? 'completado' : 'pendiente'),
     entregas: entregasDe,
     ediciones,
     deshechas,
@@ -12249,6 +12281,7 @@ function ir(pantalla, esVolver){
   if(pantalla==='ubicaciones') entrarAUbicaciones();
   if(pantalla==='entregados') entrarAEntregados();
   if(pantalla==='resumen') entrarAResumen();
+  if(pantalla==='duplicadas') entrarADuplicadas();
   if(pantalla==='escanear') iniciarEscaner();
   if(pantalla==='realizar-bip') iniciarBipCamara();
 }
@@ -12259,6 +12292,9 @@ function actualizarVisibilidadAdmin(){
   // eso no cambia). Solo "Resumen" sigue siendo de administradores.
   const btnResumen = document.getElementById('btnVerResumen');
   if(btnResumen) btnResumen.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
+  const btnDup = document.getElementById('btnVerDuplicadas');
+  if(btnDup) btnDup.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
+  try{ actualizarBadgeDuplicadas(); }catch(e){}
 }
 
 function toast(msg){
@@ -12829,6 +12865,174 @@ function exportarInformeEntregados(){
   document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
   toast('Informe exportado (' + entregadosCache.length + ' entregas)');
+}
+
+/* ---------- OF duplicadas (solo administradores) ----------
+   Una OF aparece más de una vez entre las pendientes y las entregadas.
+   - Con comentario "[OF repetida — …]": la repetición fue a propósito
+     ("Con motivo", o "Registrada tras entrega" si la anterior ya estaba entregada).
+   - Sin comentario: error -> recuadro rojo, "ATENCIÓN", y suma en la burbuja.
+   Solo se lee lo que ya hay; no cambia nada de lo registrado. */
+const LS_DUP_REVISADOS = 'pickings_lis_dup_revisados_v1';
+const LS_DUP_REV_PEND = 'pickings_lis_dup_revisados_pend_v1';
+function leerListaLS(k){ try{ const a = JSON.parse(localStorage.getItem(k)); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+function escribirListaLS(k, a){ try{ localStorage.setItem(k, JSON.stringify(a)); }catch(e){} }
+let dupRevisados = new Set(leerListaLS(LS_DUP_REVISADOS));
+function msFechaDup(v){ const t = new Date(v).getTime(); return isNaN(t) ? 0 : t; }
+function motivoDeRepetida(obs){
+  const m = String(obs||'').match(/\[OF repetida\s*[—–-]\s*([^\]]*)\]/);
+  return m ? (m[1] || '').trim() : null;
+}
+function registrosParaDuplicadas(){
+  const porId = new Map();
+  (entregadosCache||[]).forEach(r=>{
+    const id = String(r['ID']||'');
+    if(!id) return;
+    porId.set(id, {
+      id, of: String(r['OF']||'').trim(), proyecto: String(r['Proyecto']||''), quien: String(r['Registrado por']||''),
+      fecha: r['Fecha'], obs: String(r['Observaciones']||''), ubic: parseUbicaciones(r['Ubicaciones']),
+      entregado: true, entregadoA: String(r['Entregado a']||''), fechaEntrega: r['Fecha de entrega'],
+      hojaUrl: String(r['Hoja de picking URL']||'')
+    });
+  });
+  (DB||[]).forEach(p=>{
+    const id = String(p.id||'');
+    if(!id || porId.has(id)) return;
+    const comp = (p.entregas||[]).filter(e=>e.tipo==='completa').slice(-1)[0];
+    porId.set(id, {
+      id, of: String(p.of||'').trim(), proyecto: String(p.proyecto||''), quien: String(p.registradoPor||''),
+      fecha: p.fecha, obs: String(p.observaciones||''), ubic: p.ubicaciones || {},
+      entregado: p.estado==='completado', entregadoA: comp ? comp.entregadoA : '', fechaEntrega: comp ? comp.fecha : null,
+      hojaUrl: String(p.hojaPickingUrl||'')
+    });
+  });
+  return [...porId.values()];
+}
+function calcularDuplicadas(){
+  const grupos = new Map();
+  registrosParaDuplicadas().forEach(r=>{
+    const k = r.of.toLowerCase();
+    if(!k) return;
+    if(!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(r);
+  });
+  const lista = [];
+  grupos.forEach(regs=>{
+    if(regs.length < 2) return;
+    regs.sort((a,b)=> msFechaDup(a.fecha) - msFechaDup(b.fecha));
+    let rojo = 0;
+    regs.forEach((r,i)=>{
+      if(i===0){ r.etiqueta = 'Original'; r.tipo = 'original'; return; }
+      const motivo = motivoDeRepetida(r.obs);
+      if(motivo === null){
+        r.revisado = dupRevisados.has(r.id);
+        r.tipo = r.revisado ? 'revisado' : 'error';
+        r.etiqueta = r.revisado ? 'Revisado' : 'Sin comentario';
+        if(!r.revisado) rojo++;
+        return;
+      }
+      r.motivo = motivo;
+      const antesEntregado = regs.slice(0,i).some(x=> x.entregado && (!x.fechaEntrega || msFechaDup(x.fechaEntrega) <= msFechaDup(r.fecha)));
+      r.tipo = antesEntregado ? 'tras' : 'motivo';
+      r.etiqueta = antesEntregado ? 'Registrada tras entrega' : 'Con motivo';
+    });
+    lista.push({ of: regs[0].of, proyecto: regs[regs.length-1].proyecto, regs, rojo, ultima: msFechaDup(regs[regs.length-1].fecha) });
+  });
+  lista.sort((a,b)=> (b.rojo>0) - (a.rojo>0) || b.ultima - a.ultima);
+  return lista;
+}
+function actualizarBadgeDuplicadas(){
+  const b = document.getElementById('badgeDuplicadas');
+  if(!b) return;
+  const n = esAdminSheet(usuarioActual) ? calcularDuplicadas().reduce((t,g)=>t+g.rojo,0) : 0;
+  b.textContent = n; b.style.display = n ? '' : 'none';
+}
+function ubicTextoDup(u){
+  const e = Object.entries(u||{});
+  return e.length ? e.map(([k,v])=>`${k==='Cajas' ? 'Cajas' : k}: ${v}`).join(' · ') : 'sin ubicar';
+}
+function renderDuplicadas(){
+  const cont = document.getElementById('duplicadasContenido');
+  if(!cont) return;
+  if(!esAdminSheet(usuarioActual)){ cont.innerHTML = '<div class="empty">Solo para administradores.</div>'; return; }
+  const lista = calcularDuplicadas();
+  actualizarBadgeDuplicadas();
+  if(!lista.length){ cont.innerHTML = '<div class="empty">No hay OF duplicadas.</div>'; return; }
+  const rojas = lista.reduce((t,g)=>t+g.rojo,0);
+  cont.innerHTML = `<div class="hint" style="margin-bottom:10px;">${lista.length} OF repetida${lista.length===1?'':'s'}${rojas ? ' — <b style="color:#C62828;">'+rojas+' sin comentario</b>' : ''}</div>` +
+    lista.map(g=>`
+      <div class="dup-grupo ${g.rojo ? 'rojo' : ''}">
+        <div class="dup-cab"><span class="dup-of">OF ${escapeHtml(g.of)}</span><span class="ticket-date">${escapeHtml(g.proyecto)}</span></div>
+        ${g.rojo ? '<div class="dup-aviso">ATENCIÓN: duplicada sin comentario</div>' : ''}
+        ${g.regs.map(r=>`
+          <div class="dup-reg">
+            <span class="dup-tag ${r.tipo==='error' ? 'error' : (r.tipo==='motivo'||r.tipo==='tras') ? 'motivo' : ''}">${escapeHtml(r.etiqueta)}</span>
+            <b>${escapeHtml(r.quien||'—')}</b> · ${fechaCorta(r.fecha)} · ${r.entregado ? 'Entregado'+(r.entregadoA ? ' a '+escapeHtml(r.entregadoA) : '') : 'Pendiente'}
+            <div style="color:var(--ink-soft);">${escapeHtml(ubicTextoDup(r.ubic))}</div>
+            ${r.motivo ? `<div class="dup-com">${escapeHtml(r.motivo)}</div>` : ''}
+            <div class="dup-btns">
+              <button class="btn btn-outline" onclick="abrirDesdeDuplicadas('${escapeAtributo(r.id)}')">Abrir</button>
+              ${r.hojaUrl ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${escapeAtributo(r.id)}')">Ver hoja</button>` : ''}
+              ${r.tipo==='error' ? `<button class="btn btn-outline" onclick="marcarDuplicadaRevisada('${escapeAtributo(r.id)}')">Revisado, está bien</button>` : ''}
+              ${r.tipo!=='original' ? `<button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="eliminarDesdeDuplicadas('${escapeAtributo(r.id)}')">Eliminar</button>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>`).join('');
+}
+function abrirDesdeDuplicadas(id){
+  if(DB.find(x=>x.id===id)) abrirDetalle(id); else verPickingEntregado(id);
+}
+async function eliminarDesdeDuplicadas(id){
+  const p = await asegurarPickingEnDB(id);
+  if(!p){ toast('No se pudo cargar esa OF — comprueba la conexión'); return; }
+  abrirBorrarPicking(id);
+}
+async function enviarDupRevisadosPendientes(){
+  const pend = leerListaLS(LS_DUP_REV_PEND);
+  if(!pend.length || navigator.onLine === false) return;
+  const quedan = [];
+  for(const it of pend){
+    try{
+      const r = await llamarBackend('marcarDuplicadoRevisado', it, 'dup_' + it.id);
+      if(r && r.ok === false) quedan.push(it);
+    }catch(e){ quedan.push(it); }
+  }
+  escribirListaLS(LS_DUP_REV_PEND, quedan);
+}
+async function marcarDuplicadaRevisada(id){
+  const reg = registrosParaDuplicadas().find(r=>r.id===id);
+  dupRevisados.add(id);
+  escribirListaLS(LS_DUP_REVISADOS, [...dupRevisados]);
+  const pend = leerListaLS(LS_DUP_REV_PEND); pend.push({ id, of: reg ? reg.of : '', por: usuarioActual });
+  escribirListaLS(LS_DUP_REV_PEND, pend);
+  renderDuplicadas();
+  toast('Marcada como revisada');
+  enviarDupRevisadosPendientes();
+}
+async function cargarDupRevisadosServidor(){
+  try{
+    const res = await fetchConLimite(GAS_URL + '?duplicadosRevisados=1', {}, 20000);
+    const j = await res.json();
+    if(j && j.ok && Array.isArray(j.ids)){
+      j.ids.forEach(i=>dupRevisados.add(String(i)));
+      escribirListaLS(LS_DUP_REVISADOS, [...dupRevisados]);
+    }
+  }catch(e){}
+}
+async function refrescarDuplicadas(){
+  await enviarDupRevisadosPendientes();
+  await Promise.allSettled([cargarLigeroYActualizarDB(), cargarEntregadosYActualizar(), cargarDupRevisadosServidor()]);
+}
+function entrarADuplicadas(){
+  renderDuplicadas();
+  refrescarDuplicadas().then(renderDuplicadas).catch(()=>{});
+}
+async function actualizarDuplicadas(){
+  const btn = document.getElementById('btnActualizarDuplicadas');
+  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  try{ await refrescarDuplicadas(); }catch(e){ toast('No se pudo actualizar'); }
+  renderDuplicadas();
+  if(btn){ btn.disabled = false; btn.textContent = 'Actualizar'; }
 }
 
 function entrarAResumen(){
@@ -13968,7 +14172,7 @@ function renderResultadosBuscar(){
 // "Buscar" — y sin recargar ni vaciar nada (ir(x, true) se salta eso).
 let pantallaOrigenDetalle = 'buscar';
 let scrollDetalleOrigen = 0;
-const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones'];
+const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas'];
 function abrirDetalle(id){
   // Solo se recuerda el origen cuando se viene de verdad de una de las 3
   // listas — si se llega aquí desde otro paso intermedio (p.ej. al volver
@@ -14014,7 +14218,7 @@ function detalleHtml(p){
 
   let doneBanner = '';
   if(entregado){
-    const cierre = [...p.entregas].reverse().find(e=>e.tipo==='completa') || p.entregas[p.entregas.length-1];
+    const cierre = [...p.entregas].reverse().find(e=>e.tipo==='completa') || p.entregas[p.entregas.length-1] || { entregadoPor:'—', entregadoA:'—', fecha:'', nota:'' };
     doneBanner = `<div class="done-banner"><span class="dot">✓</span><span class="txt">
       Esta OF ya se entregó de forma completa — no requiere ninguna entrega adicional.<br>
       <b>${cierre.entregadoPor}</b> se la entregó a <b>${cierre.entregadoA}</b> el ${fechaCorta(cierre.fecha)}.${(()=>{ const t = parsearItemsEntrega(cierre.nota).notaLimpia; return t ? '<br>'+escapeHtml(t) : ''; })()}
@@ -14076,7 +14280,6 @@ function detalleHtml(p){
   const acciones = p.estado==='completado' ? '' : `
     <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
     <button class="btn btn-outline" onclick="entregar('parcial')">Entrega parcial</button>
-    <button class="btn btn-outline" onclick="abrirEntregarProduccion('${p.id}')" style="margin-top:8px;">Entregar a producción</button>
     <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">Añadir algo más a este picking</button>
   `;
 
@@ -14104,7 +14307,6 @@ function detalleHtml(p){
       ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : ''}
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
-      ${p.estado!=='completado' ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="empezarBipadoParaPickingExistente('${p.id}')">Escanear componentes pendientes</button>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
       ${gestionBtns}
     </div>
@@ -15315,7 +15517,6 @@ function entregarLote(manteniendoEstado){
 
     <label>¿A quién de DHV se entregan?</label>
     <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="alEscribirEntregaA()">
-    <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">Se dejaron en Producción, sin una persona concreta</span></div>
     ${chipsDestinatariosHtml()}
 
     <label style="margin-top:12px;">Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional, se anota en todas)</span></label>
@@ -15426,7 +15627,6 @@ function entregar(tipo, manteniendoEstado){
 
     <label>¿A quién de DHV se entrega?</label>
     <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="alEscribirEntregaA()">
-    <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">Se dejó en Producción, sin una persona concreta</span></div>
     ${chipsDestinatariosHtml()}
 
     ${bloqueItems}
@@ -15752,6 +15952,7 @@ async function iniciar(){
   try{ iniciarCatalogo(); }catch(e){}
   try{ cargarPausados(); actualizarBadgePausados(); programarSincPausados(3000); }catch(e){}
   try{ setTimeout(procesarRegenHojas, 5000); }catch(e){}
+  try{ setTimeout(()=>{ if(esAdminSheet(usuarioActual)){ Promise.allSettled([cargarEntregadosYActualizar(), cargarDupRevisadosServidor()]).then(()=>{ try{ actualizarBadgeDuplicadas(); }catch(e){} }); } }, 8000); }catch(e){}
   try{ iniciarGestoLote(); }catch(e){}
   comprobarCierreSesionPorTurno();
   actualizarChipUsuario();
