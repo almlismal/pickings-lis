@@ -14241,6 +14241,23 @@ function semanaISO(d){
   const numero = 1 + Math.round(((date - semana1) / 86400000 - 3 + (semana1.getDay()+6)%7) / 7);
   return `Semana ${numero} · ${date.getFullYear()}`;
 }
+// Iniciales que se escriben solas en "FIRMA Y NOMBRE LIS" de la hoja.
+// Se busca por el nombre con el que se identifica cada persona (sin
+// importar mayúsculas ni tildes). Si el nombre no está aquí, la casilla
+// queda en blanco para firmar a mano, como siempre.
+const INICIALES_LIS = [
+  { claves: ['maria jose', 'maria jose '], iniciales: 'MJMA' },
+  { claves: ['maria'], iniciales: 'MHJ' },
+  { claves: ['delia'], iniciales: 'Delia' },
+  { claves: ['juanpi', 'juan pablo', 'juan'], iniciales: 'JPB' },
+  { claves: ['adrian'], iniciales: 'ASE' }
+];
+function inicialesLis(nombre){
+  const n = normalizarNombre(String(nombre||'')).replace(/\s+/g,' ');
+  if(!n) return '';
+  const r = INICIALES_LIS.find(x=>x.claves.some(c=>c.trim()===n));
+  return r ? r.iniciales : '';
+}
 function generarHojaPickingHtml(datos){
   const filas = datos.componentes.map(c=>`
     <tr><td>${escapeHtml(c.codigo)}</td><td>${escapeHtml(c.lote||'N/A')}</td><td>${c.cantidad}</td></tr>
@@ -14268,7 +14285,7 @@ function generarHojaPickingHtml(datos){
       <div class="print-caja"><b style="display:inline; margin:0;">CANTIDAD DE LINEAS:</b> ${datos.componentes.length}</div>
       <table class="print-firmas">
         <tr><th>FECHA ENTREGA</th><th>FIRMA Y NOMBRE LIS</th><th>FIRMA Y NOMBRE DHV</th></tr>
-        <tr><td>${hoy}</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+        <tr><td>${hoy}</td><td>${escapeHtml(inicialesLis(datos.hechoPor)) || '&nbsp;'}</td><td>&nbsp;</td></tr>
       </table>
       <p class="hint" style="text-align:center; margin-top:10px;">Hecho por ${escapeHtml(datos.hechoPor)}</p>
     </div>
