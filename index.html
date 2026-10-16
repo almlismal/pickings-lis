@@ -11,15 +11,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Picking LIS-DHV">
 <meta name="color-scheme" content="light">
+<meta name="theme-color" content="#1C2430">
 <style>
   :root{
     color-scheme: light;
-    --bg: #F7F5F1;
+    --bg: #F1F3F5;
     --panel: #FFFFFF;
-    --ink: #1B1B18;
-    --ink-soft: #6B6459;
-    --line: #DCD5C9;
-    --accent: #D9531E;      /* naranja almacén */
+    --ink: #1C2430;
+    --ink-soft: #5B6573;
+    --line: #D3D9E0;
+    --accent: #1F4E79;      /* azul LIS */
     --accent-ink: #FFFFFF;
     --ok: #0F5257;          /* verde-azulado, entregado/completo */
     --warn-bg: #FCEFC7;
@@ -35,21 +36,29 @@
   }
   body{ padding-bottom: 40px; }
 
+
+  /* ---- puntos de estado y marca de confirmación (sin emojis) ---- */
+  .pt{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:baseline; position:relative; top:0; }
+  .pt-p{ background:#D98A1E; }
+  .pt-c{ background:var(--ok); }
+  .pt-s{ background:transparent; border:1.5px solid #8A94A1; width:9px; height:9px; }
+  .okmark{ width:46px; height:46px; line-height:46px; margin:0 auto; border-radius:50%; background:var(--ok); color:#fff; font-size:24px; font-weight:700; text-align:center; }
+
   /* ---- cabecera ---- */
   header{
     background: var(--ink);
-    color: #F7F5F1;
+    color: #F1F3F5;
     padding: 14px 18px;
     display:flex; align-items:center; justify-content:space-between;
     position: sticky; top:0; z-index:20;
   }
   header .brand{ display:flex; flex-direction:column; line-height:1.1; }
   header .brand b{ font-size:17px; letter-spacing:0.2px; }
-  header .brand span{ font-size:11px; color:#B9B2A4; margin-top:2px; }
+  header .brand span{ font-size:11px; color:#A9B3BF; margin-top:2px; }
   header .user{
     font-family: var(--mono); font-size:13px;
     background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.18);
-    padding:6px 10px; border-radius:3px; cursor:pointer; color:#F7F5F1;
+    padding:6px 10px; border-radius:3px; cursor:pointer; color:#F1F3F5;
     max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
 
@@ -60,7 +69,7 @@
   .home-btn{
     background: var(--panel);
     border: 1px solid var(--line);
-    border-left: 6px solid var(--accent);
+    border-left: 4px solid var(--accent);
     border-radius: 4px;
     padding: 20px 18px;
     text-align:left;
@@ -142,7 +151,7 @@
   }
   input[type=text], input[type=number], textarea, select{
     width:100%; padding:12px 12px; font-size:16px;
-    border:1.5px solid #C7BFB0; border-radius:4px;
+    border:1.5px solid #BAC3CD; border-radius:4px;
     background: var(--panel); color:var(--ink); font-family: inherit;
   }
   input[type=text].mono{ font-family: var(--mono); }
@@ -167,7 +176,7 @@
     border-style: dashed; border-color: var(--accent); color: var(--accent);
   }
   #pendingList .ticket, #buscarResultado .ticket{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
-  .ticket.lote-sel{ outline:2px solid var(--accent); background:#FFF6F0; }
+  .ticket.lote-sel{ outline:2px solid var(--accent); background:#EEF3F8; }
   .lote-check{ font-size:18px; margin-right:4px; }
   #loteBarra{ display:none; position:fixed; left:0; right:0; bottom:0; z-index:40; gap:8px; align-items:stretch;
     background:var(--panel); border-top:1px solid var(--line); padding:10px 16px; }
@@ -190,7 +199,7 @@
 
   .ubic-item{
     margin-top: 12px; padding: 14px 14px 12px;
-    background: #FAF8F4; border: 1px solid var(--line); border-radius: 8px;
+    background: #F7F9FA; border: 1px solid var(--line); border-radius: 8px;
   }
   .ubic-nombre{
     font-size: 14px; font-weight: 700; color: var(--ink);
@@ -241,11 +250,11 @@
     font-size:13px; font-weight:600; margin-bottom:14px;
     display:flex; gap:8px; align-items:flex-start;
   }
-  .attn-banner .dot{ font-size:16px; line-height:1; }
+  .attn-banner .dot{ flex:0 0 auto; width:20px; height:20px; line-height:20px; text-align:center; border-radius:50%; background:var(--warn-ink); color:#fff; font-size:13px; font-weight:800; }
 
   .sign-banner{
-    background: #FFF3EC; border:2px solid var(--accent);
-    color: #7A2E0E; border-radius:4px; padding:14px;
+    background: var(--warn-bg); border:2px solid var(--warn-edge);
+    color: var(--warn-ink); border-radius:4px; padding:14px;
     font-size:13px; font-weight:600; margin: 16px 0 4px;
   }
 
@@ -261,7 +270,7 @@
   .dup-banner button{ margin-top:6px; }
   .sign-banner label{
     display:flex; gap:10px; align-items:flex-start; cursor:pointer;
-    margin:0; text-transform:none; font-size:13px; letter-spacing:normal; color:#7A2E0E;
+    margin:0; text-transform:none; font-size:13px; letter-spacing:normal; color:var(--warn-ink);
   }
   .sign-banner input[type=checkbox]{
     width:22px; height:22px; margin-top:1px; flex-shrink:0; accent-color: var(--accent);
@@ -274,12 +283,12 @@
     font-size:13px; font-weight:600; margin-bottom:14px;
     display:flex; gap:8px; align-items:flex-start;
   }
-  .done-banner .dot{ font-size:16px; line-height:1; }
+  .done-banner .dot{ flex:0 0 auto; width:20px; height:20px; line-height:20px; text-align:center; border-radius:50%; background:var(--ok); color:#fff; font-size:13px; font-weight:800; }
   .done-banner span.txt{ color: #103D38; font-weight:500; }
   .done-banner b{ font-weight:700; }
 
   .obs-box{
-    font-size:13px; color:var(--ink); background:#FAF8F4;
+    font-size:13px; color:var(--ink); background:#F7F9FA;
     border:1px solid var(--line); border-radius:4px; padding:10px 12px; margin-top:10px;
   }
 
@@ -302,7 +311,7 @@
     display:inline-block; font-size:11px; font-weight:700;
     padding:3px 9px; border-radius:3px; text-transform:uppercase; letter-spacing:0.04em;
   }
-  .status-tag.pend{ background:#F3EFE6; color:var(--ink-soft); }
+  .status-tag.pend{ background:#E9EDF1; color:var(--ink-soft); }
   .status-tag.done{ background:var(--ok); color:#fff; }
 
   /* ---- modal simple ---- */
@@ -395,7 +404,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v16oct-1215</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v16oct-1240</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -410,19 +419,19 @@
   <section class="screen active" id="screen-home">
     <div class="home-grid">
       <button class="home-btn" onclick="ir('escanear')">
-        <b>📷 Escanear etiqueta</b>
+        <b>Escanear etiqueta</b>
         <span>Escanea cualquier etiqueta de picking y te digo qué puedes hacer: registrar, consultar, entregar…</span>
       </button>
       <button class="home-btn" onclick="nuevoPicking()">
-        <b>📦 Registrar OF</b>
+        <b>Registrar OF</b>
         <span>Registra una OF ya terminada: cajas y componentes fuera de caja</span>
       </button>
       <button class="home-btn alt" onclick="ir('buscar')">
-        <b>🔍 Buscar / Entregar</b>
+        <b>Buscar / Entregar</b>
         <span>Localiza una OF registrada y gestiona su entrega</span>
       </button>
       <button class="home-btn alt" onclick="nuevoRealizarPicking()">
-        <b>🧰 Realizar picking<span id="badgePausados"></span></b>
+        <b>Realizar picking<span id="badgePausados"></span></b>
         <span>Escanea cada componente en tiempo real durante el picking</span>
       </button>
     </div>
@@ -479,10 +488,10 @@
 
     <div id="buscarResultado" style="margin-top:20px;"></div>
 
-    <button class="btn btn-outline" onclick="ir('pendientes')" style="margin-top:28px;">📋 Ver pendientes de entrega</button>
-    <button class="btn btn-outline" onclick="ir('ubicaciones')" style="margin-top:10px;">📍 Ver por ubicación</button>
-    <button class="btn btn-outline" onclick="ir('entregados')" style="margin-top:10px;">📦 Ver entregados</button>
-    <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">📊 Ver resumen</button>
+    <button class="btn btn-outline" onclick="ir('pendientes')" style="margin-top:28px;">Ver pendientes de entrega</button>
+    <button class="btn btn-outline" onclick="ir('ubicaciones')" style="margin-top:10px;">Ver por ubicación</button>
+    <button class="btn btn-outline" onclick="ir('entregados')" style="margin-top:10px;">Ver entregados</button>
+    <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">Ver resumen</button>
   </section>
 
   <!-- ============ PENDIENTES ============ -->
@@ -491,7 +500,7 @@
       <button class="back" onclick="ir('buscar')">←</button>
       <h2>Pendientes de entrega</h2>
     </div>
-    <button class="btn btn-outline" onclick="actualizarPendientes()" id="btnActualizarPendientes">🔄 Actualizar</button>
+    <button class="btn btn-outline" onclick="actualizarPendientes()" id="btnActualizarPendientes">Actualizar</button>
     <button class="btn btn-outline" onclick="toggleLoteModo()" id="btnSeleccionarVarias" style="margin-top:8px;">☑ Seleccionar varias</button>
     <input type="text" class="mono" id="pendientesBuscarInput" placeholder="Filtrar por OF o proyecto" style="margin-top:12px;" oninput="renderPendientes()">
     <div class="pending-strip">
@@ -505,7 +514,7 @@
       <button class="back" onclick="ir('buscar')">←</button>
       <h2>Por ubicación</h2>
     </div>
-    <button class="btn btn-outline" onclick="actualizarUbicaciones()" id="btnActualizarUbicaciones">🔄 Actualizar</button>
+    <button class="btn btn-outline" onclick="actualizarUbicaciones()" id="btnActualizarUbicaciones">Actualizar</button>
     <div id="ubicacionesChips" style="display:flex; flex-wrap:wrap; gap:8px; margin:14px 0;"></div>
     <div class="pending-strip">
       <div id="ubicacionesList"></div>
@@ -518,8 +527,8 @@
       <button class="back" onclick="ir('buscar')">←</button>
       <h2>Entregados</h2>
     </div>
-    <button class="btn btn-outline" onclick="actualizarEntregados()" id="btnActualizarEntregados">🔄 Actualizar</button>
-    <button class="btn btn-outline" onclick="exportarInformeEntregados()" style="margin-top:8px;">⬇️ Exportar informe (Excel/CSV)</button>
+    <button class="btn btn-outline" onclick="actualizarEntregados()" id="btnActualizarEntregados">Actualizar</button>
+    <button class="btn btn-outline" onclick="exportarInformeEntregados()" style="margin-top:8px;">Exportar informe (Excel/CSV)</button>
     <input type="text" class="mono" id="entregadosBuscarInput" placeholder="Filtrar por OF o proyecto" style="margin-top:12px;" oninput="renderEntregados()">
     <div class="pending-strip">
       <div id="entregadosList"></div>
@@ -532,7 +541,7 @@
       <button class="back" onclick="ir('buscar')">←</button>
       <h2>Resumen</h2>
     </div>
-    <button class="btn btn-outline" onclick="actualizarResumen()" id="btnActualizarResumen">🔄 Actualizar</button>
+    <button class="btn btn-outline" onclick="actualizarResumen()" id="btnActualizarResumen">Actualizar</button>
     <div id="resumenContenido" style="margin-top:16px;"></div>
   </section>
 
@@ -597,8 +606,8 @@
     <label>Líneas escaneadas (<span id="rpNumLineas">0</span>)</label>
     <div id="rpListaLineas"></div>
 
-    <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">⚠️ Registrar incidencia (falta / no se encuentra)</button>
-    <button class="btn btn-outline" onclick="pausarPicking()">⏸ Pausar — seguir luego o que siga otra persona</button>
+    <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
+    <button class="btn btn-outline" onclick="pausarPicking()">Pausar — seguir luego o que siga otra persona</button>
     <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar escaneo →</button>
   </section>
 
@@ -616,7 +625,7 @@
       <h2>Hoja de picking</h2>
     </div>
     <div id="rpDocContenido"></div>
-    <button class="btn btn-outline no-print" onclick="imprimirHojaPicking()">🖨️ Guardar / imprimir como PDF</button>
+    <button class="btn btn-outline no-print" onclick="imprimirHojaPicking()">Guardar / imprimir como PDF</button>
     <button class="btn btn-primary no-print" id="rpDocContinuarBtn" onclick="preguntarUbicarPickingRealizado()" style="display:none;">Continuar →</button>
   </section>
 
@@ -676,11 +685,11 @@
     // causa de verdad y los siguientes, consecuencia.
     var t = (ev && ev.message ? ev.message : 'error') + (ev && ev.lineno ? ' (línea ' + ev.lineno + ')' : '');
     if(errores.indexOf(t) === -1 && errores.length < 2) errores.push(t);
-    aviso('⚠️ Fallo en la app: ' + errores.join('  ||  ') + ' — toca para cerrar. Si los botones no responden, haz una captura de este aviso.');
+    aviso('Fallo en la app: ' + errores.join('  ||  ') + ' — toca para cerrar. Si los botones no responden, haz una captura de este aviso.');
   });
   setTimeout(function(){
     if(!window.__appListo){
-      aviso('⚠️ La app no ha llegado a arrancar en este móvil. Navegador: ' + navigator.userAgent +
+      aviso('La app no ha llegado a arrancar en este móvil. Navegador: ' + navigator.userAgent +
         ' — haz una captura de este aviso.');
     }
   }, 5000);
@@ -11290,8 +11299,8 @@ function actualizarInfoCatalogo(){
   const el = document.getElementById('rpCatInfo');
   if(!el) return;
   el.textContent = catalogoListo()
-    ? '📚 Catálogo de artículos: ' + catalogoLista.length.toLocaleString('es-ES') + ' referencias cargadas'
-    : '📚 Catálogo de artículos: todavía no está cargado (se descargará solo cuando haya conexión)';
+    ? 'Catálogo de artículos: ' + catalogoLista.length.toLocaleString('es-ES') + ' referencias cargadas'
+    : 'Catálogo de artículos: todavía no está cargado (se descargará solo cuando haya conexión)';
 }
 async function iniciarCatalogo(){
   try{
@@ -11480,8 +11489,8 @@ function salirDeBipado(){
   mostrarSheet(`
     <h3>¿Qué hacemos con este picking?</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">Lleva ${sesionPicking.componentes.length} línea${sesionPicking.componentes.length===1?'':'s'} escaneada${sesionPicking.componentes.length===1?'':'s'}.</p>
-    <button class="btn btn-primary" onclick="cerrarSheet(); pausarPicking()">⏸ Pausar — lo sigo luego (o lo sigue otra persona)</button>
-    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="cerrarSheet(); cancelarBipado(true)">🗑️ Descartar lo escaneado</button>
+    <button class="btn btn-primary" onclick="cerrarSheet(); pausarPicking()">Pausar — lo sigo luego (o lo sigue otra persona)</button>
+    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="cerrarSheet(); cancelarBipado(true)">Descartar lo escaneado</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Seguir escaneando</button>
   `);
 }
@@ -11544,7 +11553,7 @@ function renderPausados(){
   if(!cont) return;
   const lista = pausadosVisibles();
   if(!lista.length){ cont.innerHTML = ''; return; }
-  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">⏸ Pickings en curso (${lista.length}) — toca uno para seguir</div>
+  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Pickings en curso (${lista.length}) — toca uno para seguir</div>
     ${lista.map(d=>{
       const nLin = d.fase==='bip' ? ((d.sesion&&d.sesion.componentes)||[]).length : ((d.pendiente&&d.pendiente.componentes)||[]).length;
       const nInc = d.fase==='bip' ? ((d.sesion&&d.sesion.incidencias)||[]).length : ((d.pendiente&&d.pendiente.incidencias)||[]).length;
@@ -11554,8 +11563,8 @@ function renderPausados(){
         <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(d.of||'—')}</span><span class="ticket-date">${nLin} línea${nLin===1?'':'s'}${nInc ? ' · '+nInc+' incid.' : ''}</span></div>
         <div class="ticket-proj">${escapeHtml(d.proyecto||'—')}${d.subproyecto ? ' · '+escapeHtml(d.subproyecto) : ''}${d.fase==='registro' ? ' · <b>hoja hecha, falta ubicar la caja</b>' : ''}</div>
         <div class="ticket-proj" style="font-size:12px;">Empezó ${escapeHtml(d.creadoPor||'—')} · última actividad ${escapeHtml(haceTexto(d.actualizado))}${d.actualizadoPor && normalizarNombre(d.actualizadoPor)!==normalizarNombre(d.creadoPor) ? ' ('+escapeHtml(d.actualizadoPor)+')' : ''}</div>
-        ${uso ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;">🟢 ${escapeHtml(d.enUsoPor)} lo está trabajando ahora</div>` : ''}
-        ${viejo ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;">⚠️ Lleva más de 2 días parado</div>` : ''}
+        ${uso ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><i class="pt pt-c"></i> ${escapeHtml(d.enUsoPor)} lo está trabajando ahora</div>` : ''}
+        ${viejo ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;">Lleva más de 2 días parado</div>` : ''}
         <div style="text-align:right;"><span class="link-action" style="color:#B33A3A; font-size:12px;" onclick="event.stopPropagation(); descartarPausado('${escapeAtributo(d.id)}')">Descartar</span></div>
       </div>`;
     }).join('')}
@@ -11658,8 +11667,7 @@ function comprobarBorradorBipAlArrancar(){
   mostrarSheet(`
     <h3>Tienes un picking sin finalizar</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
-      Quedó abierta la OF <b style="color:var(--ink);">${escapeHtml(d.of||'—')}</b>, con ${nLineas} línea${nLineas===1?'':'s'} escaneada${nLineas===1?'':'s'}.
-      ¿Continuar por donde lo dejaste?
+      OF <b style="color:var(--ink);">${escapeHtml(d.of||'—')}</b> abierta, con ${nLineas} línea${nLineas===1?'':'s'} escaneada${nLineas===1?'':'s'}. ¿Continuar?
     </p>
     <button class="btn btn-primary" onclick="retomarPausado('${escapeAtributo(d.id)}')">↺ Continuar donde lo dejé</button>
     <button class="btn btn-outline" onclick="dejarEnPausaDesdeArranque('${escapeAtributo(d.id)}')">Dejarlo en pausa (lo veré en "Realizar picking")</button>
@@ -12013,7 +12021,7 @@ function verColaSyncDetalle(){
       <div class="ticket" style="margin-bottom:8px;">
         <div class="ticket-top"><span class="ticket-of">${escapeHtml(op.etiqueta || tipo)}</span><span class="ticket-date">${fechaCorta(op.creadoEn)}</span></div>
         <div class="ticket-proj">${escapeHtml(tipo)}</div>
-        ${error ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">⚠️ ${escapeHtml(error)}</div>` : `<div class="hint" style="margin-top:6px;">Todavía no se ha intentado enviar, o está esperando conexión.</div>`}
+        ${error ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">${escapeHtml(error)}</div>` : `<div class="hint" style="margin-top:6px;">Todavía no se ha intentado enviar, o está esperando conexión.</div>`}
         <div style="display:flex; gap:8px; margin-top:8px;">
           <button class="btn btn-outline" style="flex:1; padding:8px;" onclick="reintentarOperacionSuelta('${op.id}')">Reintentar</button>
           <button class="btn btn-outline" style="flex:1; padding:8px; color:#B33A3A; border-color:#B33A3A;" onclick="descartarOperacionSuelta('${op.id}')">Descartar</button>
@@ -12023,7 +12031,7 @@ function verColaSyncDetalle(){
   mostrarSheet(`
     <h3>${colaSync.length} cambio${colaSync.length===1?'':'s'} sin sincronizar</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Esto es lo que aún no ha llegado a la hoja de cálculo. Si algo lleva mucho tiempo atascado con el mismo error, dímelo con el mensaje exacto.
+      Cambios que aún no han llegado a la hoja de cálculo. Si uno sigue atascado con el mismo error, avisa con el mensaje exacto.
     </p>
     ${filas}
     <button class="btn btn-primary" onclick="cerrarSheet(); reintentarTodo();">Reintentar todo</button>
@@ -12105,14 +12113,14 @@ function renderPendingBanner(){
   if(n === 0){ banner.style.display = 'none'; return; }
   banner.style.display = 'flex';
   const texto = document.getElementById('pending-sync-text');
-  if(texto) texto.textContent = '⚠️ ' + n + (n===1 ? ' cambio sin sincronizar (toca para ver)' : ' cambios sin sincronizar (toca para ver)');
+  if(texto) texto.textContent = '' + n + (n===1 ? ' cambio sin sincronizar (toca para ver)' : ' cambios sin sincronizar (toca para ver)');
 }
 
 function syncBadgeHtml(p){
   const s = p.sync || 'ok';
   if(s === 'ok') return '';
-  if(s === 'pendiente') return `<span class="chip">⏳ enviando…</span>`;
-  return `<span class="chip err" onclick="event.stopPropagation(); reintentarPicking('${p.id}')" title="${escapeAtributo(p.syncError||'')}">⚠️ Sin sincronizar — reintentar</span>`;
+  if(s === 'pendiente') return `<span class="chip">enviando…</span>`;
+  return `<span class="chip err" onclick="event.stopPropagation(); reintentarPicking('${p.id}')" title="${escapeAtributo(p.syncError||'')}">Sin sincronizar — reintentar</span>`;
 }
 try{ renderPendingBanner(); }catch(e){}
 
@@ -12121,7 +12129,7 @@ function abrirConfigurarPin(){
   mostrarSheet(`
     <h3>Configurar mi PIN</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Es tu PIN personal, para ${usuarioActual}, guardado en la hoja compartida — servirá en cualquier móvil.
+      PIN personal de ${usuarioActual}. Vale en cualquier móvil.
     </p>
     <input type="text" id="nuevoPinUsuario" inputmode="numeric" placeholder="4 números" maxlength="4"
       oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
@@ -12132,7 +12140,7 @@ function abrirConfigurarPinObligatorio(){
   mostrarSheet(`
     <h3>Elige tu PIN</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Antes de seguir, elige un PIN de 4 números para <b>${usuarioActual}</b>. Solo te lo pedirá esta vez — luego sirve en cualquier móvil.
+      Elige un PIN de 4 números para <b>${usuarioActual}</b>. Solo se pide esta vez; vale en cualquier móvil.
     </p>
     <input type="text" id="nuevoPinUsuario" inputmode="numeric" placeholder="4 números" maxlength="4"
       oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
@@ -12157,7 +12165,7 @@ async function guardarPinUsuario(obligatorio){
   // claro de verdad que el PIN se guardó.
   mostrarSheet(`
     <div style="text-align:center; padding:6px 0 4px;">
-      <div style="font-size:40px; line-height:1;">✅</div>
+      <div class="okmark">✓</div>
       <h3 style="margin:10px 0 4px;">PIN guardado</h3>
       <p style="font-size:13px; color:var(--ink-soft); margin:0;">Tu PIN para <b>${usuarioActual}</b> quedó guardado — te servirá en cualquier móvil.</p>
     </div>
@@ -12277,7 +12285,7 @@ function abrirCambioUsuario(forzado){
   html += `<div>`;
   if(!nombres.length){
     html += `<div id="avisoListaUsuarios" class="hint" style="margin:0 0 10px;">Cargando la lista de usuarios… Si tarda, comprueba la conexión.
-      <button class="btn btn-outline" style="margin-top:8px;" onclick="reintentarListaUsuarios()">🔄 Reintentar</button></div>`;
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="reintentarListaUsuarios()">Reintentar</button></div>`;
   }
   nombres.forEach(n=>{
     html += `<span class="name-pill ${n===usuarioActual?'sel':''}" onclick="elegirUsuario('${n.replace(/'/g,"\\'")}')">${n}</span>`;
@@ -12286,7 +12294,7 @@ function abrirCambioUsuario(forzado){
     <label>Añadir nombre nuevo</label>
     <input type="text" id="nuevoNombre" placeholder="Nombre y apellido">
     <button class="btn btn-primary" onclick="anadirNombre()">Guardar y usar</button>
-    ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="abrirConfigurarPin()">🔒 Configurar mi PIN</button>` : ''}
+    ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="abrirConfigurarPin()">Configurar mi PIN</button>` : ''}
     ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="cerrarSesion()" style="color:#B33A3A; border-color:#B33A3A;">Cerrar sesión</button>` : ''}`;
   mostrarSheet(html, !!forzado);
 }
@@ -12595,7 +12603,7 @@ async function actualizarPendientes(){
     toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
     renderPendientes();
   }
-  if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+  if(btn){ btn.disabled = false; btn.textContent = 'Actualizar'; }
 }
 
 let ubicacionSeleccionada = null;
@@ -12616,7 +12624,7 @@ async function actualizarUbicaciones(){
     toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
     renderUbicaciones();
   }
-  if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+  if(btn){ btn.disabled = false; btn.textContent = 'Actualizar'; }
 }
 
 // Recorre solo lo pendiente de entrega y, de cada uno, solo lo que todavía
@@ -12662,7 +12670,7 @@ function renderUbicaciones(){
 
   contChips.innerHTML = claves.map(clave=>{
     const activa = clave === ubicacionSeleccionada;
-    return `<span class="chip ${activa?'on':''}" style="cursor:pointer; padding:7px 12px; font-size:13px;" onclick="seleccionarUbicacion('${clave.replace(/'/g,"\\'")}')">📍 ${escapeHtml(clave)} (${mapa[clave].length})</span>`;
+    return `<span class="chip ${activa?'on':''}" style="cursor:pointer; padding:7px 12px; font-size:13px;" onclick="seleccionarUbicacion('${clave.replace(/'/g,"\\'")}')">${escapeHtml(clave)} (${mapa[clave].length})</span>`;
   }).join('');
 
   if(!ubicacionSeleccionada){
@@ -12682,7 +12690,7 @@ function renderUbicaciones(){
   const leyenda = `<div class="hint" style="margin-bottom:10px;">${entradas.length} pendiente${entradas.length===1?'':'s'} en ${escapeHtml(ubicacionSeleccionada)}</div>`;
   contLista.innerHTML = leyenda + lista.map(({p,items})=>`
     ${ticketHtml(p)}
-    <div class="hint" style="margin:-4px 0 10px 2px;">📍 Pendiente ahí: ${items.map(escapeHtml).join(', ')}</div>
+    <div class="hint" style="margin:-4px 0 10px 2px;">Pendiente ahí: ${items.map(escapeHtml).join(', ')}</div>
   `).join('');
 }
 
@@ -12751,7 +12759,7 @@ async function actualizarEntregados(){
     toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
     renderEntregados();
   }
-  if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+  if(btn){ btn.disabled = false; btn.textContent = 'Actualizar'; }
 }
 
 function renderEntregados(){
@@ -12837,7 +12845,7 @@ async function actualizarResumen(){
     toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
     renderResumen();
   }
-  if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+  if(btn){ btn.disabled = false; btn.textContent = 'Actualizar'; }
 }
 
 // Los números aquí se calculan con TODO lo que hay: los pendientes de "DB"
@@ -12968,13 +12976,13 @@ function renderResumen(){
       <div style="font-size:22px; font-weight:800;">${tiempoMedio!==null ? tiempoMedio.toFixed(1).replace('.',',') + ' días' : '—'}</div>
       <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">Tiempo medio entre registro y entrega</div>
     </div>
-    <button class="btn btn-outline" onclick="descargarResumenPDF()" style="margin-top:10px;">⬇️ Descargar PDF del resumen</button>
+    <button class="btn btn-outline" onclick="descargarResumenPDF()" style="margin-top:10px;">Descargar PDF del resumen</button>
 
-    <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">⏳ Antigüedad de los pendientes — toca un número para ver cuáles son</div>
+    <div class="hint" style="margin:18px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Antigüedad de los pendientes — toca un número para ver cuáles son</div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
       ${franjasAntiguedad.map(f=>tarjetaFranja(f)).join('') || '<div class="hint" style="grid-column:1/-1;">No hay pendientes.</div>'}
     </div>
-    <button class="btn btn-outline" onclick="descargarListadoOfsPDF()" style="margin-top:10px;">📋 Descargar listado de OFs pendientes</button>
+    <button class="btn btn-outline" onclick="descargarListadoOfsPDF()" style="margin-top:10px;">Descargar listado de OFs pendientes</button>
     <div style="margin-top:10px;">
       ${franjaAbierta
         ? (franjaAbierta.pickings.length ? franjaAbierta.pickings.map(p=>ticketHtml(p)).join('') : '<div class="empty">Ninguno en esta franja ahora mismo</div>')
@@ -13297,18 +13305,18 @@ function mostrarConfirmacionRegistro(datos, verificada){
   pendienteRegistro = datos;
   mostrarSheet(`
     <h3>Confirmar registro</h3>
-    <div class="attn-banner" style="margin:0 0 10px;"><span class="dot">⚠️</span><span><b>Atento antes de confirmar</b> — revisa bien que todos los datos estén correctos.</span></div>
+    <div class="attn-banner" style="margin:0 0 10px;"><span class="dot">!</span><span><b>Atento antes de confirmar</b> — revisa bien que todos los datos estén correctos.</span></div>
     <div style="text-align:center; margin:14px 0 10px;">
       <div style="font-size:12px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.06em;">OF</div>
       <div style="font-family:var(--mono); font-size:40px; font-weight:700; letter-spacing:1px; line-height:1.1; margin-top:4px; word-break:break-all;">${datos.of}</div>
-      <div style="margin-top:6px; font-size:12px; font-weight:700; color:${verificada ? '#2E7D32' : '#B33A3A'};">${verificada ? '✅ Comprobada con la cámara' : '⚠️ No se comprobó con la cámara'}</div>
+      <div style="margin-top:6px; font-size:12px; font-weight:700; color:${verificada ? '#2E7D32' : '#B33A3A'};">${verificada ? 'Comprobada con la cámara' : 'No se comprobó con la cámara'}</div>
     </div>
     <p style="font-size:14px; color:var(--ink-soft); text-align:center; margin:0 0 4px;">
       Proyecto <b style="color:var(--ink);">${datos.proyecto || '—'}</b>${datos.subproyecto ? ` · FM <b style="color:var(--ink);">${datos.subproyecto}</b>` : ''}
     </p>
     <button class="btn btn-primary" onclick="confirmarPasoRegistro(false)">✓ Está bien, registrar</button>
-    <button class="btn btn-outline" onclick="confirmarPasoRegistro(true)">➕ Registrar y añadir otra OF de este proyecto</button>
-    ${!verificada ? `<button class="btn btn-outline" onclick="verificarOfConCamara()">📷 Escanear la etiqueta para comprobar la OF</button>` : ''}
+    <button class="btn btn-outline" onclick="confirmarPasoRegistro(true)">Registrar y añadir otra OF de este proyecto</button>
+    ${!verificada ? `<button class="btn btn-outline" onclick="verificarOfConCamara()">Escanear la etiqueta para comprobar la OF</button>` : ''}
     <button class="btn btn-outline" onclick="cerrarSheet()">Revisar datos</button>
   `);
 }
@@ -13381,13 +13389,13 @@ function mostrarResultadoVerificacionOf(ofLeida){
   if(!resultadoEl) return;
   if(coincide){
     resultadoEl.innerHTML = `
-      <div class="obs-box" style="border:1px solid #2E7D32; color:#2E7D32;">✅ Coincide — la etiqueta es de la OF <b>${escapeHtml(ofLeida)}</b>.</div>
+      <div class="obs-box" style="border:1px solid #2E7D32; color:#2E7D32;">Coincide — la etiqueta es de la OF <b>${escapeHtml(ofLeida)}</b>.</div>
       <button class="btn btn-primary" onclick="continuarTrasVerificarOf()" style="margin-top:10px;">Seguir con el registro</button>
     `;
   } else {
     resultadoEl.innerHTML = `
       <div class="obs-box" style="border:1px solid #B33A3A; color:#B33A3A;">
-        ⚠️ No coincide: la OF introducida es <b>${escapeHtml(esperada)}</b>, pero la etiqueta escaneada corresponde a la OF <b>${escapeHtml(ofLeida || '—')}</b>.
+        No coincide: la OF introducida es <b>${escapeHtml(esperada)}</b>, pero la etiqueta escaneada corresponde a la OF <b>${escapeHtml(ofLeida || '—')}</b>.
       </div>
       <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:10px;">Volver a escanear</button>
       <button class="btn btn-outline" onclick="cancelarComprobarOf()" style="margin-top:8px;">Volver y corregir la OF a mano</button>
@@ -13434,12 +13442,12 @@ function resumenOfDuplicada(existente, ofBuscada){
   const ubic = Object.entries(existente.ubicaciones||{}).map(([k,v])=>`${k==='Cajas' ? 'Cajas de picking' : k}: ${v}`).join(' · ');
   return `
     <div class="dup-banner">
-      <div class="dup-title">⚠️ Esta OF ya tiene un picking pendiente</div>
+      <div class="dup-title">Esta OF ya tiene un picking pendiente</div>
       <p><b>${existente.registradoPor}</b> registró la OF <b>${ofBuscada}</b> el ${fechaCorta(existente.fecha)} —
       ${existente.proyecto || '—'}${existente.subproyecto ? ' · '+existente.subproyecto : ''} ·
       ${textoCajas(existente.cajas)}${ubic ? ' · '+ubic : ''}.</p>
     </div>
-    <button class="btn btn-primary" onclick="irAAmpliar('${existente.id}')">➕ Meter en su misma caja</button>
+    <button class="btn btn-primary" onclick="irAAmpliar('${existente.id}')">Meter en su misma caja</button>
     <button class="btn btn-outline" onclick="pedirMotivoRegistroAparte()">Registrar aparte de todas formas</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `;
@@ -13448,7 +13456,7 @@ function resumenOfDuplicada(existente, ofBuscada){
 function resumenOfEntregada(r, ofBuscada){
   return `
     <div class="dup-banner">
-      <div class="dup-title">⚠️ Esta OF ya se entregó</div>
+      <div class="dup-title">Esta OF ya se entregó</div>
       <p>La OF <b>${ofBuscada}</b> se entregó completa el ${fechaCorta(r['Fecha de entrega'])} —
       ${r['Entregado por']} se la dio a ${r['Entregado a']}. Revisa si de verdad hace falta registrarla otra vez.</p>
     </div>
@@ -13513,11 +13521,11 @@ function avisoOfPendienteHtml(p){
   const ubic = Object.entries(p.ubicaciones||{}).map(([k,v])=>`${k==='Cajas' ? 'Cajas de picking' : k}: ${v}`).join(' · ');
   return `
     <div class="dup-banner">
-      <div class="dup-title">⚠️ Esta OF ya tiene un picking pendiente</div>
+      <div class="dup-title">Esta OF ya tiene un picking pendiente</div>
       <p><b>${p.registradoPor}</b> la registró el ${fechaCorta(p.fecha)} —
       ${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''} ·
       ${textoCajas(p.cajas)}${ubic ? ' · '+ubic : ''}.</p>
-      <button class="btn btn-primary" onclick="irAAmpliar('${p.id}')">➕ Meter en su misma caja</button>
+      <button class="btn btn-primary" onclick="irAAmpliar('${p.id}')">Meter en su misma caja</button>
       <button class="btn btn-outline" onclick="document.getElementById('avisoOfRegistro').innerHTML=''">Ya lo sé, seguir registrando aparte</button>
     </div>
   `;
@@ -13525,7 +13533,7 @@ function avisoOfPendienteHtml(p){
 function avisoOfEntregadoHtml(r){
   return `
     <div class="dup-banner">
-      <div class="dup-title">⚠️ Esta OF ya se entregó</div>
+      <div class="dup-title">Esta OF ya se entregó</div>
       <p>Se entregó completa el ${fechaCorta(r['Fecha de entrega'])} —
       ${r['Entregado por']} se la dio a ${r['Entregado a']}. Revisa si de verdad hace falta registrarla otra vez.</p>
       <button class="btn btn-outline" onclick="document.getElementById('avisoOfRegistro').innerHTML=''">Ya lo sé, seguir registrando</button>
@@ -13627,7 +13635,7 @@ function pedirMotivoEdicion(nuevo){
   mostrarSheet(`
     <h3>Motivo del cambio</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Para que quede claro por qué se editó — lo verá quien consulte este picking después.
+      Quedará visible para quien consulte este picking.
     </p>
     <textarea id="motivoEdicion" placeholder="Ej. Me olvidé de marcar que llevaba varillas roscadas"></textarea>
     <button class="btn btn-primary" id="btnGuardarEdicion" onclick="confirmarEdicion()">Guardar cambios</button>
@@ -13688,10 +13696,10 @@ function abrirEntregarProduccion(id){
   if(!p) return;
   if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden hacer esto'); return; }
   mostrarSheet(`
-    <h3>🏭 Entregar a producción</h3>
+    <h3>Entregar a producción</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Se anota que la OF <b>${escapeHtml(p.of)}</b> se dejó en <b>Producción</b> — sin una persona de DHV que la reciba y firme en el momento.
-      Sigue apareciendo como pendiente (la verás en "Por ubicación → Producción") hasta que registres la entrega ya firmada, el día que te llegue el papel.
+      La OF <b>${escapeHtml(p.of)}</b> se deja en <b>Producción</b> sin persona de DHV que firme en el momento.
+      Sigue pendiente ("Por ubicación → Producción") hasta que registres la entrega firmada.
     </p>
     <button class="btn btn-primary" onclick="confirmarEntregarProduccion('${p.id}')">Confirmar</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
@@ -13780,7 +13788,7 @@ function parsearItemsEntrega(nota){
   return { items, notaLimpia: (nota||'').slice(m[0].length) };
 }
 function chipsEstadoItems(items){
-  const iconos = { pendiente:'🟠', completado:'🟢' };
+  const iconos = { pendiente:'<i class="pt pt-p"></i>', completado:'<i class="pt pt-c"></i>' };
   return items.map(it=>`<span class="chip ${it.estado==='completado'?'on':'attn'}">${iconos[it.estado]||''} ${it.nombre}</span>`).join('');
 }
 // nombre -> null (registrado, aún sin tocar) | 'pendiente' (entregado parcial,
@@ -13800,10 +13808,10 @@ function resumenSemaforo(p){
   const estados = estadosItemsFuera(p);
   const claves = Object.keys(estados);
   if(!claves.length) return '';
-  const iconos = { pendiente:'🟠', completado:'🟢' };
+  const iconos = { pendiente:'<i class="pt pt-p"></i>', completado:'<i class="pt pt-c"></i>' };
   const partes = claves.map(nombre=>{
     const estado = estados[nombre];
-    const icono = estado ? iconos[estado] : '⚪';
+    const icono = estado ? iconos[estado] : '<i class="pt pt-s"></i>';
     const etiqueta = estado==='completado' ? 'todo entregado' : estado==='pendiente' ? 'entregado parcial' : 'sin tocar';
     return `${icono} ${nombre} (${etiqueta})`;
   });
@@ -13836,19 +13844,19 @@ function ticketHtml(p){
   const chips = [];
   if(p.cajas>1) chips.push(`<span class="chip attn">${p.cajas} cajas</span>`);
   else chips.push(`<span class="chip">${textoCajas(p.cajas)}</span>`);
-  if(viejo) chips.push(`<span class="chip attn">🕐 ${diasPendiente(p)} días pendiente</span>`);
+  if(viejo) chips.push(`<span class="chip attn">${diasPendiente(p)} días pendiente</span>`);
   fueraActivas(p).forEach(k=> chips.push(`<span class="chip on">${k}</span>`));
   Object.entries(p.ubicaciones||{}).forEach(([k,v])=>{
     const etiqueta = k==='Cajas' ? `Cajas de picking (${p.cajas})` : k;
-    chips.push(`<span class="chip">📍 ${etiqueta}: ${v}</span>`);
+    chips.push(`<span class="chip">${etiqueta}: ${v}</span>`);
   });
-  if(adminUnlocked && p.ediciones && p.ediciones.length) chips.push(`<span class="chip">✏️ Editado</span>`);
-  if(adminUnlocked && p.deshechas && p.deshechas.length) chips.push(`<span class="chip attn">↩️ Entrega deshecha</span>`);
+  if(adminUnlocked && p.ediciones && p.ediciones.length) chips.push(`<span class="chip">Editado</span>`);
+  if(adminUnlocked && p.deshechas && p.deshechas.length) chips.push(`<span class="chip attn">Entrega deshecha</span>`);
   if(p.ampliaciones && p.ampliaciones.length){
     const ultimaAmpliacion = p.ampliaciones[p.ampliaciones.length-1];
     chips.push(ultimaAmpliacion.cajaExtra
-      ? `<span class="chip attn">📦 +1 caja — ${escapeHtml(ultimaAmpliacion.agregadoPor)}</span>`
-      : `<span class="chip attn">➕ ${escapeHtml(ultimaAmpliacion.agregadoPor)} metió algo más</span>`);
+      ? `<span class="chip attn">+1 caja — ${escapeHtml(ultimaAmpliacion.agregadoPor)}</span>`
+      : `<span class="chip attn">${escapeHtml(ultimaAmpliacion.agregadoPor)} metió algo más</span>`);
   }
   if(entregado) chips.push(`<span class="chip done">Entregado</span>`);
   else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega parcial</span>`);
@@ -14000,15 +14008,15 @@ function detalleHtml(p){
     if(p.cajas>1) motivos.push(`${p.cajas} cajas — recoger todas juntas`);
     fueraActivas(p).forEach(k=> motivos.push(`lleva ${k.toLowerCase()} fuera de la caja`));
     if(p.observaciones) motivos.push(p.observaciones);
-    banner = `<div class="attn-banner"><span class="dot">⚠️</span><span>${motivos.join(' · ')}</span></div>`;
+    banner = `<div class="attn-banner"><span class="dot">!</span><span>${motivos.join(' · ')}</span></div>`;
   }
 
   let doneBanner = '';
   if(entregado){
     const cierre = [...p.entregas].reverse().find(e=>e.tipo==='completa') || p.entregas[p.entregas.length-1];
-    doneBanner = `<div class="done-banner"><span class="dot">✅</span><span class="txt">
+    doneBanner = `<div class="done-banner"><span class="dot">✓</span><span class="txt">
       Esta OF ya se entregó de forma completa — no requiere ninguna entrega adicional.<br>
-      <b>${cierre.entregadoPor}</b> se la entregó a <b>${cierre.entregadoA}</b> el ${fechaCorta(cierre.fecha)}.${(()=>{ const t = parsearItemsEntrega(cierre.nota).notaLimpia; return t ? '<br>💬 '+escapeHtml(t) : ''; })()}
+      <b>${cierre.entregadoPor}</b> se la entregó a <b>${cierre.entregadoA}</b> el ${fechaCorta(cierre.fecha)}.${(()=>{ const t = parsearItemsEntrega(cierre.nota).notaLimpia; return t ? '<br>'+escapeHtml(t) : ''; })()}
     </span></div>`;
   }
 
@@ -14016,7 +14024,7 @@ function detalleHtml(p){
   if(!entregado && p.entregas.length>0){
     const ultima = [...p.entregas].reverse()[0];
     const { items, notaLimpia } = parsearItemsEntrega(ultima.nota);
-    parcialBanner = `<div class="attn-banner"><span class="dot">📦</span><span>
+    parcialBanner = `<div class="attn-banner"><span class="dot">+</span><span>
       <b>Entrega parcial ya hecha</b> — ${ultima.entregadoPor} a ${ultima.entregadoA}, ${fechaCorta(ultima.fecha)}.<br>
       ${items.length ? chipsEstadoItems(items)+'<br>' : ''}${notaLimpia || ''}
     </span></div>${resumenSemaforo(p)}`;
@@ -14024,9 +14032,9 @@ function detalleHtml(p){
 
   let syncBanner = '';
   if(p.sync === 'pendiente'){
-    syncBanner = `<div class="attn-banner"><span class="dot">⏳</span><span>Guardando en la hoja… ya lo tienes registrado aquí, pero aún no ha llegado a la hoja de cálculo.</span></div>`;
+    syncBanner = `<div class="attn-banner"><span class="dot">…</span><span>Guardando en la hoja… ya lo tienes registrado aquí, pero aún no ha llegado a la hoja de cálculo.</span></div>`;
   } else if(p.sync === 'error'){
-    syncBanner = `<div class="attn-banner"><span class="dot">⚠️</span><span>
+    syncBanner = `<div class="attn-banner"><span class="dot">!</span><span>
       No se pudo guardar en la hoja${p.syncError ? ' ('+escapeHtml(p.syncError)+')' : ''}. Lo que ves aquí está bien, pero la hoja de cálculo aún no lo tiene.
       <br><span class="undo" onclick="reintentarPicking('${p.id}')">Reintentar ahora</span>
       ${String(p.id).startsWith('tmp_') ? ` · <span class="undo" onclick="descartarPickingNoSincronizado('${p.id}')">Descartar (no llegó a la hoja)</span>` : ''}
@@ -14041,11 +14049,11 @@ function detalleHtml(p){
     const ultimaAmpliacion = p.ampliaciones[p.ampliaciones.length-1];
     if(ultimaAmpliacion.cajaExtra){
       ampliacionBanner = `<div class="dup-banner">
-        <div class="dup-title">📦 Ahora son ${textoCajas(p.cajas)}, no ${p.cajas - 1}</div>
+        <div class="dup-title">Ahora son ${textoCajas(p.cajas)}, no ${p.cajas - 1}</div>
         <p><b>${escapeHtml(ultimaAmpliacion.agregadoPor)}</b> sumó una caja más el ${fechaCorta(ultimaAmpliacion.fecha)}: ${escapeHtml(ultimaAmpliacion.detalle)}</p>
       </div>`;
     } else {
-      ampliacionBanner = `<div class="attn-banner"><span class="dot">➕</span><span>
+      ampliacionBanner = `<div class="attn-banner"><span class="dot">+</span><span>
         <b>${escapeHtml(ultimaAmpliacion.agregadoPor)}</b> añadió algo más al picking el ${fechaCorta(ultimaAmpliacion.fecha)}: ${escapeHtml(ultimaAmpliacion.detalle)}
       </span></div>`;
     }
@@ -14067,13 +14075,13 @@ function detalleHtml(p){
   const acciones = p.estado==='completado' ? '' : `
     <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
     <button class="btn btn-outline" onclick="entregar('parcial')">Entrega parcial</button>
-    <button class="btn btn-outline" onclick="abrirEntregarProduccion('${p.id}')" style="margin-top:8px;">🏭 Entregar a producción</button>
-    <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">➕ Añadir algo más a este picking</button>
+    <button class="btn btn-outline" onclick="abrirEntregarProduccion('${p.id}')" style="margin-top:8px;">Entregar a producción</button>
+    <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">Añadir algo más a este picking</button>
   `;
 
   const gestionBtns = puedeGestionar(p)
-    ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">✏️ Editar datos del picking</button>
-       <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">🗑️ Eliminar este picking</button>`
+    ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">Editar datos del picking</button>
+       <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">Eliminar este picking</button>`
     : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor} o un administrador pueden editar o eliminar este picking.</div>`;
 
   return `
@@ -14088,14 +14096,14 @@ function detalleHtml(p){
         <span class="status-tag ${entregado?'done':'pend'}">${entregado?'Entregado':'Pendiente'}</span>
       </div>
       ${Object.keys(p.ubicaciones||{}).length ? `<div class="obs-box" style="margin-top:10px;">
-        ${Object.entries(p.ubicaciones).map(([k,v])=>`📍 <b>${k==='Cajas' ? 'Cajas de picking ('+p.cajas+')' : k}</b> → ${v}`).join('<br>')}
+        ${Object.entries(p.ubicaciones).map(([k,v])=>`<b>${k==='Cajas' ? 'Cajas de picking ('+p.cajas+')' : k}</b> → ${v}`).join('<br>')}
       </div>` : ''}
       ${p.observaciones ? `<div class="obs-box">${p.observaciones}</div>` : ''}
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
-      ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">📋 Ver hoja de picking</button>` : ''}
-      ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">🔄 Actualizar hoja de picking</button>` : ''}
-      ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">⚠️ No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
-      ${p.estado!=='completado' ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="empezarBipadoParaPickingExistente('${p.id}')">📋➕ Escanear componentes pendientes</button>` : ''}
+      ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : ''}
+      ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
+      ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
+      ${p.estado!=='completado' ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="empezarBipadoParaPickingExistente('${p.id}')">Escanear componentes pendientes</button>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
       ${gestionBtns}
     </div>
@@ -14136,7 +14144,7 @@ function ampliacionesHtmlOf(p){
   return `<div class="entrega-log">
     <div style="font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">Esto se añadió al picking después de registrarlo</div>
     ${p.ampliaciones.map(a=>`<div class="item">
-      ${a.cajaExtra ? '<span class="chip attn" style="margin-bottom:4px;">📦 Se sumó otra caja</span><br>' : ''}
+      ${a.cajaExtra ? '<span class="chip attn" style="margin-bottom:4px;">Se sumó otra caja</span><br>' : ''}
       <b>${escapeHtml(a.detalle)}</b><br>
       <span class="hint" style="margin-top:0;">Lo metió ${a.agregadoPor} el ${fechaCorta(a.fecha)}</span>
     </div>`).join('')}
@@ -14147,7 +14155,7 @@ function historialAdminHtml(p){
   const hay = (p.ediciones && p.ediciones.length) || (p.deshechas && p.deshechas.length);
   if(!hay) return '';
   if(!adminUnlocked){
-    return `<button class="btn btn-outline" onclick="pedirPinAdmin('${p.id}')" style="margin-top:14px;">🔒 Ver historial de cambios</button>`;
+    return `<button class="btn btn-outline" onclick="pedirPinAdmin('${p.id}')" style="margin-top:14px;">Ver historial de cambios</button>`;
   }
   return edicionesHtmlOf(p) + deshechasHtmlOf(p);
 }
@@ -14307,7 +14315,7 @@ function mostrarPendientesEscaneo(of, pendientes){
   if(resultadoEl) resultadoEl.innerHTML = `
     <div class="obs-box">Hay <b>${pendientes.length}</b> pickings con la OF <b>${of}</b>. Elige cuál:</div>
     ${pendientes.map(p=>ticketHtml(p)).join('')}
-    <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+    <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">Escanear otra</button>`;
 }
 function mostrarEntregadasEscaneo(entregadas){
   const resultadoEl = document.getElementById('escanerResultado');
@@ -14316,18 +14324,18 @@ function mostrarEntregadasEscaneo(entregadas){
     const id = r['ID'] ? String(r['ID']) : '';
     return `<div class="obs-box">
       <b>OF ${escapeHtml(r['OF'])}</b> — ${escapeHtml(r['Proyecto'] || '—')}${r['Subproyecto'] ? ' · '+escapeHtml(r['Subproyecto']) : ''}<br>
-      ✅ <b>Ya está entregada</b>: por ${escapeHtml(r['Entregado por'])} a ${escapeHtml(r['Entregado a'])} el ${fechaCorta(r['Fecha de entrega'])}.
+      <b>Ya está entregada</b>: por ${escapeHtml(r['Entregado por'])} a ${escapeHtml(r['Entregado a'])} el ${fechaCorta(r['Fecha de entrega'])}.
     </div>
     ${id ? `<button class="btn btn-outline" onclick="detenerEscaner(); verPickingEntregado('${id.replace(/'/g,"\\'")}')" style="margin-top:8px;">Ver detalle completo</button>` : ''}`;
-  }).join('') + `<button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+  }).join('') + `<button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">Escanear otra</button>`;
 }
 function mostrarNoRegistradaEscaneo(of){
   const resultadoEl = document.getElementById('escanerResultado');
   if(resultadoEl) resultadoEl.innerHTML = `
     <div class="obs-box" id="escanerNoReg">La OF <b>${of}</b> no está entre los pickings pendientes de este móvil.<br><span id="escanerVerificando" class="hint">Comprobando en la hoja (pendientes y entregadas)…</span></div>
-    <button class="btn btn-primary" onclick="registrarDesdeEscaner('${of}')" style="margin-top:10px;">📦 Registrar esta OF</button>
-    <button class="btn btn-outline" onclick="realizarDesdeEscaner('${of}')" style="margin-top:8px;">🧰 Realizar picking de esta OF</button>
-    <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">📷 Escanear otra</button>`;
+    <button class="btn btn-primary" onclick="registrarDesdeEscaner('${of}')" style="margin-top:10px;">Registrar esta OF</button>
+    <button class="btn btn-outline" onclick="realizarDesdeEscaner('${of}')" style="margin-top:8px;">Realizar picking de esta OF</button>
+    <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">Escanear otra</button>`;
 }
 // La respuesta sale al instante con lo que ya hay en el móvil. Solo si la OF
 // no está aquí se mira, DE FONDO, en la hoja (por si se registró o entregó
@@ -14374,7 +14382,7 @@ function resumenEscaneoEncontrado(p){
       ${textoCajas(p.cajas)}${ubic ? ' · '+ubic : ''}<br>
       Registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}
     </div>
-    <button class="btn btn-primary" onclick="irAAmpliarDesdeEscaner('${p.id}')" style="margin-top:10px;">➕ Meter en su misma caja</button>
+    <button class="btn btn-primary" onclick="irAAmpliarDesdeEscaner('${p.id}')" style="margin-top:10px;">Meter en su misma caja</button>
     <button class="btn btn-outline" onclick="verDetalleDesdeEscaner('${p.id}')" style="margin-top:8px;">Ver detalle completo</button>
     <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">Seguir escaneando</button>
   `;
@@ -14559,7 +14567,7 @@ function procesarCodigoBipado(codigo, ofLeida){
     rpCodigoConflicto = codigo;
     mostrarSheet(`
       <div class="dup-banner">
-        <div class="dup-title">⚠️ Esta etiqueta es de otra OF</div>
+        <div class="dup-title">Esta etiqueta es de otra OF</div>
         <p>El código <b>${escapeHtml(codigo)}</b> es de la OF <b>${escapeHtml(ofLeida)}</b>, no de la OF <b>${escapeHtml(sesionPicking.of)}</b> que estás bipando ahora.</p>
       </div>
       <button class="btn btn-primary" onclick="anadirCodigoConflictoDeTodasFormas()">Añadirlo de todas formas</button>
@@ -14573,7 +14581,7 @@ function procesarCodigoBipado(codigo, ofLeida){
     detenerBipCamara();
     rpCodigoConflicto = codigo;
     mostrarSheet(`
-      <div class="attn-banner"><span class="dot">🔁</span><span>El código <b>${escapeHtml(codigo)}</b> ya está en la lista. ¿Se repitió sin querer, o es otra cantidad más de lo mismo?</span></div>
+      <div class="attn-banner"><span class="dot">!</span><span>El código <b>${escapeHtml(codigo)}</b> ya está en la lista. ¿Se repitió sin querer, o es otra cantidad más de lo mismo?</span></div>
       <button class="btn btn-primary" onclick="anadirCodigoConflictoDeTodasFormas()">Es otra línea (añadir de nuevo)</button>
       <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Fue sin querer, no añadir</button>
     `);
@@ -14625,7 +14633,7 @@ function editarLineaBip(idx){
     <label>Cantidad</label>
     <input type="number" id="lineaCantidad" min="1" value="${c.cantidad}" inputmode="numeric">
     <button class="btn btn-primary" onclick="guardarEdicionLineaBip(${idx})">Guardar</button>
-    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="borrarLineaBip(${idx})">🗑️ Eliminar esta línea</button>
+    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="borrarLineaBip(${idx})">Eliminar esta línea</button>
   `);
 }
 function guardarEdicionLineaBip(idx){
@@ -14685,7 +14693,7 @@ function abrirIncidencia(codigoPrellenado){
     <label>Código</label>
     <div class="row2">
       <div><input type="text" class="mono" id="incidenciaCodigo" placeholder="Ej. SPC-MC-6370" value="${escapeAtributo(codigoPrellenado||'')}" oninput="sugerirCodigoIncidencia()" autocomplete="off"></div>
-      <div style="flex:0 0 auto;"><button class="btn btn-outline" style="margin-top:0; width:auto; padding:12px 14px;" onclick="biparCodigoIncidencia()">📷</button></div>
+      <div style="flex:0 0 auto;"><button class="btn btn-outline" style="margin-top:0; width:auto; padding:12px 14px;" onclick="biparCodigoIncidencia()">Escanear</button></div>
     </div>
     <div id="incidenciaDescripcion" class="hint" style="margin:4px 0 0; font-size:13px;"></div>
     <div id="incidenciaSugerencias"></div>
@@ -14805,7 +14813,7 @@ function resumenPickingHtml(){
       <div class="detail-sub">${escapeHtml(s.proyecto||'—')}${s.subproyecto ? ' · '+escapeHtml(s.subproyecto) : ''}</div>
       <div class="hint" style="margin-top:10px;">Cantidad de líneas: <b>${s.componentes.length}</b></div>
     </div>
-    ${faltaLote ? `<div class="attn-banner"><span class="dot">⚠️</span><span>${faltaLote} línea${faltaLote>1?'s':''} sin lote — se guardará${faltaLote>1?'n':''} como N/A. Toca la línea para editarla antes de seguir.</span></div>` : ''}
+    ${faltaLote ? `<div class="attn-banner"><span class="dot">!</span><span>${faltaLote} línea${faltaLote>1?'s':''} sin lote — se guardará${faltaLote>1?'n':''} como N/A. Toca la línea para editarla antes de seguir.</span></div>` : ''}
     <div id="rpListaResumen">${s.componentes.map((c,i)=>`
       <div class="ticket" style="cursor:pointer;" onclick="editarLineaBipDesdeResumen(${i})">
         <div class="ticket-top"><span class="ticket-of">${escapeHtml(c.codigo)}</span><span class="ticket-date">x${c.cantidad}</span></div>
@@ -14845,8 +14853,8 @@ function preguntarComoActualizarHoja(){
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
       Vas a añadir ${sesionPicking.componentes.length} línea${sesionPicking.componentes.length===1?'':'s'} más a la OF ${escapeHtml(sesionPicking.of)}.
     </p>
-    <button class="btn btn-primary" onclick="confirmarAgregarComponentesExistente('regenerar')">📋 Rehacer la hoja entera (antes + esto junto)</button>
-    <button class="btn btn-outline" onclick="confirmarAgregarComponentesExistente('anexo')">📎 Dejar la hoja original y generar una aparte solo con esto</button>
+    <button class="btn btn-primary" onclick="confirmarAgregarComponentesExistente('regenerar')">Rehacer la hoja entera (antes + esto junto)</button>
+    <button class="btn btn-outline" onclick="confirmarAgregarComponentesExistente('anexo')">Dejar la hoja original y generar una aparte solo con esto</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `);
 }
@@ -14975,10 +14983,10 @@ function preguntarUbicarPickingRealizado(){
   mostrarSheet(`
     <h3>¿Asignas ubicación a este picking?</h3>
     <p class="hint" style="margin:0 0 10px;">
-      Si la caja se va a almacenar, indica dónde. Si se entrega directamente en mano, no es necesario asignar ubicación.
+      Si la caja se almacena, indica dónde. Si se entrega en mano, no hace falta ubicación.
     </p>
-    <button class="btn btn-primary" onclick="cerrarSheet(); continuarARegistroDesdeDoc();">📍 Sí, elegir dónde va</button>
-    <button class="btn btn-outline" onclick="cerrarSheet(); preguntarEntregaInmediataSinUbicar();">✋ No, se entrega en mano</button>
+    <button class="btn btn-primary" onclick="cerrarSheet(); continuarARegistroDesdeDoc();">Sí, elegir dónde va</button>
+    <button class="btn btn-outline" onclick="cerrarSheet(); preguntarEntregaInmediataSinUbicar();">No, se entrega en mano</button>
   `);
 }
 function preguntarEntregaInmediataSinUbicar(){
@@ -15054,7 +15062,7 @@ function abrirHojaDePicking(p){
       // el navegador bloqueó la ventana (pasa si hubo una espera): botón para abrirla
       mostrarSheet(`
         <h3>Hoja de picking de la OF ${escapeHtml(p.of)}</h3>
-        <a class="btn btn-primary" style="display:block; text-align:center; text-decoration:none;" href="${escapeAtributo(p.hojaPickingUrl)}" target="_blank" onclick="setTimeout(cerrarSheet,200)">📋 Abrir la hoja de picking</a>
+        <a class="btn btn-primary" style="display:block; text-align:center; text-decoration:none;" href="${escapeAtributo(p.hojaPickingUrl)}" target="_blank" onclick="setTimeout(cerrarSheet,200)">Abrir la hoja de picking</a>
         <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>
       `);
     }
@@ -15292,7 +15300,7 @@ function entregarLote(manteniendoEstado){
     return `<div style="display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--line);">
       <div style="flex:1;">
         <div><b style="font-family:var(--mono);">OF ${escapeHtml(p.of)}</b> · ${escapeHtml(p.proyecto || '—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</div>
-        ${motivos.length ? `<div style="font-size:12px; color:var(--warn-ink);">⚠️ ${escapeHtml(motivos.join(' · '))}</div>` : ''}
+        ${motivos.length ? `<div style="font-size:12px; color:var(--warn-ink);">${escapeHtml(motivos.join(' · '))}</div>` : ''}
       </div>
       <span class="link-action" style="color:#B33A3A;" onclick="quitarDeEntregaLote('${p.id}')">Quitar</span>
     </div>`;
@@ -15306,7 +15314,7 @@ function entregarLote(manteniendoEstado){
 
     <label>¿A quién de DHV se entregan?</label>
     <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="alEscribirEntregaA()">
-    <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">📍 Se dejaron en Producción, sin una persona concreta</span></div>
+    <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">Se dejaron en Producción, sin una persona concreta</span></div>
     ${chipsDestinatariosHtml()}
 
     <label style="margin-top:12px;">Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional, se anota en todas)</span></label>
@@ -15315,7 +15323,7 @@ function entregarLote(manteniendoEstado){
     <div class="sign-banner">
       <label>
         <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()">
-        <span>✍️ Confirmo que <b id="signLabelName">la persona de DHV</b> firmará las hojas de picking antes de irme</span>
+        <span>Confirmo que <b id="signLabelName">la persona de DHV</b> firmará las hojas de picking antes de irme</span>
       </label>
     </div>
     <button class="btn btn-primary" id="btnConfirmarEntrega" onclick="confirmarEntregaLote()" style="opacity:0.5;">Confirmar ${ids.length} entrega${ids.length===1?'':'s'}</button>
@@ -15417,7 +15425,7 @@ function entregar(tipo, manteniendoEstado){
 
     <label>¿A quién de DHV se entrega?</label>
     <input type="text" id="entregaA" placeholder="Nombre de la persona de DHV" value="${escapeAtributo(entregaDraft.a)}" oninput="alEscribirEntregaA()">
-    <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">📍 Se dejó en Producción, sin una persona concreta</span></div>
+    <div class="hint" style="margin:4px 0 0;"><span class="link-action" onclick="rellenarEntregaA('Producción')">Se dejó en Producción, sin una persona concreta</span></div>
     ${chipsDestinatariosHtml()}
 
     ${bloqueItems}
@@ -15429,7 +15437,7 @@ function entregar(tipo, manteniendoEstado){
     <div class="sign-banner">
       <label>
         <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()">
-        <span>✍️ Confirmo que <b id="signLabelName">la persona de DHV</b> firmará la hoja de picking antes de irme</span>
+        <span>Confirmo que <b id="signLabelName">la persona de DHV</b> firmará la hoja de picking antes de irme</span>
       </label>
     </div>
 
@@ -15455,7 +15463,7 @@ function abrirCambioEntregaPor(tipo){
   const pills = nombres.map(n=>`<span class="name-pill" onclick="pedirPinEntregaOtro('${n.replace(/'/g,"\\'")}','${tipo}')">${n}</span>`).join('');
   mostrarSheet(`
     <h3>¿Quién entrega de verdad?</h3>
-    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Selecciona a la persona — se le pedirá su PIN para confirmar que es ella.</p>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Elige a la persona; confirmará con su PIN.</p>
     <div>${pills}</div>
     <button class="btn btn-outline" onclick="entregar('${tipo}', true)">Cancelar</button>
   `);
@@ -15494,9 +15502,9 @@ function renderEntregaItems(){
   const cont = document.getElementById('entregaItemsRow');
   if(!cont) return;
   const cfg = {
-    sin:        { texto: '⚪',  etiqueta: 'Sin marcar', clase: '' },
-    pendiente:  { texto: '🟠',  etiqueta: 'Entregado parcial', clase: 'item-pend' },
-    completado: { texto: '🟢',  etiqueta: 'Todo entregado', clase: 'item-ok' }
+    sin:        { texto: '<i class="pt pt-s"></i>',  etiqueta: 'Sin marcar', clase: '' },
+    pendiente:  { texto: '<i class="pt pt-p"></i>',  etiqueta: 'Entregado parcial', clase: 'item-pend' },
+    completado: { texto: '<i class="pt pt-c"></i>',  etiqueta: 'Todo entregado', clase: 'item-ok' }
   };
   cont.innerHTML = Object.keys(entregaItemsEstado).map(nombre=>{
     const estado = entregaItemsEstado[nombre];
@@ -15645,7 +15653,7 @@ function abrirBorrarPicking(id){
   mostrarSheet(`
     <h3>¿Eliminar este picking?</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">
-      Se elimina de forma definitiva para todos los usuarios de la app. Queda una copia con el motivo en la hoja "Eliminados" del Excel, por si es necesario consultarla.
+      Se elimina para todos los usuarios. Queda una copia con el motivo en la hoja "Eliminados".
     </p>
     <label>¿Por qué se elimina?</label>
     <textarea id="motivoBorrado" placeholder="Ej. Se registró por error, era otra OF"></textarea>
@@ -15686,7 +15694,7 @@ function abrirAmpliacion(id){
   mostrarSheet(`
     <h3>Añadir contenido al picking de la OF ${p.of}</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      Se trata del mismo picking — <b>no se crea uno nuevo</b>. Al completar estos datos, la app genera automáticamente una nota clara para que cualquiera que lo consulte después entienda qué se añadió.
+      Mismo picking, <b>no se crea uno nuevo</b>. La app deja una nota automática de lo que se añade.
     </p>
     <div class="row2">
       <div>
