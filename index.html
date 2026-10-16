@@ -567,6 +567,7 @@
       <div><label>Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
     </div>
     <button class="btn btn-primary" onclick="empezarBipado()">Empezar a escanear</button>
+    <div class="hint" id="rpCatInfo" style="margin-top:14px; text-align:center;"></div>
   </section>
 
   <section class="screen" id="screen-realizar-bip">
@@ -583,12 +584,14 @@
     <div class="row2" style="margin-top:14px; align-items:flex-end;">
       <div style="flex:2;">
         <label style="margin-top:0;">O escribe el código a mano</label>
-        <input type="text" class="mono" id="rp_codigoManual" placeholder="Ej. SPC-MC-6370">
+        <input type="text" class="mono" id="rp_codigoManual" placeholder="Ej. SPC-MC-6370" oninput="sugerirCodigoManual()" autocomplete="off">
       </div>
       <div style="flex:1;">
         <button class="btn btn-outline" style="margin-top:0;" onclick="anadirCodigoManual()">Añadir</button>
       </div>
     </div>
+
+    <div id="rpSugerencias"></div>
 
     <label>Líneas escaneadas (<span id="rpNumLineas">0</span>)</label>
     <div id="rpListaLineas"></div>
@@ -11163,6 +11166,178 @@ let colaSync = [];
 let erroresOperaciones = {}; // { opId: 'mensaje de error' } — para poder ver por qué falla algo aunque el picking ya no esté visible (p.ej. se borró en local)
 let mapaIdsReales = {};
 
+// ---- Catálogo de artículos (part number -> descripción) ----
+// Vive en el archivo "catalogo.txt" (al lado de index.html). La app lo baja
+// una vez, lo guarda en el propio móvil (IndexedDB) y desde entonces busca
+// en local, sin internet y al instante. Cada día que haya conexión comprueba
+// si hay una versión nueva. Si algo falla, la app sigue funcionando igual:
+// simplemente no completa descripciones.
+const CATALOGO_URL = 'catalogo.txt';
+const CATALOGO_REVISAR_CADA_MS = 12 * 3600 * 1000;
+let catalogoLista = [];          // [{c, d, k}] en el orden del archivo
+let catalogoExacto = new Map();  // CODIGO EN MAYÚSCULAS -> entrada
+let catalogoPorClave = new Map();// código sin símbolos (SPCMC650) -> entrada
+let catalogoVersion = '';
+function claveCat(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function catalogoListo(){ return catalogoLista.length > 0; }
+function cargarCatalogoTexto(txt){
+  const lista = [], exacto = new Map(), porClave = new Map();
+  let version = '';
+  const lineas = String(txt||'').split('\n');
+  for(let i=0;i<lineas.length;i++){
+    const l = lineas[i];
+    if(!l) continue;
+    if(l.charCodeAt(0)===35){ if(l.indexOf('#v=')===0) version = l.slice(3).trim(); continue; }
+    const t = l.indexOf('\t');
+    const c = (t<0 ? l : l.slice(0,t)).trim();
+    if(!c) continue;
+    const d = t<0 ? '' : l.slice(t+1).trim();
+    const e = { c, d, k: claveCat(c), du: d.toUpperCase() };
+    lista.push(e);
+    exacto.set(c.toUpperCase(), e);
+    if(e.k && !porClave.has(e.k)) porClave.set(e.k, e);
+  }
+  if(!lista.length) return false;
+  catalogoLista = lista; catalogoExacto = exacto; catalogoPorClave = porClave; catalogoVersion = version;
+  return true;
+}
+function buscarEnCatalogo(codigo){
+  if(!catalogoListo()) return null;
+  const c = String(codigo||'').trim();
+  if(!c) return null;
+  return catalogoExacto.get(c.toUpperCase()) || catalogoPorClave.get(claveCat(c)) || null;
+}
+// Búsqueda "en cualquier parte": cada palabra escrita tiene que aparecer en el
+// código (sin importar guiones ni mayúsculas) o, si no, en la descripción.
+// Orden: primero lo que más se parece a lo escrito (número exacto, empieza
+// por…), después el resto. Devuelve { lista, total }.
+function sugerenciasCatalogo(texto, max){
+  if(!catalogoListo()) return { lista: [], total: 0 };
+  const terminos = String(texto||'').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  const todo = terminos.join('');
+  if(todo.length < 2) return { lista: [], total: 0 };
+  const ultimo = terminos[terminos.length-1];
+  const res = [];
+  for(let i=0;i<catalogoLista.length;i++){
+    const e = catalogoLista[i];
+    let enCodigo = 0, ok = true;
+    for(let j=0;j<terminos.length;j++){
+      if(e.k.indexOf(terminos[j])!==-1){ enCodigo++; continue; }
+      if(e.du.indexOf(terminos[j])===-1){ ok = false; break; }
+    }
+    if(!ok) continue;
+    let rango;
+    if(enCodigo < terminos.length) rango = 6;                    // alguna palabra solo está en la descripción
+    else if(e.k === todo) rango = 0;                             // código exacto
+    else if(e.k.indexOf(todo)===0) rango = 1;                    // el código empieza por lo escrito
+    else {
+      const toks = e.c.toUpperCase().split(/[^A-Z0-9]+/);
+      if(toks.indexOf(ultimo)!==-1) rango = 2;                   // un trozo del código es justo eso (p. ej. 3556)
+      else if(toks.some(t=>t.indexOf(ultimo)===0)) rango = 3;    // un trozo empieza por eso
+      else if(e.k.indexOf(todo)!==-1) rango = 4;                 // aparece dentro
+      else rango = 5;
+    }
+    res.push({ e, rango, i });
+  }
+  res.sort((a,b)=> a.rango-b.rango || a.i-b.i);
+  return { lista: res.slice(0, max).map(x=>x.e), total: res.length };
+}
+// Texto de debajo de un código: su descripción, o el aviso de que no está.
+function descripcionCatalogoHtml(codigo){
+  if(!catalogoListo()) return '';
+  const e = buscarEnCatalogo(codigo);
+  if(!e) return '<span style="color:var(--warn-ink);">No está en el catálogo</span>';
+  return e.d ? escapeHtml(e.d) : '<span style="color:var(--warn-ink);">Sin descripción en el catálogo</span>';
+}
+function descripcionCatalogoTexto(codigo){
+  const e = buscarEnCatalogo(codigo);
+  return e ? e.d : '';
+}
+// IndexedDB mínimo (localStorage se queda corto para ~1,6 MB de texto)
+function catIdb(modo, valor){
+  return new Promise(resolve=>{
+    try{
+      const rq = indexedDB.open('pickings_lis_catalogo', 1);
+      rq.onupgradeneeded = ()=>{ try{ rq.result.createObjectStore('kv'); }catch(e){} };
+      rq.onerror = ()=>resolve(null);
+      rq.onsuccess = ()=>{
+        try{
+          const db = rq.result;
+          const tx = db.transaction('kv', modo==='set' ? 'readwrite' : 'readonly');
+          const st = tx.objectStore('kv');
+          if(modo==='set'){ st.put(valor, 'catalogo'); tx.oncomplete = ()=>{ db.close(); resolve(true); }; tx.onerror = ()=>{ db.close(); resolve(null); }; }
+          else { const g = st.get('catalogo'); g.onsuccess = ()=>{ db.close(); resolve(g.result||null); }; g.onerror = ()=>{ db.close(); resolve(null); }; }
+        }catch(e){ resolve(null); }
+      };
+    }catch(e){ resolve(null); }
+  });
+}
+function descargarTextoCatalogo(){
+  return new Promise(resolve=>{
+    try{
+      const x = new XMLHttpRequest();
+      x.open('GET', CATALOGO_URL + '?t=' + Date.now());
+      x.timeout = 60000;
+      x.onload = ()=> resolve((x.status>=200 && x.status<300 && x.responseText.indexOf('\t')>0) ? x.responseText : null);
+      x.onerror = x.ontimeout = ()=>resolve(null);
+      x.send();
+    }catch(e){ resolve(null); }
+  });
+}
+function actualizarInfoCatalogo(){
+  const el = document.getElementById('rpCatInfo');
+  if(!el) return;
+  el.textContent = catalogoListo()
+    ? '📚 Catálogo de artículos: ' + catalogoLista.length.toLocaleString('es-ES') + ' referencias cargadas'
+    : '📚 Catálogo de artículos: todavía no está cargado (se descargará solo cuando haya conexión)';
+}
+async function iniciarCatalogo(){
+  try{
+    const guardado = await catIdb('get');
+    if(guardado && guardado.texto) cargarCatalogoTexto(guardado.texto);
+    actualizarInfoCatalogo();
+    const reciente = guardado && guardado.comprobado && (Date.now() - guardado.comprobado) < CATALOGO_REVISAR_CADA_MS;
+    if(catalogoListo() && reciente) return;
+    if(navigator.onLine === false) return;
+    const texto = await descargarTextoCatalogo();
+    if(!texto) return;
+    const primera = texto.slice(0, texto.indexOf('\n')).trim();
+    const ver = primera.indexOf('#v=')===0 ? primera.slice(3).trim() : '';
+    if(!(catalogoListo() && ver && ver === catalogoVersion)){
+      if(!cargarCatalogoTexto(texto)) return;
+    }
+    await catIdb('set', { texto: texto, version: catalogoVersion, comprobado: Date.now() });
+    actualizarInfoCatalogo();
+  }catch(e){}
+}
+let sugerenciasCodigoActuales = [];
+function sugerirCodigoManual(){
+  const campo = document.getElementById('rp_codigoManual');
+  const cont = document.getElementById('rpSugerencias');
+  if(!campo || !cont) return;
+  const texto = campo.value.split(';')[0].trim();
+  const r = sugerenciasCatalogo(texto, 40);
+  sugerenciasCodigoActuales = r.lista;
+  if(!r.lista.length){
+    cont.innerHTML = (catalogoListo() && claveCat(texto).length>=2) ? '<div class="hint" style="margin-top:8px;">Ninguna coincidencia en el catálogo — puedes añadirlo igualmente con el botón.</div>' : '';
+    return;
+  }
+  cont.innerHTML = `<div class="hint" style="margin:8px 0 2px;">${r.total===1 ? '1 coincidencia' : (r.total>r.lista.length ? r.total.toLocaleString('es-ES')+' coincidencias — mostrando las '+r.lista.length+' más parecidas, sigue escribiendo para afinar' : r.total+' coincidencias')}</div>
+    <div style="max-height:38vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">${r.lista.map((e,i)=>
+    `<div class="ticket" style="cursor:pointer; padding:8px 10px; margin-top:6px;" onclick="elegirSugerenciaCodigo(${i})">
+      <div class="ticket-of" style="font-size:14px;">${escapeHtml(e.c)}</div>
+      <div class="ticket-proj" style="font-size:12px;">${e.d ? escapeHtml(e.d) : '<i>sin descripción</i>'}</div>
+    </div>`).join('')}</div>`;
+}
+function elegirSugerenciaCodigo(i){
+  const e = sugerenciasCodigoActuales[i];
+  const campo = document.getElementById('rp_codigoManual');
+  const cont = document.getElementById('rpSugerencias');
+  if(!e) return;
+  if(campo) campo.value = e.c;
+  anadirCodigoManual();   // pasa directo a lote y cantidad (ahí se ve la descripción y se puede cancelar)
+}
+
 // ---- "Realizar picking" (bipado en vivo) — todo aparte del resto de la app ----
 let sesionPicking = null;          // { of, proyecto, subproyecto, componentes:[], incidencias:[] }
 let pickingPendienteDatos = null;  // listo para adjuntarse al próximo guardarPicking()
@@ -13822,6 +13997,7 @@ function nuevoRealizarPicking(){
   document.getElementById('rp_proyecto').value = '';
   document.getElementById('rp_subproyecto').value = '';
   ir('realizar-inicio');
+  actualizarInfoCatalogo();
 }
 
 function empezarBipado(){
@@ -13933,10 +14109,15 @@ function anadirCodigoManual(){
   const val = campo.value.trim();
   if(!val){ toast('Escribe un código'); return; }
   campo.value = '';
+  const cs = document.getElementById('rpSugerencias'); if(cs) cs.innerHTML = '';
   // Si pegan el texto completo de la etiqueta (con los ";"), se aprovecha
   // igual que si se hubiera bipado con la cámara.
   const partes = val.split(';');
-  procesarCodigoBipado((partes[0]||'').trim(), (partes[1]||'').trim());
+  // Si lo escriben "a su manera" (minúsculas, sin guiones...) y está en el
+  // catálogo, se usa el código oficial para que quede igual que al escanear.
+  const escrito = (partes[0]||'').trim();
+  const oficial = buscarEnCatalogo(escrito);
+  procesarCodigoBipado(oficial ? oficial.c : escrito, (partes[1]||'').trim());
 }
 
 function procesarCodigoBipado(codigo, ofLeida){
@@ -13990,6 +14171,7 @@ function continuarLineaBip(codigo){
   rpLineaPendiente = { codigo };
   mostrarSheet(`
     <h3>Código ${escapeHtml(codigo)}</h3>
+    ${catalogoListo() ? `<div class="hint" style="margin:-4px 0 8px; font-size:13px;">${descripcionCatalogoHtml(codigo)}</div>` : ''}
     <label>Lote</label>
     <input type="text" class="mono" id="lineaLote" placeholder="Obligatorio — si se deja en blanco se guarda como N/A">
     <label>Cantidad</label>
@@ -14016,6 +14198,7 @@ function editarLineaBip(idx){
   if(!c) return;
   mostrarSheet(`
     <h3>Editar ${escapeHtml(c.codigo)}</h3>
+    ${catalogoListo() ? `<div class="hint" style="margin:-4px 0 8px; font-size:13px;">${descripcionCatalogoHtml(c.codigo)}</div>` : ''}
     <label>Lote</label>
     <input type="text" class="mono" id="lineaLote" value="${escapeHtml(c.lote)}">
     <label>Cantidad</label>
@@ -14057,6 +14240,7 @@ function renderLineasBip(){
         <span class="ticket-of">${escapeHtml(c.codigo)}</span>
         <span class="ticket-date">x${c.cantidad}</span>
       </div>
+      ${catalogoListo() ? `<div class="ticket-proj" style="font-size:12px;">${descripcionCatalogoHtml(c.codigo)}</div>` : ''}
       <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A — falta ponerlo</b>' : escapeHtml(c.lote)}</div>
     </div>
   `).join('');
@@ -14163,6 +14347,7 @@ function resumenPickingHtml(){
     <div id="rpListaResumen">${s.componentes.map((c,i)=>`
       <div class="ticket" style="cursor:pointer;" onclick="editarLineaBipDesdeResumen(${i})">
         <div class="ticket-top"><span class="ticket-of">${escapeHtml(c.codigo)}</span><span class="ticket-date">x${c.cantidad}</span></div>
+        ${catalogoListo() ? `<div class="ticket-proj" style="font-size:12px;">${descripcionCatalogoHtml(c.codigo)}</div>` : ''}
         <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A</b>' : escapeHtml(c.lote)}</div>
       </div>
     `).join('') || '<div class="empty">No se escaneó ningún componente</div>'}</div>
@@ -14260,8 +14445,8 @@ function inicialesLis(nombre){
 }
 function generarHojaPickingHtml(datos){
   const filas = datos.componentes.map(c=>`
-    <tr><td>${escapeHtml(c.codigo)}</td><td>${escapeHtml(c.lote||'N/A')}</td><td>${c.cantidad}</td></tr>
-  `).join('') || `<tr><td colspan="3" style="text-align:center; color:#888; font-weight:400;">Sin componentes bipados</td></tr>`;
+    <tr><td>${escapeHtml(c.codigo)}</td><td>${escapeHtml(descripcionCatalogoTexto(c.codigo))}</td><td>${escapeHtml(c.lote||'N/A')}</td><td>${c.cantidad}</td></tr>
+  `).join('') || `<tr><td colspan="4" style="text-align:center; color:#888; font-weight:400;">Sin componentes bipados</td></tr>`;
   const faltante = datos.incidencias.map(i=>`${escapeHtml(i.codigo)} (${escapeHtml(i.motivo)})`).join(' · ');
   const hoy = fechaCorta(new Date().toISOString());
   return `
@@ -14278,7 +14463,7 @@ function generarHojaPickingHtml(datos){
         </div>
       </div>
       <table class="print-tabla">
-        <thead><tr><th>Código</th><th>Lote</th><th>Cantidad</th></tr></thead>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Lote</th><th>Cantidad</th></tr></thead>
         <tbody>${filas}</tbody>
       </table>
       <div class="print-caja"><b>MATERIAL FALTANTE:</b>${faltante || 'Ninguno'}</div>
@@ -15063,6 +15248,7 @@ function confirmarAmpliacion(){
 /* ---------- init ---------- */
 async function iniciar(){
   window.__appListo = true;
+  try{ iniciarCatalogo(); }catch(e){}
   try{ iniciarGestoLote(); }catch(e){}
   comprobarCierreSesionPorTurno();
   actualizarChipUsuario();
