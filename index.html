@@ -395,7 +395,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v16oct-1215</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -15665,6 +15665,11 @@ async function confirmarBorrarPicking(id){
   // se quita de verdad de la app al instante (no solo se marca)
   DB = DB.filter(x=>x.id!==id);
   guardarDBLocal();
+  // si estaba entregado, también se quita de la lista de Entregados de este móvil
+  try{
+    entregadosCache = (entregadosCache||[]).filter(r=>String(r['ID']||'')!==String(id));
+    guardarCacheEntregados(entregadosCache);
+  }catch(e){}
 
   cerrarSheet();
   toast('Picking eliminado');
