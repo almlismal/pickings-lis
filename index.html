@@ -69,14 +69,15 @@
   .home-btn{
     background: var(--panel);
     border: 1px solid var(--line);
-    border-left: 4px solid var(--accent);
+    border-left: 1px solid var(--line);
     border-radius: 4px;
     padding: 20px 18px;
     text-align:left;
     cursor:pointer;
     display:flex; flex-direction:column; gap:4px;
   }
-  .home-btn.alt{ border-left-color: var(--ok); }
+  .home-btn{ position:relative; padding-right:40px; }
+  .home-btn::after{ content:"›"; position:absolute; right:16px; top:50%; transform:translateY(-52%); font-size:26px; color:#A9B3BF; line-height:1; }
   .home-btn b{ font-size:17px; }
   .home-btn span{ font-size:13px; color:var(--ink-soft); }
   .home-btn:active{ transform: scale(0.99); }
@@ -404,7 +405,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v16oct-1240</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v16oct-1250</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -420,19 +421,19 @@
     <div class="home-grid">
       <button class="home-btn" onclick="ir('escanear')">
         <b>Escanear etiqueta</b>
-        <span>Escanea cualquier etiqueta de picking y te digo qué puedes hacer: registrar, consultar, entregar…</span>
+        <span>Lee la etiqueta y ofrece registrar, consultar o entregar</span>
       </button>
       <button class="home-btn" onclick="nuevoPicking()">
         <b>Registrar OF</b>
-        <span>Registra una OF ya terminada: cajas y componentes fuera de caja</span>
+        <span>OF terminada: cajas y componentes fuera de caja</span>
       </button>
       <button class="home-btn alt" onclick="ir('buscar')">
         <b>Buscar / Entregar</b>
-        <span>Localiza una OF registrada y gestiona su entrega</span>
+        <span>Buscar una OF registrada y gestionar su entrega</span>
       </button>
       <button class="home-btn alt" onclick="nuevoRealizarPicking()">
         <b>Realizar picking<span id="badgePausados"></span></b>
-        <span>Escanea cada componente en tiempo real durante el picking</span>
+        <span>Escaneo de componentes durante el picking</span>
       </button>
     </div>
   </section>
