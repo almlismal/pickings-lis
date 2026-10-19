@@ -420,7 +420,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v19oct-1630</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v19oct-2000</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -532,6 +532,7 @@
       <h2>Por ubicación</h2>
     </div>
     <button class="btn btn-outline" onclick="actualizarUbicaciones()" id="btnActualizarUbicaciones">Actualizar</button>
+    <button class="btn btn-outline" onclick="toggleLoteModo()" id="btnSeleccionarVariasUbic" style="margin-top:8px;">☑ Seleccionar varias</button>
     <div id="ubicacionesChips" style="display:flex; flex-wrap:wrap; gap:8px; margin:14px 0;"></div>
     <div class="pending-strip">
       <div id="ubicacionesList"></div>
@@ -10993,7 +10994,9 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
     registradoPor: row['Registrado por'] || '',
     fecha: row['Fecha'],
     // si la columna Estado está vacía pero consta una entrega completa, está entregada
-    estado: row['Estado'] || (entregasDe.some(e=>e.tipo==='completa') ? 'completado' : 'pendiente'),
+    // una entrega completa anotada manda sobre la columna Estado: si la fila quedó en Pickings
+    // por un fallo al moverla, no se enseña como pendiente ni como "parcial"
+    estado: entregasDe.some(e=>e.tipo==='completa') ? 'completado' : (row['Estado'] || 'pendiente'),
     entregas: entregasDe,
     ediciones,
     deshechas,
@@ -12275,7 +12278,7 @@ function ir(pantalla, esVolver){
   // esVolver=true: se usa al volver atrás desde el Detalle — no se vuelve a
   // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
   // mismos resultados de búsqueda) y solo se restaura el scroll.
-  if(pantalla==='pendientes' || pantalla==='buscar') actualizarBarraLote(); else ocultarBarraLote();
+  if(pantalla==='pendientes' || pantalla==='buscar' || pantalla==='ubicaciones') actualizarBarraLote(); else ocultarBarraLote();
   if(esVolver) return;
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
@@ -12648,6 +12651,7 @@ let ubicacionSeleccionada = null;
 
 function entrarAUbicaciones(){
   ubicacionSeleccionada = null;
+  loteModo = false; loteSeleccion.clear(); actualizarBarraLote();
   renderUbicaciones();
   cargarLigeroYActualizarDB().then(renderUbicaciones).catch(()=>{});
 }
@@ -12726,8 +12730,11 @@ function renderUbicaciones(){
   });
   const lista = Object.values(porPicking).sort((a,b)=> new Date(a.p.fecha) - new Date(b.p.fecha));
   const leyenda = `<div class="hint" style="margin-bottom:10px;">${entradas.length} pendiente${entradas.length===1?'':'s'} en ${escapeHtml(ubicacionSeleccionada)}</div>`;
-  contLista.innerHTML = leyenda + lista.map(({p,items})=>`
-    ${ticketHtml(p)}
+  const marcarTodosUbic = loteModo
+    ? `<div class="hint" style="margin-bottom:10px;">Toca cada picking para marcarlo (se entrega el picking completo). <span class="link-action" onclick="marcarTodosLote()">Marcar todos los que se ven</span></div>` : '';
+  if(loteModo) podarSeleccionLote();
+  contLista.innerHTML = leyenda + marcarTodosUbic + lista.map(({p,items})=>`
+    ${loteModo ? ticketLoteHtml(p) : ticketHtml(p)}
     <div class="hint" style="margin:-4px 0 10px 2px;">Pendiente ahí: ${items.map(escapeHtml).join(', ')}</div>
   `).join('');
 }
@@ -14066,7 +14073,7 @@ function ticketHtml(p){
       : `<span class="chip attn">${escapeHtml(ultimaAmpliacion.agregadoPor)} metió algo más</span>`);
   }
   if(entregado) chips.push(`<span class="chip done">Entregado</span>`);
-  else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega parcial</span>`);
+  else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega anotada</span>`);
   const syncChip = syncBadgeHtml(p);
   if(syncChip) chips.push(syncChip);
 
@@ -14232,7 +14239,7 @@ function detalleHtml(p){
     const ultima = [...p.entregas].reverse()[0];
     const { items, notaLimpia } = parsearItemsEntrega(ultima.nota);
     parcialBanner = `<div class="attn-banner"><span class="dot">+</span><span>
-      <b>Entrega parcial ya hecha</b> — ${ultima.entregadoPor} a ${ultima.entregadoA}, ${fechaCorta(ultima.fecha)}.<br>
+      <b>Entrega anotada</b> — ${ultima.entregadoPor} a ${ultima.entregadoA}, ${fechaCorta(ultima.fecha)}.<br>
       ${items.length ? chipsEstadoItems(items)+'<br>' : ''}${notaLimpia || ''}
     </span></div>${resumenSemaforo(p)}`;
   }
@@ -14271,7 +14278,7 @@ function detalleHtml(p){
       ${p.entregas.map((e,i)=>{
         const { items, notaLimpia } = parsearItemsEntrega(e.nota);
         return `<div class="item">
-        <b>${e.tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</b> — ${fechaCorta(e.fecha)}<br>
+        <b>${e.tipo==='completa' ? 'Entrega completa' : 'Entrega anotada'}</b> — ${fechaCorta(e.fecha)}<br>
         ${e.entregadoPor} entregó a ${e.entregadoA}
         ${items.length ? `<br>${chipsEstadoItems(items)}` : ''}
         ${notaLimpia ? '<br>'+notaLimpia : ''}
@@ -14281,7 +14288,6 @@ function detalleHtml(p){
 
   const acciones = p.estado==='completado' ? '' : `
     <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
-    <button class="btn btn-outline" onclick="entregar('parcial')">Entrega parcial</button>
     <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">Añadir algo más a este picking</button>
   `;
 
@@ -15365,7 +15371,7 @@ function idDeTicket(ticketEl){
   return m ? m[1] : null;
 }
 function iniciarGestoLote(){
-  ['pendingList','buscarResultado'].forEach(idCont=>{
+  ['pendingList','buscarResultado','ubicacionesList'].forEach(idCont=>{
     const cont = document.getElementById(idCont);
     if(!cont) return;
     const cancelar = ()=>{
@@ -15413,10 +15419,22 @@ function enBuscarActivo(){
   const b = document.getElementById('screen-buscar');
   return !!(b && b.classList.contains('active'));
 }
+function enUbicacionesActivo(){
+  const u = document.getElementById('screen-ubicaciones');
+  return !!(u && u.classList.contains('active'));
+}
 function refrescarVistaLote(){
-  if(enBuscarActivo()) renderResultadosBuscar(); else renderPendientes();
+  if(enBuscarActivo()) renderResultadosBuscar();
+  else if(enUbicacionesActivo()) renderUbicaciones();
+  else renderPendientes();
 }
 function pendientesVisiblesLote(){
+  if(enUbicacionesActivo()){
+    const entradas = (ubicacionSeleccionada && calcularUbicacionesPendientes()[ubicacionSeleccionada]) || [];
+    const vistos = new Set(), res = [];
+    entradas.forEach(({p})=>{ if(!vistos.has(p.id)){ vistos.add(p.id); res.push(p); } });
+    return res;
+  }
   if(enBuscarActivo()) return resultadosBuscarActuales().filter(p=>p.estado!=='completado');
   const todos = DB.filter(p=>p.estado!=='completado').sort(compararPendientes);
   const campoBusq = document.getElementById('pendientesBuscarInput');
@@ -15462,6 +15480,8 @@ function ocultarBarraLote(){
 function actualizarBarraLote(){
   const btnModo = document.getElementById('btnSeleccionarVarias');
   if(btnModo) btnModo.textContent = loteModo ? '✕ Salir de la selección' : '☑ Seleccionar varias';
+  const btnModoU = document.getElementById('btnSeleccionarVariasUbic');
+  if(btnModoU) btnModoU.textContent = loteModo ? '✕ Salir de la selección' : '☑ Seleccionar varias';
   const btnModoB = document.getElementById('btnSeleccionarVariasBuscar');
   if(btnModoB) btnModoB.textContent = loteModo ? '✕ Salir de la selección' : '☑ Seleccionar varias para entregar';
   const b = document.getElementById('loteBarra');
@@ -15481,7 +15501,7 @@ function motivosAtencionLote(p){
   if(p.cajas>1) m.push(`${p.cajas} cajas`);
   fueraActivas(p).forEach(k=> m.push(`${k.toLowerCase()} fuera de la caja`));
   if(esPickingViejo(p)) m.push(`${diasPendiente(p)} días pendiente`);
-  if(p.entregas && p.entregas.length) m.push('ya tiene una entrega parcial');
+  if(p.entregas && p.entregas.length) m.push('ya tiene una entrega anotada');
   if(p.observaciones) m.push('observaciones: ' + p.observaciones);
   return m;
 }
@@ -15634,8 +15654,8 @@ function entregar(tipo, manteniendoEstado){
     ${bloqueItems}
 
     ${tipo==='parcial' ? `<label>Observaciones</label>
-    <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar">${escapeHtml(entregaDraft.nota)}</textarea>` : `<label>Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional)</span></label>
-    <textarea id="entregaNota" placeholder="Ej. Lo firma Pedro pero lo retira Luis">${escapeHtml(entregaDraft.nota)}</textarea>`}
+    <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar">${escapeHtml(entregaDraft.nota)}</textarea>` : `<label>Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional — si queda algo sin entregar, anótalo aquí)</span></label>
+    <textarea id="entregaNota" placeholder="Ej. Lo firma Pedro pero lo retira Luis · Falta por entregar el perfil X">${escapeHtml(entregaDraft.nota)}</textarea>`}
 
     <div class="sign-banner">
       <label>
