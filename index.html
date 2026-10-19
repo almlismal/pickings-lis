@@ -420,7 +420,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v16oct-2150</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v19oct-1630</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11083,7 +11083,8 @@ function fusionarConPendientes(nuevaDB){
     return servidorP;
   });
   // pickings registrados en este móvil que la hoja todavía no tiene (siguen con ID provisional)
-  DB.filter(p=> String(p.id).startsWith('tmp_')).forEach(p=>{
+  // (solo si aún tienen algo esperando en la cola: sin cola no llegarán nunca y serían fantasmas)
+  DB.filter(p=> String(p.id).startsWith('tmp_') && idsConPendiente.has(p.id)).forEach(p=>{
     if(!resultado.some(x=>x.id===p.id)) resultado.unshift(p);
   });
   return resultado;
@@ -12983,6 +12984,7 @@ function abrirDesdeDuplicadas(id){
   if(DB.find(x=>x.id===id)) abrirDetalle(id); else verPickingEntregado(id);
 }
 async function eliminarDesdeDuplicadas(id){
+  if(String(id).startsWith('tmp_')){ descartarPickingNoSincronizado(id); return; }
   const p = await asegurarPickingEnDB(id);
   if(!p){ toast('No se pudo cargar esa OF — comprueba la conexión'); return; }
   abrirBorrarPicking(id);
