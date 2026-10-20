@@ -420,7 +420,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1200</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1230</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -14838,11 +14838,14 @@ function campoLoteHtml(valor, codigoEsperado, placeholder){
       </div>
       <canvas id="loteCanvas" style="display:none;"></canvas>
       <div id="loteCamEstado" class="hint" style="text-align:center; margin-top:8px;"></div>
+      <label class="btn btn-outline" style="margin:8px auto 0; max-width:240px; text-align:center; display:block; cursor:pointer;">Si no la lee: hacer foto a la etiqueta
+        <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="leerLoteDeFoto(this)">
+      </label>
     </div>`;
 }
 function detenerCamaraLote(){
   loteEscaneando = false;
-  if(loteRAF) cancelAnimationFrame(loteRAF);
+  if(loteRAF) clearTimeout(loteRAF);
   loteRAF = null;
   if(loteStream){ loteStream.getTracks().forEach(t=>t.stop()); loteStream = null; }
   const v = document.getElementById('loteVideo'); if(v) v.srcObject = null;
@@ -14862,7 +14865,7 @@ function alternarCamaraLote(codigoEsperado){
     return;
   }
   if(estado) estado.textContent = 'Abriendo cámara…';
-  pedirCamaraQR().then(stream=>{
+  pedirCamaraLote().then(stream=>{
     if(!document.getElementById('loteVideo')){ stream.getTracks().forEach(t=>t.stop()); return; }
     loteStream = stream;
     const video = document.getElementById('loteVideo');
@@ -14870,10 +14873,68 @@ function alternarCamaraLote(codigoEsperado){
     video.play().catch(()=>{});
     if(estado) estado.textContent = 'Apunta al QR de la etiqueta del componente';
     loteEscaneando = true;
-    loteRAF = requestAnimationFrame(cicloCamaraLote);
+    loteRAF = setTimeout(cicloCamaraLote, 150);
   }).catch(()=>{
     if(estado) estado.textContent = 'No se pudo abrir la cámara — escribe el lote a mano.';
   });
+}
+// Cámara en la máxima resolución razonable: las etiquetas de componentes tienen el QR muy pequeño.
+function pedirCamaraLote(){
+  return navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+  }).then(stream=>{
+    const track = stream.getVideoTracks()[0];
+    if(track && track.applyConstraints && track.getCapabilities){
+      try{
+        const cap = track.getCapabilities();
+        if(cap.focusMode && cap.focusMode.includes('continuous')) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(()=>{});
+      }catch(e){}
+    }
+    return stream;
+  }).catch(()=> pedirCamaraQR());
+}
+// Intenta leer un QR en la imagen: completa y luego recortes centrales; prueba también QR invertidos.
+function leerQRDeContexto(ctx, w, h){
+  const regiones = [[0,0,w,h], [w*0.2,h*0.2,w*0.6,h*0.6], [w*0.3,h*0.3,w*0.4,h*0.4]];
+  for(const [x,y,rw,rh] of regiones){
+    try{
+      const im = ctx.getImageData(Math.floor(x), Math.floor(y), Math.floor(rw), Math.floor(rh));
+      const r = jsQR(im.data, im.width, im.height, { inversionAttempts: 'attemptBoth' });
+      if(r && r.data) return r;
+    }catch(e){}
+  }
+  return null;
+}
+function leerLoteDeFoto(input){
+  const f = input.files && input.files[0];
+  const estado = document.getElementById('loteCamEstado');
+  if(!f) return;
+  if(estado) estado.textContent = 'Leyendo la foto…';
+  const img = new Image();
+  img.onload = ()=>{
+    try{
+      const max = 2400, esc = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * esc); c.height = Math.round(img.height * esc);
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      const leido = leerQRDeContexto(ctx, c.width, c.height);
+      const r = leido ? extraerLoteDeQR(leido.data) : null;
+      if(r && r.lote){
+        const campo = document.getElementById('lineaLote'); if(campo) campo.value = r.lote;
+        const norm = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+        const otro = r.codigo && loteCodigoEsperado && norm(r.codigo) !== norm(loteCodigoEsperado);
+        detenerCamaraLote();
+        toast(otro ? 'Ojo: esa etiqueta es de ' + r.codigo + ', no de ' + loteCodigoEsperado : 'Lote leído: ' + r.lote);
+      } else if(estado){
+        estado.textContent = 'No se encontró un QR legible en la foto — acércate más o escribe el lote a mano.';
+      }
+    }catch(e){ if(estado) estado.textContent = 'No se pudo leer la foto — escribe el lote a mano.'; }
+    URL.revokeObjectURL(img.src);
+  };
+  img.onerror = ()=>{ if(estado) estado.textContent = 'No se pudo abrir la foto.'; };
+  img.src = URL.createObjectURL(f);
+  input.value = '';
 }
 function extraerLoteDeQR(texto){
   const t = String(texto||'').trim();
@@ -14892,8 +14953,7 @@ function cicloCamaraLote(){
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    let leido = null;
-    try{ const im = ctx.getImageData(0, 0, canvas.width, canvas.height); leido = jsQR(im.data, im.width, im.height); }catch(e){}
+    const leido = leerQRDeContexto(ctx, canvas.width, canvas.height);
     if(leido && leido.data){
       const r = extraerLoteDeQR(leido.data);
       if(r && r.lote){
@@ -14908,7 +14968,7 @@ function cicloCamaraLote(){
       }
     }
   }
-  loteRAF = requestAnimationFrame(cicloCamaraLote);
+  loteRAF = setTimeout(cicloCamaraLote, 150);
 }
 
 function confirmarLineaBip(){
