@@ -59,6 +59,18 @@
   .dup-reg .dup-btns{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
   .dup-reg .dup-btns button{ flex:1 1 auto; margin:0; padding:8px 10px; font-size:13px; width:auto; }
 
+  /* ---- inventario ---- */
+  .inv-chips{ display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+  .inv-chip{ display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:13px; font-weight:700; padding:5px 6px 5px 10px; border-radius:4px; border:1px solid var(--line); background:var(--panel); }
+  .inv-chip.ok{ border-color:var(--ok); }
+  .inv-chip.entregada{ border-color:#D98A1E; background:#FFF8EC; }
+  .inv-chip.noreg{ border-color:#C62828; background:#FFF5F4; color:#C62828; }
+  .inv-chip button{ border:0; background:transparent; font-size:16px; line-height:1; padding:0 4px; cursor:pointer; color:var(--ink-soft); }
+  .inv-sec{ margin:22px 0 8px; font-weight:800; font-size:14px; }
+  .inv-sec .n{ display:inline-block; min-width:22px; padding:1px 7px; margin-left:6px; border-radius:10px; background:var(--ink); color:#fff; font-size:12px; text-align:center; }
+  .inv-sec.rojo .n{ background:#C62828; }
+  .inv-nota{ font-size:12px; color:var(--ink-soft); margin:-4px 0 10px 2px; }
+
   /* ---- cabecera ---- */
   header{
     background: var(--ink);
@@ -420,7 +432,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1400</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1530</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -509,6 +521,7 @@
     <button class="btn btn-outline" onclick="ir('entregados')" style="margin-top:10px;">Ver entregados</button>
     <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">Ver resumen</button>
     <button class="btn btn-outline" id="btnVerDuplicadas" onclick="ir('duplicadas')" style="margin-top:10px; display:none;">OF duplicadas<span id="badgeDuplicadas" class="badge-rojo" style="display:none;"></span></button>
+    <button class="btn btn-outline" id="btnVerInventario" onclick="ir('inventario')" style="margin-top:10px; display:none;">Inventario de cajas</button>
   </section>
 
   <!-- ============ PENDIENTES ============ -->
@@ -561,6 +574,20 @@
     </div>
     <button class="btn btn-outline" onclick="actualizarResumen()" id="btnActualizarResumen">Actualizar</button>
     <div id="resumenContenido" style="margin-top:16px;"></div>
+  </section>
+
+  <!-- ============ INVENTARIO DE CAJAS (solo administradores) ============ -->
+  <section class="screen" id="screen-inventario">
+    <div class="screen-title">
+      <button class="back" onclick="ir('buscar')">←</button>
+      <h2>Inventario de cajas</h2>
+    </div>
+    <div id="invEntrada">
+      <label style="margin-top:0;">Número de OF (Enter para añadir)</label>
+      <input type="text" class="mono" id="invInput" placeholder="Ej. 20260912" inputmode="numeric" autocomplete="off" onkeydown="if(event.key==='Enter'){ anadirInventario(); event.preventDefault(); }">
+      <button class="btn btn-outline" onclick="anadirInventario()">Añadir</button>
+    </div>
+    <div id="invContenido" style="margin-top:14px;"></div>
   </section>
 
   <!-- ============ OF DUPLICADAS (solo administradores) ============ -->
@@ -12279,13 +12306,14 @@ function ir(pantalla, esVolver){
   // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
   // mismos resultados de búsqueda) y solo se restaura el scroll.
   if(pantalla==='pendientes' || pantalla==='buscar' || pantalla==='ubicaciones') actualizarBarraLote(); else ocultarBarraLote();
-  if(esVolver) return;
+  if(esVolver){ if(pantalla==='inventario') renderInventario(); return; }
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
   if(pantalla==='ubicaciones') entrarAUbicaciones();
   if(pantalla==='entregados') entrarAEntregados();
   if(pantalla==='resumen') entrarAResumen();
   if(pantalla==='duplicadas') entrarADuplicadas();
+  if(pantalla==='inventario') entrarAInventario();
   if(pantalla==='escanear') iniciarEscaner();
   if(pantalla==='realizar-bip') iniciarBipCamara();
 }
@@ -12298,6 +12326,8 @@ function actualizarVisibilidadAdmin(){
   if(btnResumen) btnResumen.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
   const btnDup = document.getElementById('btnVerDuplicadas');
   if(btnDup) btnDup.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
+  const btnInv = document.getElementById('btnVerInventario');
+  if(btnInv) btnInv.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
   try{ actualizarBadgeDuplicadas(); }catch(e){}
 }
 
@@ -12873,6 +12903,177 @@ function exportarInformeEntregados(){
   document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
   toast('Informe exportado (' + entregadosCache.length + ' entregas)');
+}
+
+/* ---------- Inventario de cajas (solo administradores) ----------
+   Se apuntan las OF de las cajas que hay físicamente; al finalizar se comparan con lo
+   registrado: bien registradas / entregadas en la app / sin registrar / pendientes que no
+   se contaron (la caja no está). Solo lee y compara: no cambia nada de lo registrado.
+   Lo contado se guarda en el móvil hasta empezar de cero. */
+const LS_INVENTARIO = 'pickings_lis_inventario_v1';
+let inventario = (function(){
+  try{ const o = JSON.parse(localStorage.getItem(LS_INVENTARIO)); if(o && Array.isArray(o.ofs)) return { ofs: o.ofs.map(String), fase: o.fase==='resultado' ? 'resultado' : 'contando' }; }catch(e){}
+  return { ofs: [], fase: 'contando' };
+})();
+function guardarInventario(){ try{ localStorage.setItem(LS_INVENTARIO, JSON.stringify(inventario)); }catch(e){} }
+function normOfInv(v){ return String(v||'').trim().toLowerCase(); }
+
+function clasificarInventario(){
+  const pendientes = {}, entregadas = {};
+  (DB||[]).forEach(p=>{
+    const k = normOfInv(p.of); if(!k) return;
+    if(p.estado==='completado'){ (entregadas[k] = entregadas[k] || {})[p.id] = { id:p.id, of:p.of, proyecto:p.proyecto, subproyecto:p.subproyecto, cajas:p.cajas, quien:p.registradoPor, fecha:p.fecha, entregadoA:(p.entregas||[]).filter(e=>e.tipo==='completa').slice(-1).map(e=>e.entregadoA)[0]||'', fechaEntrega:(p.entregas||[]).filter(e=>e.tipo==='completa').slice(-1).map(e=>e.fecha)[0]||'' }; }
+    else (pendientes[k] = pendientes[k] || []).push(p);
+  });
+  (entregadosCache||[]).forEach(r=>{
+    const k = normOfInv(r['OF']); if(!k) return;
+    const id = String(r['ID']||'');
+    (entregadas[k] = entregadas[k] || {})[id] = { id, of:String(r['OF']||''), proyecto:String(r['Proyecto']||''), subproyecto:String(r['Subproyecto']||''), cajas:r['Cajas'], quien:String(r['Registrado por']||''), fecha:r['Fecha'], entregadoA:String(r['Entregado a']||''), fechaEntrega:r['Fecha de entrega'] };
+  });
+  const veces = {}, orden = [];
+  inventario.ofs.forEach(o=>{ const k = normOfInv(o); if(!k) return; if(!veces[k]){ veces[k] = 0; orden.push({ k, of:String(o).trim() }); } veces[k]++; });
+  const res = { bien:[], entregadas:[], noreg:[], faltan:[] };
+  orden.forEach(({k,of})=>{
+    const pend = pendientes[k] || [], ent = Object.values(entregadas[k] || {});
+    const item = { k, of, veces: veces[k], pend, ent };
+    if(pend.length) res.bien.push(item);
+    else if(ent.length) res.entregadas.push(item);
+    else res.noreg.push(item);
+  });
+  Object.keys(pendientes).forEach(k=>{ if(!veces[k]) pendientes[k].forEach(p=> res.faltan.push(p)); });
+  res.faltan.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
+  return res;
+}
+function estadoChipInv(k, c){
+  if((c.pendPorOf[k]||0) > 0) return 'ok';
+  if((c.entPorOf[k]||0) > 0) return 'entregada';
+  return 'noreg';
+}
+function anadirInventario(){
+  const campo = document.getElementById('invInput');
+  if(!campo) return;
+  const trozos = campo.value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+  if(!trozos.length){ campo.focus(); return; }
+  trozos.forEach(t=> inventario.ofs.push(t));
+  inventario.fase = 'contando';
+  guardarInventario();
+  campo.value = ''; campo.focus();
+  renderInventario();
+}
+function quitarInventario(k){
+  const i = inventario.ofs.map(normOfInv).lastIndexOf(k);
+  if(i >= 0){ inventario.ofs.splice(i,1); guardarInventario(); renderInventario(); }
+}
+function finalizarInventario(){
+  if(!inventario.ofs.length){ toast('Aún no has añadido ninguna OF'); return; }
+  inventario.fase = 'resultado'; guardarInventario();
+  renderInventario();
+  window.scrollTo(0,0);
+  refrescarInventario();
+}
+function seguirContandoInventario(){ inventario.fase = 'contando'; guardarInventario(); renderInventario(); }
+function empezarDeCeroInventario(){
+  if(!confirm('Se borra lo contado hasta ahora (' + inventario.ofs.length + ' entradas). Lo registrado en la app no se toca. ¿Seguro?')) return;
+  inventario = { ofs: [], fase: 'contando' }; guardarInventario(); renderInventario();
+}
+async function refrescarInventario(){
+  const est = document.getElementById('invEstadoDatos');
+  if(est) est.textContent = 'Actualizando datos…';
+  await Promise.allSettled([cargarLigeroYActualizarDB(), cargarEntregadosYActualizar()]);
+  renderInventario();
+}
+function entrarAInventario(){
+  renderInventario();
+  refrescarInventario().catch(()=>{});
+}
+function abrirDesdeInventario(id){
+  if(DB.find(x=>x.id===id)) abrirDetalle(id); else verPickingEntregado(id);
+}
+function registrarDesdeInventario(of){
+  nuevoPicking();
+  const campo = document.getElementById('f_of');
+  if(campo){ campo.value = of; try{ chequearOfEnVivo(); }catch(e){} }
+}
+function tarjetaEntregadaInv(it){
+  const r = it.ent[it.ent.length-1];
+  return `<div class="ticket" onclick="abrirDesdeInventario('${escapeAtributo(r.id)}')">
+    <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(r.of)}</span><span class="ticket-date">${r.fechaEntrega ? fechaCorta(r.fechaEntrega) : ''}</span></div>
+    <div class="ticket-proj">${escapeHtml(r.proyecto||'—')}${r.subproyecto ? ' · '+escapeHtml(r.subproyecto) : ''}</div>
+    <div class="ticket-meta"><span class="chip done">Entregado${r.entregadoA ? ' a '+escapeHtml(r.entregadoA) : ''}</span>${it.veces>1 ? `<span class="chip">contada ×${it.veces}</span>` : ''}</div>
+  </div>`;
+}
+function renderInventario(){
+  const cont = document.getElementById('invContenido');
+  const entrada = document.getElementById('invEntrada');
+  if(!cont) return;
+  if(!esAdminSheet(usuarioActual)){ if(entrada) entrada.style.display = 'none'; cont.innerHTML = '<div class="empty">Solo para administradores.</div>'; return; }
+  const res = clasificarInventario();
+  const total = inventario.ofs.length;
+  const distintas = res.bien.length + res.entregadas.length + res.noreg.length;
+  if(inventario.fase === 'contando'){
+    if(entrada) entrada.style.display = '';
+    const pendPorOf = {}, entPorOf = {};
+    res.bien.forEach(i=> pendPorOf[i.k] = i.pend.length);
+    res.entregadas.forEach(i=> entPorOf[i.k] = i.ent.length);
+    const c = { pendPorOf, entPorOf };
+    const agrup = {};
+    inventario.ofs.forEach(o=>{ const k = normOfInv(o); if(!k) return; (agrup[k] = agrup[k] || { of:String(o).trim(), n:0 }).n++; });
+    const chips = Object.keys(agrup).reverse().map(k=>{
+      const cl = estadoChipInv(k, c);
+      return `<span class="inv-chip ${cl}">${escapeHtml(agrup[k].of)}${agrup[k].n>1 ? ' ×'+agrup[k].n : ''}<button type="button" title="Quitar" onclick="quitarInventario('${escapeAtributo(k)}')">×</button></span>`;
+    }).join('');
+    cont.innerHTML = `
+      <div class="hint"><b>${total}</b> OF contada${total===1?'':'s'}${total!==distintas ? ' ('+distintas+' distintas)' : ''}.
+        Verde: pendiente y registrada · Naranja: la app la da por entregada · Rojo: no está registrada.</div>
+      <div class="inv-chips">${chips || '<span class="hint">Escribe el número de OF y pulsa Enter.</span>'}</div>
+      <button class="btn btn-primary" onclick="finalizarInventario()" ${total ? '' : 'disabled style="opacity:0.5;"'}>Finalizar y comparar</button>
+      ${total ? '<button class="btn btn-outline" onclick="empezarDeCeroInventario()" style="color:#B33A3A; border-color:#B33A3A;">Empezar de cero</button>' : ''}`;
+    return;
+  }
+  if(entrada) entrada.style.display = 'none';
+  const sec = (titulo, n, clase, nota, html)=> `<div class="inv-sec ${clase||''}">${titulo}<span class="n">${n}</span></div>${nota ? '<div class="inv-nota">'+nota+'</div>' : ''}${n ? html : '<div class="hint" style="margin-bottom:8px;">Ninguna.</div>'}`;
+  const bienHtml = res.bien.map(it=> it.pend.map(p=> ticketHtml(p) + (it.veces>1 || it.pend.length>1 || it.ent.length ? `<div class="inv-nota">${it.veces>1 ? 'Contada ×'+it.veces+'. ' : ''}${it.pend.length>1 ? 'Hay '+it.pend.length+' registros pendientes de esta OF. ' : ''}${it.ent.length ? 'Además consta una entrega de esta OF.' : ''}</div>` : '')).join('')).join('');
+  const entHtml = res.entregadas.map(tarjetaEntregadaInv).join('');
+  const noregHtml = res.noreg.map(it=>`<div class="ticket attn">
+      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(it.of)}</span></div>
+      <div class="ticket-proj">No está registrada en la app${it.veces>1 ? ' · contada ×'+it.veces : ''}</div>
+      <div class="ticket-meta"><button class="btn btn-outline" style="margin:6px 0 0; width:auto; padding:8px 14px;" onclick="event.stopPropagation(); registrarDesdeInventario('${escapeAtributo(it.of)}')">Registrar esta OF</button></div>
+    </div>`).join('');
+  const faltanHtml = res.faltan.map(p=> ticketHtml(p)).join('');
+  cont.innerHTML = `
+    <div class="hint"><b>${total}</b> OF contada${total===1?'':'s'}${total!==distintas ? ' ('+distintas+' distintas)' : ''}. <span id="invEstadoDatos"></span></div>
+    <button class="btn btn-primary" onclick="descargarInventarioCSV()">Descargar lista (Excel / CSV)</button>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-outline" onclick="seguirContandoInventario()" style="margin:0; flex:1;">Seguir contando</button>
+      <button class="btn btn-outline" onclick="refrescarInventario()" style="margin:0; flex:1;">Actualizar</button>
+    </div>
+    ${sec('Sin registrar en la app', res.noreg.length, res.noreg.length?'rojo':'', 'La caja está aquí pero la OF no consta en la app: falta registrarla (o se registró con otro número).', noregHtml)}
+    ${sec('Pendientes en la app que NO has contado', res.faltan.length, res.faltan.length?'rojo':'', 'Figuran pendientes de entrega pero su caja no está aquí: se entregó y no se registró, o está en otro sitio. Ábrela para entregarla, editarla o eliminarla.', faltanHtml)}
+    ${sec('Contadas, pero la app las da por entregadas', res.entregadas.length, res.entregadas.length?'rojo':'', 'La caja está aquí pero consta como entregada. Ábrela para revisarla (por ejemplo, deshacer la entrega).', entHtml)}
+    ${sec('Contadas y bien registradas (pendientes de entrega)', res.bien.length, '', '', bienHtml)}
+    <button class="btn btn-outline" onclick="empezarDeCeroInventario()" style="margin-top:24px; color:#B33A3A; border-color:#B33A3A;">Empezar de cero</button>`;
+}
+function fechaCompletaInv(v){
+  const d = new Date(v); if(!v || isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
+}
+function descargarInventarioCSV(){
+  const res = clasificarInventario();
+  const columnas = ['Resultado','OF','Veces contada','Proyecto','Subproyecto','Cajas registradas','Registrado por','Fecha de registro','Estado en la app','Entregado a','Fecha de entrega'];
+  const filas = [columnas.join(';')];
+  const add = (resultado, of, veces, p, estado, ent)=> filas.push([resultado, of, veces, p ? p.proyecto : '', p ? p.subproyecto : '', p ? p.cajas : '', p ? (p.registradoPor || p.quien) : '', p ? fechaCompletaInv(p.fecha) : '', estado, ent ? ent.entregadoA : '', ent ? fechaCompletaInv(ent.fechaEntrega) : ''].map(csvEscape).join(';'));
+  res.noreg.forEach(it=> add('Sin registrar en la app', it.of, it.veces, null, 'No existe', null));
+  res.faltan.forEach(p=> add('Pendiente en la app, NO contada (la caja no está)', p.of, 0, p, 'Pendiente', null));
+  res.entregadas.forEach(it=>{ const r = it.ent[it.ent.length-1]; add('Contada, pero entregada en la app', it.of, it.veces, r, 'Entregada', r); });
+  res.bien.forEach(it=> it.pend.forEach(p=> add('Contada y registrada (pendiente de entrega)', it.of, it.veces, p, 'Pendiente', null)));
+  const csv = '\ufeff' + filas.join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'inventario_cajas_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  toast('Lista descargada');
 }
 
 /* ---------- OF duplicadas (solo administradores) ----------
@@ -14181,7 +14382,7 @@ function renderResultadosBuscar(){
 // "Buscar" — y sin recargar ni vaciar nada (ir(x, true) se salta eso).
 let pantallaOrigenDetalle = 'buscar';
 let scrollDetalleOrigen = 0;
-const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas'];
+const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas','screen-inventario'];
 function abrirDetalle(id){
   // Solo se recuerda el origen cuando se viene de verdad de una de las 3
   // listas — si se llega aquí desde otro paso intermedio (p.ej. al volver
