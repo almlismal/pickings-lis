@@ -66,6 +66,18 @@
   .inv-chip.entregada{ border-color:#D98A1E; background:#FFF8EC; }
   .inv-chip.noreg{ border-color:#C62828; background:#FFF5F4; color:#C62828; }
   .inv-chip button{ border:0; background:transparent; font-size:16px; line-height:1; padding:0 4px; cursor:pointer; color:var(--ink-soft); }
+  .inv-lista{ margin:10px 0; }
+  .inv-fila{ display:flex; align-items:center; gap:8px; padding:7px 8px; margin-bottom:5px; border:1px solid var(--line); border-radius:4px; background:var(--panel); }
+  .inv-fila.ok{ border-left:4px solid var(--ok); }
+  .inv-fila.entregada{ border-left:4px solid #D98A1E; background:#FFF8EC; }
+  .inv-fila.noreg{ border-left:4px solid #C62828; background:#FFF5F4; }
+  .inv-fila .inv-n{ font-family:var(--mono); font-size:12px; color:var(--ink-soft); min-width:34px; }
+  .inv-fila .inv-of{ font-family:var(--mono); font-weight:700; font-size:15px; }
+  .inv-fila .inv-marca{ flex:1; font-size:11px; color:var(--ink-soft); }
+  .inv-fila button{ border:1px solid var(--line); background:transparent; border-radius:3px; font-size:13px; padding:4px 9px; cursor:pointer; color:var(--ink); }
+  .inv-item{ margin-bottom:12px; }
+  .inv-item .ticket{ margin-top:-1px; margin-bottom:0; }
+  .inv-sug{ margin:6px 0 4px; font-size:13px; }
   .inv-sec{ margin:22px 0 8px; font-weight:800; font-size:14px; }
   .inv-sec .n{ display:inline-block; min-width:22px; padding:1px 7px; margin-left:6px; border-radius:10px; background:var(--ink); color:#fff; font-size:12px; text-align:center; }
   .inv-sec.rojo .n{ background:#C62828; }
@@ -432,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1530</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1730</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -582,10 +594,17 @@
       <button class="back" onclick="ir('buscar')">←</button>
       <h2>Inventario de cajas</h2>
     </div>
+    <div class="attn-banner" style="margin:0 0 10px;"><span class="dot">i</span><span>
+      <b>Antes de empezar, actualiza los datos</b> para comparar con lo último que se haya registrado o entregado.
+      <div id="invFrescura" class="hint" style="margin:4px 0 0;"></div>
+      <button type="button" class="btn btn-primary" id="invBtnActualizar" style="margin:8px 0 0; width:auto; padding:8px 16px;" onclick="refrescarInventario()">Actualizar datos</button>
+    </span></div>
     <div id="invEntrada">
-      <label style="margin-top:0;">Número de OF (Enter para añadir)</label>
-      <input type="text" class="mono" id="invInput" placeholder="Ej. 20260912" inputmode="numeric" autocomplete="off" onkeydown="if(event.key==='Enter'){ anadirInventario(); event.preventDefault(); }">
-      <button class="btn btn-outline" onclick="anadirInventario()">Añadir</button>
+      <label style="margin-top:0;">Número de OF (toca Añadir, o Enter si tu teclado lo tiene)</label>
+      <div style="display:flex; gap:8px; align-items:stretch;">
+        <input type="text" class="mono" id="invInput" placeholder="Ej. 20260912" inputmode="numeric" autocomplete="off" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ anadirInventario(); event.preventDefault(); }">
+        <button type="button" class="btn btn-primary" id="invBtnAnadir" style="margin:0; width:auto; padding:0 22px; font-size:18px;" onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()" onclick="anadirInventario()">+ Añadir</button>
+      </div>
     </div>
     <div id="invContenido" style="margin-top:14px;"></div>
   </section>
@@ -12622,6 +12641,7 @@ function resetFormRegistro(mantenerProyecto){
 }
 
 function nuevoPicking(){
+  alTerminarRegistroCallback = null; // por si quedó pendiente un "volver al inventario" de un registro que no se terminó
   pickingPendienteDatos = null; // por si se venía de una sesión de "Realizar picking" sin terminar
   editingId = null;
   ir('registro');
@@ -12911,61 +12931,162 @@ function exportarInformeEntregados(){
    se contaron (la caja no está). Solo lee y compara: no cambia nada de lo registrado.
    Lo contado se guarda en el móvil hasta empezar de cero. */
 const LS_INVENTARIO = 'pickings_lis_inventario_v1';
+/* entradas: [{ n, of }] — n es el número de orden en que se contó (1, 2, 3…); no se reutiliza ni
+   cambia aunque se quite alguna, para poder localizar físicamente "la caja que conté en el nº 14". */
 let inventario = (function(){
-  try{ const o = JSON.parse(localStorage.getItem(LS_INVENTARIO)); if(o && Array.isArray(o.ofs)) return { ofs: o.ofs.map(String), fase: o.fase==='resultado' ? 'resultado' : 'contando' }; }catch(e){}
-  return { ofs: [], fase: 'contando' };
+  try{
+    const o = JSON.parse(localStorage.getItem(LS_INVENTARIO));
+    if(o && Array.isArray(o.entradas)) return { entradas: o.entradas.map(e=>({ n:Number(e.n), of:String(e.of) })), sig: Number(o.sig)||1, fase: o.fase==='resultado' ? 'resultado' : 'contando' };
+    if(o && Array.isArray(o.ofs)){ // formato anterior (solo la lista de OF)
+      const entradas = o.ofs.map((x,i)=>({ n:i+1, of:String(x) }));
+      return { entradas, sig: entradas.length+1, fase: o.fase==='resultado' ? 'resultado' : 'contando' };
+    }
+  }catch(e){}
+  return { entradas: [], sig: 1, fase: 'contando' };
 })();
 function guardarInventario(){ try{ localStorage.setItem(LS_INVENTARIO, JSON.stringify(inventario)); }catch(e){} }
 function normOfInv(v){ return String(v||'').trim().toLowerCase(); }
 
+// ¿b se parece a a como un error de tecleo? (un dígito distinto, dos seguidos cambiados de sitio, uno de más o de menos)
+function parecidaInv(a, b){
+  if(a === b) return false;
+  const la = a.length, lb = b.length;
+  if(la === lb){
+    const d = []; for(let i=0;i<la;i++) if(a[i] !== b[i]) d.push(i);
+    if(d.length === 1) return true;
+    if(d.length === 2 && d[1] === d[0]+1 && a[d[0]] === b[d[1]] && a[d[1]] === b[d[0]]) return true;
+    return false;
+  }
+  if(Math.abs(la-lb) !== 1) return false;
+  const corta = la < lb ? a : b, larga = la < lb ? b : a;
+  let i = 0; while(i < corta.length && corta[i] === larga[i]) i++;
+  return corta.slice(i) === larga.slice(i+1);
+}
+
 function clasificarInventario(){
-  const pendientes = {}, entregadas = {};
+  const pendientes = {}, entregadas = {}, conocidas = {};
   (DB||[]).forEach(p=>{
     const k = normOfInv(p.of); if(!k) return;
-    if(p.estado==='completado'){ (entregadas[k] = entregadas[k] || {})[p.id] = { id:p.id, of:p.of, proyecto:p.proyecto, subproyecto:p.subproyecto, cajas:p.cajas, quien:p.registradoPor, fecha:p.fecha, entregadoA:(p.entregas||[]).filter(e=>e.tipo==='completa').slice(-1).map(e=>e.entregadoA)[0]||'', fechaEntrega:(p.entregas||[]).filter(e=>e.tipo==='completa').slice(-1).map(e=>e.fecha)[0]||'' }; }
+    conocidas[k] = String(p.of).trim();
+    if(p.estado==='completado'){ const c = (p.entregas||[]).filter(e=>e.tipo==='completa').slice(-1)[0]; (entregadas[k] = entregadas[k] || {})[p.id] = { id:p.id, of:p.of, proyecto:p.proyecto, subproyecto:p.subproyecto, cajas:p.cajas, quien:p.registradoPor, fecha:p.fecha, entregadoA:c?c.entregadoA:'', fechaEntrega:c?c.fecha:'' }; }
     else (pendientes[k] = pendientes[k] || []).push(p);
   });
   (entregadosCache||[]).forEach(r=>{
     const k = normOfInv(r['OF']); if(!k) return;
     const id = String(r['ID']||'');
+    conocidas[k] = String(r['OF']).trim();
     (entregadas[k] = entregadas[k] || {})[id] = { id, of:String(r['OF']||''), proyecto:String(r['Proyecto']||''), subproyecto:String(r['Subproyecto']||''), cajas:r['Cajas'], quien:String(r['Registrado por']||''), fecha:r['Fecha'], entregadoA:String(r['Entregado a']||''), fechaEntrega:r['Fecha de entrega'] };
   });
-  const veces = {}, orden = [];
-  inventario.ofs.forEach(o=>{ const k = normOfInv(o); if(!k) return; if(!veces[k]){ veces[k] = 0; orden.push({ k, of:String(o).trim() }); } veces[k]++; });
-  const res = { bien:[], entregadas:[], noreg:[], faltan:[] };
-  orden.forEach(({k,of})=>{
-    const pend = pendientes[k] || [], ent = Object.values(entregadas[k] || {});
-    const item = { k, of, veces: veces[k], pend, ent };
-    if(pend.length) res.bien.push(item);
-    else if(ent.length) res.entregadas.push(item);
-    else res.noreg.push(item);
+  const grupos = {}, orden = [];
+  inventario.entradas.forEach(e=>{
+    const k = normOfInv(e.of); if(!k) return;
+    if(!grupos[k]){ grupos[k] = { k, of:String(e.of).trim(), veces:0, pos:[] }; orden.push(grupos[k]); }
+    grupos[k].veces++; grupos[k].pos.push(e.n);
   });
-  Object.keys(pendientes).forEach(k=>{ if(!veces[k]) pendientes[k].forEach(p=> res.faltan.push(p)); });
-  res.faltan.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
+  const res = { bien:[], entregadas:[], noreg:[], faltan:[], estadoPorOf:{} };
+  const clavesConocidas = Object.keys(conocidas);
+  orden.forEach(g=>{
+    const pend = pendientes[g.k] || [], ent = Object.values(entregadas[g.k] || {});
+    const item = { k:g.k, of:g.of, veces:g.veces, pos:g.pos, pend, ent, sugerencias:[] };
+    if(pend.length){ res.bien.push(item); res.estadoPorOf[g.k] = 'ok'; }
+    else if(ent.length){ res.entregadas.push(item); res.estadoPorOf[g.k] = 'entregada'; }
+    else {
+      item.sugerencias = clavesConocidas.filter(c=> parecidaInv(g.k, c)).slice(0,3).map(c=> ({ k:c, of:conocidas[c], pendiente: !!pendientes[c] }));
+      res.noreg.push(item); res.estadoPorOf[g.k] = item.sugerencias.length ? 'sospecha' : 'noreg';
+    }
+  });
+  res.noreg.sort((x,y)=> (y.sugerencias.length>0) - (x.sugerencias.length>0));
+  Object.keys(pendientes).forEach(k=>{ if(!grupos[k]) pendientes[k].forEach(p=> res.faltan.push(p)); });
+  res.faltan.sort((x,y)=> new Date(x.fecha) - new Date(y.fecha));
   return res;
 }
-function estadoChipInv(k, c){
-  if((c.pendPorOf[k]||0) > 0) return 'ok';
-  if((c.entPorOf[k]||0) > 0) return 'entregada';
-  return 'noreg';
-}
+let invAviso = null; // aviso de la última OF añadida (si requiere atención): { n }
 function anadirInventario(){
   const campo = document.getElementById('invInput');
   if(!campo) return;
   const trozos = campo.value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
   if(!trozos.length){ campo.focus(); return; }
-  trozos.forEach(t=> inventario.ofs.push(t));
+  let ultima = null;
+  trozos.forEach(t=>{ const e = { n: inventario.sig++, of: t }; inventario.entradas.push(e); ultima = e; });
   inventario.fase = 'contando';
   guardarInventario();
   campo.value = ''; campo.focus();
+  invAviso = null;
+  if(ultima){
+    const res = clasificarInventario();
+    const est = res.estadoPorOf[normOfInv(ultima.of)];
+    if(!/^\d{8}$/.test(ultima.of) || est !== 'ok') invAviso = { n: ultima.n };
+    if(est === 'noreg' || est === 'sospecha') toast('OF ' + ultima.of + ' NO está registrada');
+    else if(est === 'entregada') toast('OF ' + ultima.of + ' consta como ENTREGADA');
+    else if(!/^\d{8}$/.test(ultima.of)) toast('La OF debe tener 8 números — revísala');
+  }
   renderInventario();
 }
-function quitarInventario(k){
-  const i = inventario.ofs.map(normOfInv).lastIndexOf(k);
-  if(i >= 0){ inventario.ofs.splice(i,1); guardarInventario(); renderInventario(); }
+function descartarAvisoInv(){ invAviso = null; renderInventario(); const c = document.getElementById('invInput'); if(c) c.focus(); }
+function htmlAvisoInv(res){
+  if(!invAviso) return '';
+  const e = inventario.entradas.find(x=>x.n===invAviso.n);
+  if(!e){ invAviso = null; return ''; }
+  const k = normOfInv(e.of);
+  const est = res.estadoPorOf[k];
+  const formato = !/^\d{8}$/.test(e.of);
+  if(est === 'ok' && !formato){ invAviso = null; return ''; }
+  const it = res.noreg.find(x=>x.k===k);
+  let titulo = '', cuerpo = '', botones = '';
+  const lista = String(e.n);
+  if(est === 'noreg' || est === 'sospecha'){
+    titulo = 'La OF ' + e.of + ' NO está registrada en la app';
+    cuerpo = formato ? 'Además no tiene 8 números: puede ser un error al teclear.' : 'La caja está aquí pero no consta. Puede ser un error al teclear, o que falte registrarla.';
+    if(it && it.sugerencias.length) cuerpo += '<br><b>¿Quisiste decir?</b> ' + it.sugerencias.map(sg=>`<button type="button" class="btn btn-outline" style="margin:4px 6px 0 0; width:auto; padding:6px 12px;" onclick="corregirInventario('${lista}','${escapeAtributo(sg.of)}')">${escapeHtml(sg.of)}${sg.pendiente?'':' (entregada)'}</button>`).join('');
+    botones = `<button type="button" class="btn btn-primary" style="margin:8px 6px 0 0; width:auto; padding:8px 14px;" onclick="registrarDesdeInventario('${escapeAtributo(e.of)}')">Registrarla ahora</button>
+      <button type="button" class="btn btn-outline" style="margin:8px 6px 0 0; width:auto; padding:8px 14px;" onclick="editarEntradaInv('${lista}')">Corregir número</button>
+      <button type="button" class="btn btn-outline" style="margin:8px 0 0; width:auto; padding:8px 14px;" onclick="descartarAvisoInv()">Seguir contando</button>`;
+  } else if(est === 'entregada'){
+    titulo = 'La OF ' + e.of + ' consta como ENTREGADA';
+    cuerpo = 'La caja está aquí pero la app dice que ya se entregó. Revísalo al final, o corrige el número si te equivocaste.';
+    botones = `<button type="button" class="btn btn-outline" style="margin:8px 6px 0 0; width:auto; padding:8px 14px;" onclick="editarEntradaInv('${lista}')">Corregir número</button>
+      <button type="button" class="btn btn-outline" style="margin:8px 0 0; width:auto; padding:8px 14px;" onclick="descartarAvisoInv()">Seguir contando</button>`;
+  } else {
+    titulo = 'La OF ' + e.of + ' no tiene 8 números';
+    cuerpo = 'Revisa que no falte o sobre ningún dígito.';
+    botones = `<button type="button" class="btn btn-outline" style="margin:8px 6px 0 0; width:auto; padding:8px 14px;" onclick="editarEntradaInv('${lista}')">Corregir número</button>
+      <button type="button" class="btn btn-outline" style="margin:8px 0 0; width:auto; padding:8px 14px;" onclick="descartarAvisoInv()">Seguir contando</button>`;
+  }
+  return `<div class="attn-banner" style="border-color:#C62828; background:#FDECEC; margin:10px 0;"><span class="dot" style="background:#C62828;">!</span><span><b>${escapeHtml(titulo)}</b><br>${cuerpo}<div>${botones}</div></span></div>`;
+}
+function quitarInventario(n){
+  const i = inventario.entradas.findIndex(e=>e.n===n);
+  if(i >= 0){ inventario.entradas.splice(i,1); guardarInventario(); renderInventario(); }
+}
+function editarEntradaInv(lista){
+  const ns = String(lista).split(',').map(Number).filter(Boolean);
+  const e = inventario.entradas.find(x=>x.n===ns[0]);
+  if(!e) return;
+  mostrarSheet(`
+    <h3>Corregir ${ns.length>1 ? 'las entradas' : 'la entrada'} ${ns.map(n=>'#'+n).join(', ')}</h3>
+    <label>Número de OF</label>
+    <input type="text" class="mono" id="invEditar" value="${escapeAtributo(e.of)}" inputmode="numeric" autocomplete="off" onkeydown="if(event.key==='Enter'){ guardarEntradaInv('${escapeAtributo(lista)}'); event.preventDefault(); }">
+    <button class="btn btn-primary" onclick="guardarEntradaInv('${escapeAtributo(lista)}')">Guardar</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+  setTimeout(()=>{ const c = document.getElementById('invEditar'); if(c){ c.focus(); c.select(); } }, 50);
+}
+function guardarEntradaInv(lista){
+  const c = document.getElementById('invEditar');
+  const nuevo = c ? c.value.trim() : '';
+  if(!nuevo){ toast('Escribe el número de OF'); return; }
+  corregirInventario(lista, nuevo);
+  cerrarSheet();
+}
+function corregirInventario(lista, nuevo){
+  const ns = String(lista).split(',').map(Number);
+  inventario.entradas.forEach(e=>{ if(ns.includes(e.n)) e.of = String(nuevo).trim(); });
+  guardarInventario();
+  renderInventario();
+  toast('Corregido');
 }
 function finalizarInventario(){
-  if(!inventario.ofs.length){ toast('Aún no has añadido ninguna OF'); return; }
+  if(!inventario.entradas.length){ toast('Aún no has añadido ninguna OF'); return; }
   inventario.fase = 'resultado'; guardarInventario();
   renderInventario();
   window.scrollTo(0,0);
@@ -12973,16 +13094,34 @@ function finalizarInventario(){
 }
 function seguirContandoInventario(){ inventario.fase = 'contando'; guardarInventario(); renderInventario(); }
 function empezarDeCeroInventario(){
-  if(!confirm('Se borra lo contado hasta ahora (' + inventario.ofs.length + ' entradas). Lo registrado en la app no se toca. ¿Seguro?')) return;
-  inventario = { ofs: [], fase: 'contando' }; guardarInventario(); renderInventario();
+  if(!confirm('Se borra lo contado hasta ahora (' + inventario.entradas.length + ' entradas). Lo registrado en la app no se toca. ¿Seguro?')) return;
+  inventario = { entradas: [], sig: 1, fase: 'contando' }; guardarInventario(); renderInventario();
+}
+let invFrescura = null; // { hora, ok }
+function pintarFrescuraInv(cargando){
+  const f = document.getElementById('invFrescura');
+  const b = document.getElementById('invBtnActualizar');
+  if(b){ b.disabled = !!cargando; b.textContent = cargando ? 'Actualizando…' : 'Actualizar datos'; }
+  if(!f) return;
+  if(cargando){ f.textContent = 'Actualizando datos…'; return; }
+  if(!invFrescura){ f.textContent = 'Aún no actualizados en esta sesión (se usan los datos guardados en el móvil).'; return; }
+  f.textContent = invFrescura.ok
+    ? 'Datos actualizados a las ' + invFrescura.hora + '.'
+    : 'No se pudo actualizar (¿sin conexión?). Se usan los datos guardados en el móvil, de antes de las ' + invFrescura.hora + '.';
 }
 async function refrescarInventario(){
   const est = document.getElementById('invEstadoDatos');
   if(est) est.textContent = 'Actualizando datos…';
-  await Promise.allSettled([cargarLigeroYActualizarDB(), cargarEntregadosYActualizar()]);
+  pintarFrescuraInv(true);
+  const r = await Promise.allSettled([cargarLigeroYActualizarDB(), cargarEntregadosYActualizar()]);
+  invFrescura = { hora: new Date().toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'}), ok: r.every(x=>x.status==='fulfilled') };
+  pintarFrescuraInv(false);
   renderInventario();
+  if(!invFrescura.ok) toast('No se pudo actualizar — se usan los datos del móvil');
+  else toast('Datos actualizados');
 }
 function entrarAInventario(){
+  invFrescura = null; pintarFrescuraInv(false);
   renderInventario();
   refrescarInventario().catch(()=>{});
 }
@@ -12990,16 +13129,23 @@ function abrirDesdeInventario(id){
   if(DB.find(x=>x.id===id)) abrirDetalle(id); else verPickingEntregado(id);
 }
 function registrarDesdeInventario(of){
+  cerrarSheet();
   nuevoPicking();
   const campo = document.getElementById('f_of');
   if(campo){ campo.value = of; try{ chequearOfEnVivo(); }catch(e){} }
+  // al terminar el registro de ESTA OF se vuelve al inventario; si se registra otra cosa, nada cambia
+  alTerminarRegistroCallback = function(id){
+    const p = DB.find(x=>x.id===id);
+    if(p && normOfInv(p.of) === normOfInv(of)){ invAviso = null; ir('inventario'); } else ir('home');
+  };
 }
+function textoPosInv(pos){ return pos.map(n=>'#'+n).join(', '); }
 function tarjetaEntregadaInv(it){
   const r = it.ent[it.ent.length-1];
   return `<div class="ticket" onclick="abrirDesdeInventario('${escapeAtributo(r.id)}')">
     <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(r.of)}</span><span class="ticket-date">${r.fechaEntrega ? fechaCorta(r.fechaEntrega) : ''}</span></div>
     <div class="ticket-proj">${escapeHtml(r.proyecto||'—')}${r.subproyecto ? ' · '+escapeHtml(r.subproyecto) : ''}</div>
-    <div class="ticket-meta"><span class="chip done">Entregado${r.entregadoA ? ' a '+escapeHtml(r.entregadoA) : ''}</span>${it.veces>1 ? `<span class="chip">contada ×${it.veces}</span>` : ''}</div>
+    <div class="ticket-meta"><span class="chip done">Entregado${r.entregadoA ? ' a '+escapeHtml(r.entregadoA) : ''}</span><span class="chip">contada ${textoPosInv(it.pos)}</span></div>
   </div>`;
 }
 function renderInventario(){
@@ -13008,38 +13154,50 @@ function renderInventario(){
   if(!cont) return;
   if(!esAdminSheet(usuarioActual)){ if(entrada) entrada.style.display = 'none'; cont.innerHTML = '<div class="empty">Solo para administradores.</div>'; return; }
   const res = clasificarInventario();
-  const total = inventario.ofs.length;
+  const total = inventario.entradas.length;
   const distintas = res.bien.length + res.entregadas.length + res.noreg.length;
   if(inventario.fase === 'contando'){
     if(entrada) entrada.style.display = '';
-    const pendPorOf = {}, entPorOf = {};
-    res.bien.forEach(i=> pendPorOf[i.k] = i.pend.length);
-    res.entregadas.forEach(i=> entPorOf[i.k] = i.ent.length);
-    const c = { pendPorOf, entPorOf };
-    const agrup = {};
-    inventario.ofs.forEach(o=>{ const k = normOfInv(o); if(!k) return; (agrup[k] = agrup[k] || { of:String(o).trim(), n:0 }).n++; });
-    const chips = Object.keys(agrup).reverse().map(k=>{
-      const cl = estadoChipInv(k, c);
-      return `<span class="inv-chip ${cl}">${escapeHtml(agrup[k].of)}${agrup[k].n>1 ? ' ×'+agrup[k].n : ''}<button type="button" title="Quitar" onclick="quitarInventario('${escapeAtributo(k)}')">×</button></span>`;
+    const porK = {};
+    res.bien.forEach(i=> porK[i.k] = i); res.entregadas.forEach(i=> porK[i.k] = i); res.noreg.forEach(i=> porK[i.k] = i);
+    const filas = [...inventario.entradas].reverse().map(e=>{
+      const k = normOfInv(e.of), it = porK[k], cl = res.estadoPorOf[k] || 'noreg';
+      const clase = cl==='ok' ? 'ok' : cl==='entregada' ? 'entregada' : 'noreg';
+      const marca = cl==='ok' ? 'Pendiente de entrega' : cl==='entregada' ? 'Entregada en la app' : cl==='sospecha' ? 'No registrada · ¿error de tecleo?' : 'No registrada';
+      let tarjeta = '';
+      if(cl==='ok' && it) tarjeta = ticketHtml(it.pend[0]);
+      else if(cl==='entregada' && it) tarjeta = tarjetaEntregadaInv(it);
+      else tarjeta = `<div class="ticket attn"><div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(e.of)}</span></div><div class="ticket-proj">No está registrada en la app</div></div>`;
+      const reg = (cl==='noreg' || cl==='sospecha') ? `<button type="button" onclick="registrarDesdeInventario('${escapeAtributo(e.of)}')">Registrar</button>` : '';
+      return `<div class="inv-item ${clase}"><div class="inv-fila ${clase}" style="margin-bottom:0;"><span class="inv-n">#${e.n}</span><span class="inv-of">${escapeHtml(e.of)}</span><span class="inv-marca">${marca}</span>
+        ${reg}<button type="button" onclick="editarEntradaInv('${e.n}')">Editar</button><button type="button" title="Quitar" onclick="quitarInventario(${e.n})">×</button></div>${tarjeta}</div>`;
     }).join('');
     cont.innerHTML = `
-      <div class="hint"><b>${total}</b> OF contada${total===1?'':'s'}${total!==distintas ? ' ('+distintas+' distintas)' : ''}.
-        Verde: pendiente y registrada · Naranja: la app la da por entregada · Rojo: no está registrada.</div>
-      <div class="inv-chips">${chips || '<span class="hint">Escribe el número de OF y pulsa Enter.</span>'}</div>
+      ${htmlAvisoInv(res)}
+      <div class="hint"><b>${total}</b> OF contada${total===1?'':'s'}${total!==distintas ? ' ('+distintas+' distintas)' : ''}. La última, arriba. El número de orden (#) no cambia aunque quites alguna.</div>
+      <div class="inv-lista">${filas || '<span class="hint">Escribe el número de OF y toca Añadir.</span>'}</div>
       <button class="btn btn-primary" onclick="finalizarInventario()" ${total ? '' : 'disabled style="opacity:0.5;"'}>Finalizar y comparar</button>
       ${total ? '<button class="btn btn-outline" onclick="empezarDeCeroInventario()" style="color:#B33A3A; border-color:#B33A3A;">Empezar de cero</button>' : ''}`;
     return;
   }
   if(entrada) entrada.style.display = 'none';
   const sec = (titulo, n, clase, nota, html)=> `<div class="inv-sec ${clase||''}">${titulo}<span class="n">${n}</span></div>${nota ? '<div class="inv-nota">'+nota+'</div>' : ''}${n ? html : '<div class="hint" style="margin-bottom:8px;">Ninguna.</div>'}`;
-  const bienHtml = res.bien.map(it=> it.pend.map(p=> ticketHtml(p) + (it.veces>1 || it.pend.length>1 || it.ent.length ? `<div class="inv-nota">${it.veces>1 ? 'Contada ×'+it.veces+'. ' : ''}${it.pend.length>1 ? 'Hay '+it.pend.length+' registros pendientes de esta OF. ' : ''}${it.ent.length ? 'Además consta una entrega de esta OF.' : ''}</div>` : '')).join('')).join('');
+  const bienHtml = res.bien.map(it=> it.pend.map(p=> ticketHtml(p) + (it.veces>1 || it.pend.length>1 || it.ent.length ? `<div class="inv-nota">${it.veces>1 ? 'Contada ×'+it.veces+' ('+textoPosInv(it.pos)+'). ' : ''}${it.pend.length>1 ? 'Hay '+it.pend.length+' registros pendientes de esta OF. ' : ''}${it.ent.length ? 'Además consta una entrega de esta OF.' : ''}</div>` : '')).join('')).join('');
   const entHtml = res.entregadas.map(tarjetaEntregadaInv).join('');
-  const noregHtml = res.noreg.map(it=>`<div class="ticket attn">
-      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(it.of)}</span></div>
-      <div class="ticket-proj">No está registrada en la app${it.veces>1 ? ' · contada ×'+it.veces : ''}</div>
-      <div class="ticket-meta"><button class="btn btn-outline" style="margin:6px 0 0; width:auto; padding:8px 14px;" onclick="event.stopPropagation(); registrarDesdeInventario('${escapeAtributo(it.of)}')">Registrar esta OF</button></div>
-    </div>`).join('');
+  const noregHtml = res.noreg.map(it=>{
+    const lista = it.pos.join(',');
+    const sug = it.sugerencias.length ? `<div class="inv-sug"><b>¿Error de tecleo?</b> Se parece a: ${it.sugerencias.map(s=>`<button type="button" class="btn btn-outline" style="margin:4px 6px 0 0; width:auto; padding:6px 12px;" onclick="event.stopPropagation(); corregirInventario('${escapeAtributo(lista)}','${escapeAtributo(s.of)}')">${escapeHtml(s.of)}${s.pendiente?'':' (entregada)'}</button>`).join('')}</div>` : '';
+    return `<div class="ticket attn">
+      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(it.of)}</span><span class="ticket-date">contada ${textoPosInv(it.pos)}</span></div>
+      <div class="ticket-proj">No está registrada en la app</div>
+      ${sug}
+      <div class="ticket-meta" style="gap:8px;">
+        <button class="btn btn-outline" style="margin:6px 0 0; width:auto; padding:8px 14px;" onclick="event.stopPropagation(); registrarDesdeInventario('${escapeAtributo(it.of)}')">Registrar esta OF</button>
+        <button class="btn btn-outline" style="margin:6px 0 0; width:auto; padding:8px 14px;" onclick="event.stopPropagation(); editarEntradaInv('${escapeAtributo(lista)}')">Corregir número</button>
+      </div>
+    </div>`; }).join('');
   const faltanHtml = res.faltan.map(p=> ticketHtml(p)).join('');
+  const sospechosas = res.noreg.filter(i=>i.sugerencias.length).length;
   cont.innerHTML = `
     <div class="hint"><b>${total}</b> OF contada${total===1?'':'s'}${total!==distintas ? ' ('+distintas+' distintas)' : ''}. <span id="invEstadoDatos"></span></div>
     <button class="btn btn-primary" onclick="descargarInventarioCSV()">Descargar lista (Excel / CSV)</button>
@@ -13047,7 +13205,7 @@ function renderInventario(){
       <button class="btn btn-outline" onclick="seguirContandoInventario()" style="margin:0; flex:1;">Seguir contando</button>
       <button class="btn btn-outline" onclick="refrescarInventario()" style="margin:0; flex:1;">Actualizar</button>
     </div>
-    ${sec('Sin registrar en la app', res.noreg.length, res.noreg.length?'rojo':'', 'La caja está aquí pero la OF no consta en la app: falta registrarla (o se registró con otro número).', noregHtml)}
+    ${sec('Sin registrar en la app', res.noreg.length, res.noreg.length?'rojo':'', 'La caja está aquí pero la OF no consta en la app. El # es el orden en que la contaste.' + (sospechosas ? ' Las primeras tienen una OF parecida registrada: pueden ser un error al teclear.' : ''), noregHtml)}
     ${sec('Pendientes en la app que NO has contado', res.faltan.length, res.faltan.length?'rojo':'', 'Figuran pendientes de entrega pero su caja no está aquí: se entregó y no se registró, o está en otro sitio. Ábrela para entregarla, editarla o eliminarla.', faltanHtml)}
     ${sec('Contadas, pero la app las da por entregadas', res.entregadas.length, res.entregadas.length?'rojo':'', 'La caja está aquí pero consta como entregada. Ábrela para revisarla (por ejemplo, deshacer la entrega).', entHtml)}
     ${sec('Contadas y bien registradas (pendientes de entrega)', res.bien.length, '', '', bienHtml)}
@@ -13059,14 +13217,14 @@ function fechaCompletaInv(v){
 }
 function descargarInventarioCSV(){
   const res = clasificarInventario();
-  const columnas = ['Resultado','OF','Veces contada','Proyecto','Subproyecto','Cajas registradas','Registrado por','Fecha de registro','Estado en la app','Entregado a','Fecha de entrega'];
+  const columnas = ['Resultado','OF','Nº de conteo','Veces contada','Posible error de tecleo (parecida a)','Proyecto','Subproyecto','Cajas registradas','Registrado por','Fecha de registro','Estado en la app','Entregado a','Fecha de entrega'];
   const filas = [columnas.join(';')];
-  const add = (resultado, of, veces, p, estado, ent)=> filas.push([resultado, of, veces, p ? p.proyecto : '', p ? p.subproyecto : '', p ? p.cajas : '', p ? (p.registradoPor || p.quien) : '', p ? fechaCompletaInv(p.fecha) : '', estado, ent ? ent.entregadoA : '', ent ? fechaCompletaInv(ent.fechaEntrega) : ''].map(csvEscape).join(';'));
-  res.noreg.forEach(it=> add('Sin registrar en la app', it.of, it.veces, null, 'No existe', null));
-  res.faltan.forEach(p=> add('Pendiente en la app, NO contada (la caja no está)', p.of, 0, p, 'Pendiente', null));
-  res.entregadas.forEach(it=>{ const r = it.ent[it.ent.length-1]; add('Contada, pero entregada en la app', it.of, it.veces, r, 'Entregada', r); });
-  res.bien.forEach(it=> it.pend.forEach(p=> add('Contada y registrada (pendiente de entrega)', it.of, it.veces, p, 'Pendiente', null)));
-  const csv = '\ufeff' + filas.join('\r\n');
+  const add = (resultado, of, pos, veces, sug, p, estado, ent)=> filas.push([resultado, of, pos.length ? pos.map(n=>'#'+n).join(' ') : '', veces, sug, p ? p.proyecto : '', p ? p.subproyecto : '', p ? p.cajas : '', p ? (p.registradoPor || p.quien) : '', p ? fechaCompletaInv(p.fecha) : '', estado, ent ? ent.entregadoA : '', ent ? fechaCompletaInv(ent.fechaEntrega) : ''].map(csvEscape).join(';'));
+  res.noreg.forEach(it=> add('Sin registrar en la app', it.of, it.pos, it.veces, it.sugerencias.map(x=>x.of).join(' / '), null, 'No existe', null));
+  res.faltan.forEach(p=> add('Pendiente en la app, NO contada (la caja no está)', p.of, [], 0, '', p, 'Pendiente', null));
+  res.entregadas.forEach(it=>{ const r = it.ent[it.ent.length-1]; add('Contada, pero entregada en la app', it.of, it.pos, it.veces, '', r, 'Entregada', r); });
+  res.bien.forEach(it=> it.pend.forEach(p=> add('Contada y registrada (pendiente de entrega)', it.of, it.pos, it.veces, '', p, 'Pendiente', null)));
+  const csv = '﻿' + filas.join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
