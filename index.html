@@ -420,7 +420,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1230</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1330</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -14827,9 +14827,12 @@ function continuarLineaBip(codigo){
    el campo Lote; si el QR trae un único dato, se toma como lote. Si no se reconoce
    nada, el campo se deja como estaba y se escribe a mano como siempre. */
 let loteStream = null, loteRAF = null, loteEscaneando = false, loteCodigoEsperado = '';
+let loteAlertaActiva = false;
 function campoLoteHtml(valor, codigoEsperado, placeholder){
-  return `<div style="display:flex; gap:8px; align-items:stretch;">
-      <input type="text" class="mono" id="lineaLote" value="${escapeAtributo(valor||'')}" placeholder="${escapeAtributo(placeholder||'')}" style="flex:1; min-width:0;" autocomplete="off">
+  loteAlertaActiva = false;
+  return `<div id="loteAviso" style="display:none;"></div>
+    <div style="display:flex; gap:8px; align-items:stretch;">
+      <input type="text" class="mono" id="lineaLote" value="${escapeAtributo(valor||'')}" placeholder="${escapeAtributo(placeholder||'')}" data-codigo="${escapeAtributo(codigoEsperado||'')}" oninput="limpiarLotePegado(this)" style="flex:1; min-width:0;" autocomplete="off">
       <button type="button" class="btn btn-outline" id="btnLoteCamara" style="margin:0; width:auto; padding:0 14px;" onclick="alternarCamaraLote('${escapeAtributo(codigoEsperado||'')}')">Escanear</button>
     </div>
     <div id="loteCamBox" style="display:none; margin-top:10px;">
@@ -14895,15 +14898,46 @@ function pedirCamaraLote(){
 }
 // Intenta leer un QR en la imagen: completa y luego recortes centrales; prueba también QR invertidos.
 function leerQRDeContexto(ctx, w, h){
-  const regiones = [[0,0,w,h], [w*0.2,h*0.2,w*0.6,h*0.6], [w*0.3,h*0.3,w*0.4,h*0.4]];
-  for(const [x,y,rw,rh] of regiones){
-    try{
-      const im = ctx.getImageData(Math.floor(x), Math.floor(y), Math.floor(rw), Math.floor(rh));
-      const r = jsQR(im.data, im.width, im.height, { inversionAttempts: 'attemptBoth' });
-      if(r && r.data) return r;
-    }catch(e){}
+  // regiones (imagen completa y recortes centrales) a varias escalas: reducir ayuda con ruido y
+  // fotos muy grandes; ampliar ayuda con módulos muy pequeños.
+  const regiones = [[0,0,w,h,[1,0.5]], [w*0.2,h*0.2,w*0.6,h*0.6,[1,0.5,2]], [w*0.3,h*0.3,w*0.4,h*0.4,[1,2]]];
+  const origen = ctx.canvas;
+  for(const [x,y,rw,rh,escalas] of regiones){
+    for(const esc of escalas){
+      try{
+        const tw = Math.max(40, Math.round(rw*esc)), th = Math.max(40, Math.round(rh*esc));
+        let im;
+        if(esc === 1) im = ctx.getImageData(Math.floor(x), Math.floor(y), Math.floor(rw), Math.floor(rh));
+        else {
+          const c = document.createElement('canvas'); c.width = tw; c.height = th;
+          const c2 = c.getContext('2d', { willReadFrequently: true });
+          c2.imageSmoothingEnabled = true;
+          c2.drawImage(origen, x, y, rw, rh, 0, 0, tw, th);
+          im = c2.getImageData(0, 0, tw, th);
+        }
+        const r = jsQR(im.data, im.width, im.height, { inversionAttempts: 'attemptBoth' });
+        if(r && r.data) return r;
+      }catch(e){}
+    }
   }
   return null;
+}
+// Si se pega en el campo Lote el texto entero de la etiqueta ("CÓDIGO<tab>LOTE", copiado p. ej. desde
+// la cámara del iPhone), se queda solo el lote.
+function limpiarLotePegado(campo){
+  const v = campo.value;
+  const norm = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const esp = campo.getAttribute('data-codigo') || '';
+  let r = null;
+  if(/[\t;]/.test(v)) r = extraerLoteDeQR(v);
+  else {
+    const t = v.trim().split(/\s+/);
+    if(t.length === 2 && esp && norm(t[0]) === norm(esp)) r = { codigo: t[0], lote: t[1] };
+  }
+  if(r && r.lote && r.lote !== v){
+    loteCodigoEsperado = esp;
+    aplicarLoteLeido(r);
+  }
 }
 function leerLoteDeFoto(input){
   const f = input.files && input.files[0];
@@ -14921,11 +14955,9 @@ function leerLoteDeFoto(input){
       const leido = leerQRDeContexto(ctx, c.width, c.height);
       const r = leido ? extraerLoteDeQR(leido.data) : null;
       if(r && r.lote){
-        const campo = document.getElementById('lineaLote'); if(campo) campo.value = r.lote;
-        const norm = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-        const otro = r.codigo && loteCodigoEsperado && norm(r.codigo) !== norm(loteCodigoEsperado);
         detenerCamaraLote();
-        toast(otro ? 'Ojo: esa etiqueta es de ' + r.codigo + ', no de ' + loteCodigoEsperado : 'Lote leído: ' + r.lote);
+        const otro = aplicarLoteLeido(r);
+        toast(otro ? 'ATENCIÓN: la etiqueta es de ' + r.codigo : 'Lote leído: ' + r.lote);
       } else if(estado){
         estado.textContent = 'No se encontró un QR legible en la foto — acércate más o escribe el lote a mano.';
       }
@@ -14935,6 +14967,41 @@ function leerLoteDeFoto(input){
   img.onerror = ()=>{ if(estado) estado.textContent = 'No se pudo abrir la foto.'; };
   img.src = URL.createObjectURL(f);
   input.value = '';
+}
+// Aplica el lote leído de una etiqueta y COMPRUEBA que el código de la etiqueta es el del
+// componente que se está metiendo: si no, aviso rojo (posible error de preparación o de etiquetado).
+function aplicarLoteLeido(r){
+  const campo = document.getElementById('lineaLote');
+  if(campo) campo.value = r.lote;
+  const norm = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const esperado = loteCodigoEsperado || (campo ? (campo.getAttribute('data-codigo')||'') : '');
+  const aviso = document.getElementById('loteAviso');
+  const distinto = !!(r.codigo && esperado && norm(r.codigo) !== norm(esperado));
+  loteAlertaActiva = distinto;
+  if(aviso){
+    if(distinto){
+      aviso.style.display = 'block';
+      aviso.innerHTML = `<div class="attn-banner" style="border-color:#C62828; background:#FDECEC; margin:0 0 10px;"><span class="dot" style="background:#C62828;">!</span><span>
+        <b>ATENCIÓN: la etiqueta no coincide.</b><br>
+        La etiqueta es de <b>${escapeHtml(r.codigo)}</b> y estás metiendo <b>${escapeHtml(esperado)}</b>.<br>
+        Puede ser un error de preparación (se cogió otro componente) o de etiquetado. Compruébalo antes de seguir.
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button type="button" class="btn btn-outline" style="margin:0; flex:1;" onclick="descartarLoteLeido()">Quitar lote</button>
+          <button type="button" class="btn btn-outline" style="margin:0; flex:1;" onclick="confirmarAvisoEtiqueta()">Revisado, es correcto</button>
+        </div></span></div>`;
+    } else { aviso.style.display = 'none'; aviso.innerHTML = ''; }
+  }
+  return distinto;
+}
+function descartarLoteLeido(){
+  const campo = document.getElementById('lineaLote'); if(campo) campo.value = '';
+  loteAlertaActiva = false;
+  const aviso = document.getElementById('loteAviso'); if(aviso){ aviso.style.display = 'none'; aviso.innerHTML = ''; }
+}
+function confirmarAvisoEtiqueta(){
+  loteAlertaActiva = false;
+  const aviso = document.getElementById('loteAviso'); if(aviso){ aviso.style.display = 'none'; aviso.innerHTML = ''; }
+  toast('Marcado como revisado');
 }
 function extraerLoteDeQR(texto){
   const t = String(texto||'').trim();
@@ -14957,12 +15024,9 @@ function cicloCamaraLote(){
     if(leido && leido.data){
       const r = extraerLoteDeQR(leido.data);
       if(r && r.lote){
-        const campo = document.getElementById('lineaLote');
-        if(campo) campo.value = r.lote;
-        const norm = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-        const otro = r.codigo && loteCodigoEsperado && norm(r.codigo) !== norm(loteCodigoEsperado);
         detenerCamaraLote();
-        toast(otro ? 'Ojo: esa etiqueta es de ' + r.codigo + ', no de ' + loteCodigoEsperado : 'Lote leído: ' + r.lote);
+        const otro = aplicarLoteLeido(r);
+        toast(otro ? 'ATENCIÓN: la etiqueta es de ' + r.codigo : 'Lote leído: ' + r.lote);
         const cant = document.getElementById('lineaCantidad'); if(cant && !otro) cant.focus();
         return;
       }
@@ -14973,6 +15037,7 @@ function cicloCamaraLote(){
 
 function confirmarLineaBip(){
   if(!rpLineaPendiente || !sesionPicking) return;
+  if(loteAlertaActiva){ toast('Revisa el aviso en rojo: la etiqueta no coincide con el componente'); return; }
   const lote = document.getElementById('lineaLote').value.trim() || 'N/A';
   const cantidad = parseInt(document.getElementById('lineaCantidad').value) || 1;
   sesionPicking.componentes.push({ codigo: rpLineaPendiente.codigo, lote, cantidad });
@@ -15000,6 +15065,7 @@ function editarLineaBip(idx){
 function guardarEdicionLineaBip(idx){
   const c = sesionPicking.componentes[idx];
   if(!c) return;
+  if(loteAlertaActiva){ toast('Revisa el aviso en rojo: la etiqueta no coincide con el componente'); return; }
   c.lote = document.getElementById('lineaLote').value.trim() || 'N/A';
   c.cantidad = parseInt(document.getElementById('lineaCantidad').value) || 1;
   cerrarSheet();
