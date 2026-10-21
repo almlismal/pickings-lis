@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v20oct-1730</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v21oct-1030</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -593,6 +593,7 @@
     <div class="screen-title">
       <button class="back" onclick="ir('buscar')">←</button>
       <h2>Inventario de cajas</h2>
+      <button type="button" class="btn btn-outline" style="margin:0 0 0 auto; width:auto; padding:6px 12px; font-size:14px;" onclick="abrirHistorialInventarios()">Historial</button>
     </div>
     <div class="attn-banner" style="margin:0 0 10px;"><span class="dot">i</span><span>
       <b>Antes de empezar, actualiza los datos</b> para comparar con lo último que se haya registrado o entregado.
@@ -13200,7 +13201,8 @@ function renderInventario(){
   const sospechosas = res.noreg.filter(i=>i.sugerencias.length).length;
   cont.innerHTML = `
     <div class="hint"><b>${total}</b> OF contada${total===1?'':'s'}${total!==distintas ? ' ('+distintas+' distintas)' : ''}. <span id="invEstadoDatos"></span></div>
-    <button class="btn btn-primary" onclick="descargarInventarioCSV()">Descargar lista (Excel / CSV)</button>
+    <button class="btn btn-primary" onclick="guardarYTerminarInventario()">Guardar inventario y terminar</button>
+    <button class="btn btn-outline" onclick="descargarInventarioCSV()">Descargar lista (Excel / CSV)</button>
     <div style="display:flex; gap:8px;">
       <button class="btn btn-outline" onclick="seguirContandoInventario()" style="margin:0; flex:1;">Seguir contando</button>
       <button class="btn btn-outline" onclick="refrescarInventario()" style="margin:0; flex:1;">Actualizar</button>
@@ -13215,23 +13217,93 @@ function fechaCompletaInv(v){
   const d = new Date(v); if(!v || isNaN(d.getTime())) return '';
   return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
 }
-function descargarInventarioCSV(){
-  const res = clasificarInventario();
-  const columnas = ['Resultado','OF','Nº de conteo','Veces contada','Posible error de tecleo (parecida a)','Proyecto','Subproyecto','Cajas registradas','Registrado por','Fecha de registro','Estado en la app','Entregado a','Fecha de entrega'];
-  const filas = [columnas.join(';')];
-  const add = (resultado, of, pos, veces, sug, p, estado, ent)=> filas.push([resultado, of, pos.length ? pos.map(n=>'#'+n).join(' ') : '', veces, sug, p ? p.proyecto : '', p ? p.subproyecto : '', p ? p.cajas : '', p ? (p.registradoPor || p.quien) : '', p ? fechaCompletaInv(p.fecha) : '', estado, ent ? ent.entregadoA : '', ent ? fechaCompletaInv(ent.fechaEntrega) : ''].map(csvEscape).join(';'));
+const COLS_INV = ['Resultado','OF','Nº de conteo','Veces contada','Posible error de tecleo (parecida a)','Proyecto','Subproyecto','Cajas registradas','Registrado por','Fecha de registro','Estado en la app','Entregado a','Fecha de entrega'];
+function filasInventario(res){
+  const filas = [];
+  const add = (resultado, of, pos, veces, sug, p, estado, ent)=> filas.push([resultado, of, pos.length ? pos.map(n=>'#'+n).join(' ') : '', veces, sug, p ? p.proyecto : '', p ? p.subproyecto : '', p ? p.cajas : '', p ? (p.registradoPor || p.quien) : '', p ? fechaCompletaInv(p.fecha) : '', estado, ent ? ent.entregadoA : '', ent ? fechaCompletaInv(ent.fechaEntrega) : ''].map(x=> x==null ? '' : String(x)));
   res.noreg.forEach(it=> add('Sin registrar en la app', it.of, it.pos, it.veces, it.sugerencias.map(x=>x.of).join(' / '), null, 'No existe', null));
   res.faltan.forEach(p=> add('Pendiente en la app, NO contada (la caja no está)', p.of, [], 0, '', p, 'Pendiente', null));
   res.entregadas.forEach(it=>{ const r = it.ent[it.ent.length-1]; add('Contada, pero entregada en la app', it.of, it.pos, it.veces, '', r, 'Entregada', r); });
   res.bien.forEach(it=> it.pend.forEach(p=> add('Contada y registrada (pendiente de entrega)', it.of, it.pos, it.veces, '', p, 'Pendiente', null)));
-  const csv = '﻿' + filas.join('\r\n');
+  return filas;
+}
+function bajarCSVInv(filas, nombreArchivo){
+  const csv = '﻿' + [COLS_INV.map(csvEscape).join(';')].concat(filas.map(f=> f.map(csvEscape).join(';'))).join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'inventario_cajas_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.href = url; a.download = nombreArchivo;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
   toast('Lista descargada');
+}
+function descargarInventarioCSV(){
+  bajarCSVInv(filasInventario(clasificarInventario()), 'inventario_cajas_' + new Date().toISOString().slice(0,10) + '.csv');
+}
+
+/* ---------- Historial de inventarios guardados (en el móvil) ----------
+   Al terminar un inventario se guarda una "foto" fija del resultado (cuándo, quién, qué salió),
+   que no cambia aunque después se registren o entreguen cosas. Solo se guarda en este móvil. */
+const LS_INV_HIST = 'pickings_lis_inventarios_hist_v1';
+function leerHistInv(){ try{ const a = JSON.parse(localStorage.getItem(LS_INV_HIST)); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+function escribirHistInv(a){ try{ localStorage.setItem(LS_INV_HIST, JSON.stringify(a)); return true; }catch(e){ return false; } }
+function guardarYTerminarInventario(){
+  if(!inventario.entradas.length){ toast('No hay nada que guardar'); return; }
+  const res = clasificarInventario();
+  const filas = filasInventario(res);
+  const snap = {
+    id: 'inv_' + Date.now(), fecha: new Date().toISOString(), usuario: String(usuarioActual||''),
+    total: inventario.entradas.length, distintas: res.bien.length + res.entregadas.length + res.noreg.length,
+    cont: { noreg: res.noreg.length, faltan: res.faltan.length, entregadas: res.entregadas.length, bien: res.bien.length },
+    filas
+  };
+  const hist = leerHistInv(); hist.unshift(snap);
+  if(!escribirHistInv(hist)){ toast('No se pudo guardar en el móvil. Descarga la lista antes de terminar.'); return; }
+  inventario = { entradas: [], sig: 1, fase: 'contando' }; guardarInventario(); invAviso = null;
+  renderInventario(); window.scrollTo(0,0);
+  toast('Inventario guardado');
+  verInventarioGuardado(snap.id);
+}
+function resumenInvHtml(h){
+  const c = h.cont || {};
+  return `<b>${h.total}</b> OF contadas (${h.distintas} distintas) · Sin registrar: <b>${c.noreg||0}</b> · Pendientes no contadas: <b>${c.faltan||0}</b> · Entregadas: <b>${c.entregadas||0}</b> · Bien: <b>${c.bien||0}</b>`;
+}
+function abrirHistorialInventarios(){
+  const hist = leerHistInv();
+  const filas = hist.map(h=>`<div class="inv-hist-fila" onclick="verInventarioGuardado('${escapeAtributo(h.id)}')" style="border:1px solid var(--line,#D5DBE3); border-radius:10px; padding:10px 12px; margin-bottom:8px; background:#fff; cursor:pointer;">
+      <div style="font-weight:700;">${escapeHtml(fechaCompletaInv(h.fecha))}${h.usuario ? ' · ' + escapeHtml(h.usuario) : ''}</div>
+      <div class="hint" style="margin:4px 0 0;">${resumenInvHtml(h)}</div></div>`).join('');
+  mostrarSheet(`<h3>Inventarios guardados</h3>
+    ${filas || '<div class="hint">Todavía no has guardado ninguno. Al terminar un inventario, toca «Guardar inventario y terminar».</div>'}
+    <div class="hint">Se guardan solo en este móvil.</div>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+}
+function verInventarioGuardado(id){
+  const h = leerHistInv().find(x=>x.id===id);
+  if(!h){ toast('No se encuentra ese inventario'); return; }
+  const grupos = {};
+  (h.filas||[]).forEach(f=>{ (grupos[f[0]] = grupos[f[0]] || []).push(f); });
+  const orden = ['Sin registrar en la app','Pendiente en la app, NO contada (la caja no está)','Contada, pero entregada en la app','Contada y registrada (pendiente de entrega)'];
+  const bloques = orden.filter(k=>grupos[k]).map(k=>{
+    const rojo = k.indexOf('Contada y registrada')!==0;
+    return `<div class="inv-sec ${rojo?'rojo':''}">${escapeHtml(k)}<span class="n">${grupos[k].length}</span></div>` +
+      grupos[k].map(f=>`<div style="padding:6px 2px; border-bottom:1px solid #E6EAF0; font-size:14px;"><span class="mono"><b>${escapeHtml(f[1])}</b></span>${f[2] ? ' <span class="hint" style="margin:0;">' + escapeHtml(f[2]) + '</span>' : ''}${f[4] ? ' <span style="color:#C62828;">¿' + escapeHtml(f[4]) + '?</span>' : ''}<br><span class="hint" style="margin:0;">${escapeHtml([f[5], f[6]].filter(Boolean).join(' · '))}${f[11] ? ' · Entregado a ' + escapeHtml(f[11]) : ''}</span></div>`).join('');
+  }).join('');
+  mostrarSheet(`<h3>Inventario del ${escapeHtml(fechaCompletaInv(h.fecha))}</h3>
+    <div class="hint">${h.usuario ? 'Hecho por ' + escapeHtml(h.usuario) + '. ' : ''}${resumenInvHtml(h)}</div>
+    <button class="btn btn-primary" onclick="descargarInventarioGuardado('${escapeAtributo(h.id)}')">Descargar lista (Excel / CSV)</button>
+    <div style="max-height:45vh; overflow:auto; margin-top:6px;">${bloques || '<div class="hint">Sin datos.</div>'}</div>
+    <button class="btn btn-outline" onclick="abrirHistorialInventarios()">← Todos los inventarios</button>
+    <button class="btn btn-outline" onclick="borrarInventarioGuardado('${escapeAtributo(h.id)}')" style="color:#B33A3A; border-color:#B33A3A;">Borrar este inventario guardado</button>`);
+}
+function descargarInventarioGuardado(id){
+  const h = leerHistInv().find(x=>x.id===id); if(!h) return;
+  bajarCSVInv(h.filas||[], 'inventario_cajas_' + String(h.fecha).slice(0,10) + '.csv');
+}
+function borrarInventarioGuardado(id){
+  if(!confirm('Se borra este inventario guardado del historial. Lo registrado en la app no se toca. ¿Seguro?')) return;
+  escribirHistInv(leerHistInv().filter(x=>x.id!==id));
+  toast('Borrado'); abrirHistorialInventarios();
 }
 
 /* ---------- OF duplicadas (solo administradores) ----------
