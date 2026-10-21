@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v21oct-1030</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v21oct-1130</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11437,6 +11437,11 @@ function elegirSugerenciaCodigo(i){
 let sesionPicking = null;          // { of, proyecto, subproyecto, componentes:[], incidencias:[] }
 let pickingPendienteDatos = null;  // listo para adjuntarse al próximo guardarPicking()
 let rpStream = null, rpRAF = null, rpEscaneando = false;
+/* Ahorro de batería de las cámaras: se lee unas 8 veces por segundo (no en cada fotograma),
+   se apagan solas tras 60 s sin leer nada (con botón para reactivar) y al salir de la app. */
+const CAM_MS_ENTRE_LECTURAS = 120, CAM_MS_INACTIVIDAD = 60000;
+let rpUltimaLectura = 0, rpInicioCamara = 0, escUltimaLectura = 0, escInicioCamara = 0;
+let camPausadaPorSegundoPlano = '';
 let rpModoIncidencia = false;
 let rpLineaPendiente = null;
 let rpCodigoConflicto = '';
@@ -14870,7 +14875,7 @@ function iniciarEscaner(){
       video.srcObject = stream;
       video.play().catch(()=>{});
       if(estadoEl) estadoEl.textContent = 'Apunta al QR de la etiqueta';
-      escanerEscaneando = true;
+      escanerEscaneando = true; escInicioCamara = Date.now(); escUltimaLectura = 0;
       escanerRAF = requestAnimationFrame(cicloEscaner);
     })
     .catch(err=>{
@@ -14891,8 +14896,16 @@ function detenerEscaner(){
   if(video) video.srcObject = null;
 }
 
-function cicloEscaner(){
+function cicloEscaner(t){
   if(!escanerEscaneando) return;
+  if(Date.now() - escInicioCamara > CAM_MS_INACTIVIDAD){
+    detenerEscaner();
+    const e = document.getElementById('escanerEstado');
+    if(e) e.innerHTML = 'Cámara apagada para ahorrar batería. <button type="button" class="btn btn-primary" style="margin:6px 0 0; width:auto; padding:8px 16px;" onclick="iniciarEscaner()">Reactivar cámara</button>';
+    return;
+  }
+  if(t && t - escUltimaLectura < CAM_MS_ENTRE_LECTURAS){ escanerRAF = requestAnimationFrame(cicloEscaner); return; }
+  escUltimaLectura = t || 0;
   const video = document.getElementById('escanerVideo');
   const canvas = document.getElementById('escanerCanvas');
   if(video && canvas && video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth){
@@ -15134,7 +15147,7 @@ function iniciarBipCamara(){
       video.srcObject = stream;
       video.play().catch(()=>{});
       if(estadoEl) estadoEl.textContent = rpModoIncidencia ? 'Apunta al código del componente con incidencia' : 'Apunta al código de cada componente según lo incorpores';
-      rpEscaneando = true;
+      rpEscaneando = true; rpInicioCamara = Date.now(); rpUltimaLectura = 0;
       rpRAF = requestAnimationFrame(cicloBipCamara);
     })
     .catch(err=>{
@@ -15152,8 +15165,16 @@ function detenerBipCamara(){
   const video = document.getElementById('rpVideo');
   if(video) video.srcObject = null;
 }
-function cicloBipCamara(){
+function cicloBipCamara(t){
   if(!rpEscaneando) return;
+  if(Date.now() - rpInicioCamara > CAM_MS_INACTIVIDAD){
+    detenerBipCamara();
+    const e = document.getElementById('rpEstado');
+    if(e) e.innerHTML = 'Cámara apagada para ahorrar batería. <button type="button" class="btn btn-primary" style="margin:6px 0 0; width:auto; padding:8px 16px;" onclick="iniciarBipCamara()">Reactivar cámara</button>';
+    return;
+  }
+  if(t && t - rpUltimaLectura < CAM_MS_ENTRE_LECTURAS){ rpRAF = requestAnimationFrame(cicloBipCamara); return; }
+  rpUltimaLectura = t || 0;
   const video = document.getElementById('rpVideo');
   const canvas = document.getElementById('rpCanvas');
   if(video && canvas && video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth){
@@ -16448,6 +16469,17 @@ async function iniciar(){
     if(activa === 'screen-entregados') cargarEntregadosYActualizar().then(renderEntregados).catch(()=>{});
   }, 20000);
   document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'hidden'){
+      camPausadaPorSegundoPlano = rpEscaneando ? 'bip' : (escanerEscaneando ? 'escanear' : '');
+      if(camPausadaPorSegundoPlano){ detenerBipCamara(); detenerEscaner(); }
+    } else if(camPausadaPorSegundoPlano){
+      const q = camPausadaPorSegundoPlano; camPausadaPorSegundoPlano = '';
+      const act = document.querySelector('.screen.active');
+      if(!document.getElementById('sheetOverlay') && act){
+        if(q==='bip' && act.id==='screen-realizar-bip') iniciarBipCamara();
+        if(q==='escanear' && act.id==='screen-escanear') iniciarEscaner();
+      }
+    }
     if(document.visibilityState === 'visible'){
       comprobarCierreSesionPorTurno();
       if(colaSync.length) procesarColaSync().catch(()=>{});
