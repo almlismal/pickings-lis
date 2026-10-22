@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v21oct-1130</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v22oct-1330</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11054,6 +11054,11 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
     incidenciasPicking: (previo && previo.incidenciasPicking) || [],
     hojaPickingUrl: row['Hoja de picking URL'] || (previo ? previo.hojaPickingUrl : '') || '',
     cantidadLineasPicking: Number(row['Cantidad de lineas picking']) || 0,
+    hojasEscaneadas: (function(){
+      let l = [];
+      try{ l = JSON.parse(row['Hojas escaneadas JSON'] || '[]') || []; }catch(e){ l = []; }
+      return (Array.isArray(l) && l.length) ? l : ((previo && previo.hojasEscaneadas) || []);
+    })(),
     sync: 'ok', syncError: ''
   };
 }
@@ -14750,8 +14755,11 @@ function detalleHtml(p){
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : ''}
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
+      ${(esAdminSheet(usuarioActual) && p.estado!=='completado' && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-primary" onclick="empezarBipadoParaPickingExistente('${p.id}')">${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? 'Añadir componentes bipando' : 'Hacer la hoja de picking (bipar componentes)'}</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
+      ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<div class="hint" style="margin-top:8px;">Hojas escaneadas: ${p.hojasEscaneadas.map((a,i)=>`<a href="${escapeAtributo(a.url)}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.paginas ? a.paginas+' pág., ' : ''}${fechaCorta(a.fecha)}${a.subidoPor ? ', '+escapeHtml(a.subidoPor) : ''})</a>`).join(' · ')}</div>` : ''}
+      ${(esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirEscanerHoja('${p.id}')" style="margin-top:8px;">Escanear hoja (foto o PDF)</button>` : ''}
       ${gestionBtns}
     </div>
     ${doneBanner}
@@ -15493,7 +15501,7 @@ function resumenPickingHtml(){
     <div class="obs-box">${s.incidencias.map(i=>{ const d = descripcionCatalogoTexto(i.codigo); return `${escapeHtml(i.codigo)}${d ? ' ('+escapeHtml(d)+')' : ''} — ${escapeHtml(i.motivo)}`; }).join('<br>')}</div>` : ''}
     <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
     ${s.idExistente
-      ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ Añadir a la OF ${escapeHtml(s.of)}</button>`
+      ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ ${(()=>{ const q = DB.find(x=>x.id===s.idExistente); return (q && !q.hojaPickingUrl && !(q.componentesPicking||[]).length) ? 'Generar la hoja de la OF ' : 'Añadir a la OF '; })()}${escapeHtml(s.of)}</button>`
       : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar OF y generar hoja</button>`}
   `;
 }
@@ -15515,6 +15523,13 @@ function preguntarComoActualizarHoja(){
   if(!sesionPicking || !sesionPicking.idExistente) return;
   if(!sesionPicking.componentes.length && !sesionPicking.incidencias.length){
     toast('No se bipó nada nuevo'); return;
+  }
+  const pEx = DB.find(x=>x.id===sesionPicking.idExistente);
+  if(pEx && !pEx.hojaPickingUrl && !(pEx.componentesPicking||[]).length){
+    // La OF todavía no tenía hoja ni componentes: no hay nada que "rehacer" ni "dejar aparte",
+    // se genera su primera hoja con lo bipado.
+    confirmarAgregarComponentesExistente('regenerar');
+    return;
   }
   mostrarSheet(`
     <h3>¿Cómo actualizas la hoja de picking?</h3>
@@ -15554,6 +15569,164 @@ function confirmarAgregarComponentesExistente(modo){
     nuevosComponentes: conDescripciones(nuevosComponentes), nuevasIncidencias: conDescripciones(nuevasIncidencias), modo,
     iniciales: inicialesLis(usuarioActual)
   }, id, (modo==='regenerar' ? 'Regenerar hoja' : 'Añadir hoja aparte') + ' OF ' + p.of);
+}
+
+
+/* ---------- Hojas escaneadas (foto o PDF de la hoja física, normalmente firmada) ----------
+   Solo administradores. Se hacen una o varias fotos (una por página); la app las junta en UN
+   PDF y lo sube a Drive (carpeta del proyecto / OF). También se puede elegir un PDF o fotos ya
+   hechas. Es independiente de la hoja que genera la app: no la cambia ni la sustituye. */
+let hojaEsc = null; // { id, paginas:[{bytes,w,h,thumb}], pdf:{bytes,nombre}|null, subiendo, opId }
+const HOJA_ESC_LADO_MAX = 2000, HOJA_ESC_CALIDAD = 0.78, HOJA_ESC_MAX_PDF = 9 * 1024 * 1024;
+function abrirEscanerHoja(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p){ toast('No se encontró esa OF'); return; }
+  if(!esAdminSheet(usuarioActual)){ toast('Solo para administradores'); return; }
+  hojaEsc = { id, paginas: [], pdf: null, subiendo: false, opId: '' };
+  pintarEscanerHoja();
+}
+function pintarEscanerHoja(){
+  const h = hojaEsc; if(!h) return;
+  const p = DB.find(x=>x.id===h.id);
+  const n = h.paginas.length;
+  const miniaturas = h.paginas.map((pg,i)=>`<div style="position:relative; width:72px;"><img src="${pg.thumb}" style="width:72px; height:96px; object-fit:cover; border:1px solid #C9D1DC; border-radius:6px; display:block;"><span style="position:absolute; left:4px; top:4px; background:#1F4E79; color:#fff; font-size:11px; border-radius:8px; padding:0 6px;">${i+1}</span><button type="button" onclick="quitarPaginaHojaEsc(${i})" ${h.subiendo?'disabled':''} style="position:absolute; right:2px; top:2px; border:0; background:#B33A3A; color:#fff; border-radius:50%; width:22px; height:22px; font-size:14px; line-height:20px; padding:0;">×</button></div>`).join('');
+  const listo = n > 0 || !!h.pdf;
+  mostrarSheet(`
+    <h3>Escanear hoja de la OF ${escapeHtml(p ? p.of : '')}</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Haz una foto de cada página (de frente y con buena luz). La app las junta en un solo PDF y lo guarda en la carpeta del proyecto.</p>
+    <input type="file" id="hojaEscFoto" accept="image/*" capture="environment" style="display:none" onchange="anadirArchivosHojaEsc(this)">
+    <input type="file" id="hojaEscArchivo" accept="application/pdf,image/*" multiple style="display:none" onchange="anadirArchivosHojaEsc(this)">
+    <button type="button" class="btn btn-primary" ${h.subiendo?'disabled':''} onclick="document.getElementById('hojaEscFoto').click()">${n ? 'Hacer otra foto (otra página)' : 'Hacer foto'}</button>
+    <button type="button" class="btn btn-outline" ${h.subiendo?'disabled':''} onclick="document.getElementById('hojaEscArchivo').click()">Elegir PDF o fotos ya hechas</button>
+    ${n ? `<div style="display:flex; flex-wrap:wrap; gap:8px; margin:10px 0;">${miniaturas}</div><div class="hint">${n} página${n===1?'':'s'}.${n>8 ? ' Son muchas páginas: la subida puede tardar.' : ''}</div>` : ''}
+    ${h.pdf ? `<div class="obs-box" style="margin-top:10px;">PDF elegido: <b>${escapeHtml(h.pdf.nombre)}</b> (${Math.round(h.pdf.bytes.length/1024)} KB)</div>` : ''}
+    <div id="hojaEscEstado" class="hint" style="margin-top:8px;"></div>
+    <button type="button" class="btn btn-ok" ${(listo && !h.subiendo)?'':'disabled style="opacity:0.5;"'} onclick="subirHojaEscaneadaApp()">${h.subiendo ? 'Subiendo…' : 'Subir hoja' + (n ? ' ('+n+' pág.)' : '')}</button>
+    <button type="button" class="btn btn-outline" ${h.subiendo?'disabled':''} onclick="cancelarEscanerHoja()">Cancelar</button>
+  `);
+}
+function cancelarEscanerHoja(){
+  if(hojaEsc && (hojaEsc.paginas.length || hojaEsc.pdf) && !confirm('Se descartan las páginas hechas. ¿Seguro?')) return;
+  hojaEsc = null; cerrarSheet();
+}
+function quitarPaginaHojaEsc(i){
+  if(!hojaEsc || hojaEsc.subiendo) return;
+  const pg = hojaEsc.paginas[i]; if(pg){ try{ URL.revokeObjectURL(pg.thumb); }catch(e){} }
+  hojaEsc.paginas.splice(i,1); hojaEsc.opId = '';
+  pintarEscanerHoja();
+}
+function leerBytesArchivo(file){
+  return new Promise((ok,ko)=>{ const r = new FileReader(); r.onload = ()=> ok(new Uint8Array(r.result)); r.onerror = ()=> ko(r.error || new Error('No se pudo leer el archivo')); r.readAsArrayBuffer(file); });
+}
+function fotoAJpeg(file){
+  // Reduce la foto (lado largo máx. 2000 px) y la pasa a JPEG: legible pero ligera.
+  return new Promise((ok,ko)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const k = Math.min(1, HOJA_ESC_LADO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h); ctx.drawImage(img, 0, 0, w, h);
+        c.toBlob(async blob=>{
+          URL.revokeObjectURL(url);
+          if(!blob){ ko(new Error('No se pudo procesar la foto')); return; }
+          try{ ok({ bytes: await leerBytesArchivo(blob), w, h, thumb: URL.createObjectURL(blob) }); }catch(e){ ko(e); }
+        }, 'image/jpeg', HOJA_ESC_CALIDAD);
+      }catch(e){ URL.revokeObjectURL(url); ko(e); }
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); ko(new Error('No se pudo abrir la foto')); };
+    img.src = url;
+  });
+}
+async function anadirArchivosHojaEsc(input){
+  const h = hojaEsc; if(!h || h.subiendo) return;
+  const files = Array.from(input.files || []); input.value = '';
+  if(!files.length) return;
+  const est = document.getElementById('hojaEscEstado'); if(est) est.textContent = 'Procesando…';
+  try{
+    for(const f of files){
+      const esPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+      if(esPdf){
+        if(f.size > HOJA_ESC_MAX_PDF){ toast('Ese PDF pesa demasiado (máx. 9 MB). Prueba con fotos.'); continue; }
+        if(h.paginas.length && !confirm('Ya has hecho fotos. Si eliges un PDF se descartan. ¿Seguro?')) continue;
+        h.paginas.forEach(pg=>{ try{ URL.revokeObjectURL(pg.thumb); }catch(e){} });
+        h.paginas = []; h.pdf = { bytes: await leerBytesArchivo(f), nombre: f.name || 'hoja.pdf' };
+      } else {
+        if(h.pdf){ if(!confirm('Ya habías elegido un PDF. Si añades fotos se descarta. ¿Seguro?')) continue; h.pdf = null; }
+        h.paginas.push(await fotoAJpeg(f));
+      }
+    }
+    h.opId = '';
+  }catch(err){
+    toast('No se pudo procesar: ' + (err && err.message ? err.message : 'error'));
+  }
+  pintarEscanerHoja();
+}
+// PDF mínimo con una página por foto JPEG (sin librerías). La página se adapta a la foto (A4 vertical u horizontal).
+function pdfDesdeJpegs(paginas){
+  const enc = new TextEncoder(), partes = [], offsets = [];
+  let largo = 0;
+  const poner = x=>{ const b = (typeof x === 'string') ? enc.encode(x) : x; partes.push(b); largo += b.length; };
+  const obj = (num, cuerpo)=>{ offsets[num] = largo; poner(num + ' 0 obj\n'); poner(cuerpo); poner('\nendobj\n'); };
+  const PW = 595.28, PH = 841.89, N = paginas.length;
+  poner('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, '<< /Type /Pages /Count ' + N + ' /Kids [' + paginas.map((_,i)=> (3+i*3) + ' 0 R').join(' ') + '] >>');
+  paginas.forEach((pg,i)=>{
+    const base = 3 + i*3, horiz = pg.w > pg.h, pw = horiz ? PH : PW, ph = horiz ? PW : PH;
+    const k = Math.min(pw / pg.w, ph / pg.h), dw = pg.w * k, dh = pg.h * k, x = (pw - dw) / 2, y = (ph - dh) / 2;
+    const contenido = 'q ' + dw.toFixed(2) + ' 0 0 ' + dh.toFixed(2) + ' ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' cm /Im0 Do Q';
+    obj(base, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] /Resources << /XObject << /Im0 ' + (base+2) + ' 0 R >> >> /Contents ' + (base+1) + ' 0 R >>');
+    obj(base+1, '<< /Length ' + contenido.length + ' >>\nstream\n' + contenido + '\nendstream');
+    offsets[base+2] = largo;
+    poner((base+2) + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + pg.w + ' /Height ' + pg.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + pg.bytes.length + ' >>\nstream\n');
+    poner(pg.bytes); poner('\nendstream\nendobj\n');
+  });
+  const total = 3 + N*3, xref = largo;
+  let tabla = 'xref\n0 ' + total + '\n0000000000 65535 f \n';
+  for(let i=1;i<total;i++) tabla += String(offsets[i]).padStart(10,'0') + ' 00000 n \n';
+  poner(tabla + 'trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF');
+  const out = new Uint8Array(largo); let pos = 0;
+  partes.forEach(b=>{ out.set(b, pos); pos += b.length; });
+  return out;
+}
+function bytesABase64(bytes){
+  let bin = '';
+  for(let i=0;i<bytes.length;i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000));
+  return btoa(bin);
+}
+async function subirHojaEscaneadaApp(){
+  const h = hojaEsc; if(!h || h.subiendo) return;
+  const p = DB.find(x=>x.id===h.id);
+  if(!p){ toast('No se encontró esa OF'); return; }
+  if(!h.paginas.length && !h.pdf){ toast('Haz alguna foto o elige un PDF'); return; }
+  if(navigator.onLine === false){ toast('Sin conexión: se necesita internet para subir la hoja'); return; }
+  h.subiendo = true; pintarEscanerHoja();
+  const est = ()=> document.getElementById('hojaEscEstado');
+  try{
+    if(est()) est().textContent = 'Preparando el PDF…';
+    const bytes = h.pdf ? h.pdf.bytes : pdfDesdeJpegs(h.paginas);
+    if(bytes.length > 16 * 1024 * 1024) throw new Error('El PDF pesa demasiado (' + Math.round(bytes.length/1048576) + ' MB). Haz menos páginas.');
+    if(!h.opId) h.opId = 'esc_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+    if(est()) est().textContent = 'Subiendo ' + Math.round(bytes.length/1024) + ' KB… no cierres la app.';
+    const res = await llamarBackend('subirHojaEscaneada', {
+      id: p.id, of: p.of, proyecto: p.proyecto, base64: bytesABase64(bytes), mime: 'application/pdf',
+      paginas: h.pdf ? 0 : h.paginas.length, subidoPor: usuarioActual || ''
+    }, h.opId, 120000);
+    if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
+    if(!p.hojasEscaneadas) p.hojasEscaneadas = [];
+    p.hojasEscaneadas.push(res.hoja || { url: '', fecha: new Date().toISOString(), subidoPor: usuarioActual || '', paginas: h.paginas.length });
+    try{ guardarDBLocal(); }catch(e){}
+    h.paginas.forEach(pg=>{ try{ URL.revokeObjectURL(pg.thumb); }catch(e){} });
+    hojaEsc = null; cerrarSheet();
+    toast('Hoja guardada');
+    if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') abrirDetalle(p.id);
+  }catch(err){
+    h.subiendo = false; pintarEscanerHoja();
+    const e2 = est(); if(e2) e2.innerHTML = '<span style="color:#B33A3A;">No se pudo subir: ' + escapeHtml(err && err.message ? err.message : 'error') + '. Tus páginas siguen aquí: toca «Subir hoja» para reintentar.</span>';
+  }
 }
 
 /* ---- hoja de picking (documento imprimible) ---- */
