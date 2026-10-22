@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v22oct-1330</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v22oct-1345</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -14755,10 +14755,9 @@ function detalleHtml(p){
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : ''}
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
-      ${(esAdminSheet(usuarioActual) && p.estado!=='completado' && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-primary" onclick="empezarBipadoParaPickingExistente('${p.id}')">${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? 'Añadir componentes bipando' : 'Hacer la hoja de picking (bipar componentes)'}</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
-      ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<div class="hint" style="margin-top:8px;">Hojas escaneadas: ${p.hojasEscaneadas.map((a,i)=>`<a href="${escapeAtributo(a.url)}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.paginas ? a.paginas+' pág., ' : ''}${fechaCorta(a.fecha)}${a.subidoPor ? ', '+escapeHtml(a.subidoPor) : ''})</a>`).join(' · ')}</div>` : ''}
+      ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<div class="hint" style="margin-top:8px;">Hojas escaneadas:${p.hojasEscaneadas.map((a,i)=>`<div style="display:flex; align-items:center; gap:8px; margin-top:4px;"><a href="${escapeAtributo(a.url)}" target="_blank" onclick="event.stopPropagation();" style="flex:1;">#${i+1} (${a.paginas ? a.paginas+' pág., ' : ''}${fechaCorta(a.fecha)}${a.subidoPor ? ', '+escapeHtml(a.subidoPor) : ''})</a>${esAdminSheet(usuarioActual) ? `<button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:4px 10px; font-size:13px; color:#B33A3A; border-color:#B33A3A;" onclick="event.stopPropagation(); borrarHojaEscaneada('${p.id}', ${i})">Eliminar</button>` : ''}</div>`).join('')}</div>` : ''}
       ${(esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirEscanerHoja('${p.id}')" style="margin-top:8px;">Escanear hoja (foto o PDF)</button>` : ''}
       ${gestionBtns}
     </div>
@@ -15726,6 +15725,27 @@ async function subirHojaEscaneadaApp(){
   }catch(err){
     h.subiendo = false; pintarEscanerHoja();
     const e2 = est(); if(e2) e2.innerHTML = '<span style="color:#B33A3A;">No se pudo subir: ' + escapeHtml(err && err.message ? err.message : 'error') + '. Tus páginas siguen aquí: toca «Subir hoja» para reintentar.</span>';
+  }
+}
+
+
+async function borrarHojaEscaneada(id, indice){
+  const p = DB.find(x=>x.id===id);
+  const h = p && p.hojasEscaneadas ? p.hojasEscaneadas[indice] : null;
+  if(!p || !h){ toast('No se encontró esa hoja'); return; }
+  if(!esAdminSheet(usuarioActual)){ toast('Solo para administradores'); return; }
+  if(!confirm('¿Eliminar la hoja escaneada #' + (indice+1) + ' de la OF ' + p.of + '? Se mueve a la papelera de Drive.')) return;
+  if(navigator.onLine === false){ toast('Sin conexión: se necesita internet para eliminarla'); return; }
+  toast('Eliminando…');
+  try{
+    const res = await llamarBackend('borrarHojaEscaneada', { id: p.id, of: p.of, url: h.url, borradoPor: usuarioActual || '' }, 'bhe_' + Date.now() + '_' + Math.random().toString(36).slice(2,8), 60000);
+    if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
+    p.hojasEscaneadas = (p.hojasEscaneadas || []).filter(x=>x.url !== h.url);
+    try{ guardarDBLocal(); }catch(e){}
+    toast('Hoja eliminada');
+    if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') abrirDetalle(p.id);
+  }catch(err){
+    toast('No se pudo eliminar: ' + (err && err.message ? err.message : 'error'));
   }
 }
 
