@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v22oct-1630</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v22oct-1700</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -14757,8 +14757,7 @@ function detalleHtml(p){
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
-      ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<div class="hint" style="margin-top:8px;">Hojas escaneadas:${p.hojasEscaneadas.map((a,i)=>`<div style="display:flex; align-items:center; gap:8px; margin-top:4px;"><a href="${escapeAtributo(a.url)}" target="_blank" onclick="event.stopPropagation();" style="flex:1;">#${i+1} (${a.paginas ? a.paginas+' pág., ' : ''}${fechaCorta(a.fecha)}${a.subidoPor ? ', '+escapeHtml(a.subidoPor) : ''})</a>${esAdminSheet(usuarioActual) ? `<button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:4px 10px; font-size:13px; color:#B33A3A; border-color:#B33A3A;" onclick="event.stopPropagation(); borrarHojaEscaneada('${p.id}', ${i})">Eliminar</button>` : ''}</div>`).join('')}</div>` : ''}
-      ${(esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirEscanerHoja('${p.id}')" style="margin-top:8px;">Escanear hoja (foto o PDF)</button>` : ''}
+      ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')" style="margin-top:8px;">Ver hoja de picking firmada${p.hojasEscaneadas.length>1 ? ' ('+p.hojasEscaneadas.length+')' : ''}</button>` : ((entregado && esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirEscanerHoja('${p.id}')" style="margin-top:8px;">Escanear hoja de picking</button>` : '')}
       ${gestionBtns}
     </div>
     ${doneBanner}
@@ -15733,6 +15732,25 @@ async function subirHojaEscaneadaApp(){
 }
 
 
+
+function verHojasFirmadas(id){
+  const p = DB.find(x=>x.id===id);
+  const hojas = p && p.hojasEscaneadas ? p.hojasEscaneadas : [];
+  if(!p || !hojas.length){ toast('Esta OF no tiene hoja escaneada'); return; }
+  const admin = esAdminSheet(usuarioActual);
+  if(hojas.length === 1 && !admin){ window.open(hojas[0].url, '_blank'); return; }
+  const filas = hojas.map((a,i)=>`<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+      <a class="btn btn-primary" href="${escapeAtributo(a.url)}" target="_blank" style="flex:1; margin:0; text-align:center; text-decoration:none;" onclick="setTimeout(cerrarSheet,200)">Abrir #${i+1} (${a.paginas ? a.paginas+' pág., ' : ''}${fechaCorta(a.fecha)}${a.subidoPor ? ', '+escapeHtml(a.subidoPor) : ''})</a>
+      ${admin ? `<button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:10px 12px; color:#B33A3A; border-color:#B33A3A;" onclick="borrarHojaEscaneada('${p.id}', ${i})">Eliminar</button>` : ''}
+    </div>`).join('');
+  mostrarSheet(`
+    <h3>Hoja de picking firmada — OF ${escapeHtml(p.of)}</h3>
+    ${filas}
+    ${admin ? `<button type="button" class="btn btn-outline" onclick="cerrarSheet(); abrirEscanerHoja('${p.id}')">Escanear otra hoja</button>` : ''}
+    <button type="button" class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>
+  `);
+}
+
 async function borrarHojaEscaneada(id, indice){
   const p = DB.find(x=>x.id===id);
   const h = p && p.hojasEscaneadas ? p.hojasEscaneadas[indice] : null;
@@ -15747,6 +15765,7 @@ async function borrarHojaEscaneada(id, indice){
     p.hojasEscaneadas = (p.hojasEscaneadas || []).filter(x=>x.url !== h.url);
     try{ guardarDBLocal(); }catch(e){}
     toast('Hoja eliminada');
+    cerrarSheet();
     if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') abrirDetalle(p.id);
   }catch(err){
     toast('No se pudo eliminar: ' + (err && err.message ? err.message : 'error'));
