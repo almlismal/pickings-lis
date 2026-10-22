@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v22oct-1345</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v22oct-1630</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -15577,11 +15577,11 @@ function confirmarAgregarComponentesExistente(modo){
    hechas. Es independiente de la hoja que genera la app: no la cambia ni la sustituye. */
 let hojaEsc = null; // { id, paginas:[{bytes,w,h,thumb}], pdf:{bytes,nombre}|null, subiendo, opId }
 const HOJA_ESC_LADO_MAX = 2000, HOJA_ESC_CALIDAD = 0.78, HOJA_ESC_MAX_PDF = 9 * 1024 * 1024;
-function abrirEscanerHoja(id){
+function abrirEscanerHoja(id, volverAEntrega){
   const p = DB.find(x=>x.id===id);
   if(!p){ toast('No se encontró esa OF'); return; }
   if(!esAdminSheet(usuarioActual)){ toast('Solo para administradores'); return; }
-  hojaEsc = { id, paginas: [], pdf: null, subiendo: false, opId: '' };
+  hojaEsc = { id, paginas: [], pdf: null, subiendo: false, opId: '', volverA: volverAEntrega || '' };
   pintarEscanerHoja();
 }
 function pintarEscanerHoja(){
@@ -15606,7 +15606,9 @@ function pintarEscanerHoja(){
 }
 function cancelarEscanerHoja(){
   if(hojaEsc && (hojaEsc.paginas.length || hojaEsc.pdf) && !confirm('Se descartan las páginas hechas. ¿Seguro?')) return;
+  const volverA = hojaEsc ? hojaEsc.volverA : '';
   hojaEsc = null; cerrarSheet();
+  if(volverA) entregar(volverA, true); // vuelve al formulario de entrega, con lo que ya había escrito
 }
 function quitarPaginaHojaEsc(i){
   if(!hojaEsc || hojaEsc.subiendo) return;
@@ -15719,8 +15721,10 @@ async function subirHojaEscaneadaApp(){
     p.hojasEscaneadas.push(res.hoja || { url: '', fecha: new Date().toISOString(), subidoPor: usuarioActual || '', paginas: h.paginas.length });
     try{ guardarDBLocal(); }catch(e){}
     h.paginas.forEach(pg=>{ try{ URL.revokeObjectURL(pg.thumb); }catch(e){} });
+    const volverA = h.volverA;
     hojaEsc = null; cerrarSheet();
     toast('Hoja guardada');
+    if(volverA){ entregaFirmadaSubida = true; entregar(volverA, true); return; }
     if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') abrirDetalle(p.id);
   }catch(err){
     h.subiendo = false; pintarEscanerHoja();
@@ -16262,12 +16266,14 @@ let entregaItemsEstado = {};
 let entregaPorActivo = null; // null = quien tiene la sesión abierta; si no, nombre ya verificado con su PIN
 let entregaDraft = { a:'', nota:'' };
 
+let entregaFirmadaSubida = false; // en el formulario de Entrega completa: ya se subió la hoja firmada (solo administradores)
 function entregar(tipo, manteniendoEstado){
   if(tipo==='lote'){ entregarLote(true); return; } // "Cancelar" / volver desde el cambio de quién entrega en una entrega en lote
   const p = DB.find(x=>x.id===ofEnDetalle);
 
   if(!manteniendoEstado){
     entregaPorActivo = null;
+    entregaFirmadaSubida = false;
     entregaDraft = { a:'', nota:'' };
     if(tipo==='parcial' && p){
       entregaItemsEstado = {};
@@ -16307,9 +16313,14 @@ function entregar(tipo, manteniendoEstado){
     <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar">${escapeHtml(entregaDraft.nota)}</textarea>` : `<label>Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional — si queda algo sin entregar, anótalo aquí)</span></label>
     <textarea id="entregaNota" placeholder="Ej. Lo firma Pedro pero lo retira Luis · Falta por entregar el perfil X">${escapeHtml(entregaDraft.nota)}</textarea>`}
 
+    ${(tipo==='completa' && p && esAdminSheet(usuarioActual) && String(p.id).indexOf('tmp_')!==0) ? `<div class="obs-box" style="margin:12px 0;">
+      <b>Hoja firmada</b>
+      ${entregaFirmadaSubida ? `<div style="margin:6px 0; color:#1B7F3B;"><b>Hoja firmada adjuntada ✓</b></div>` : `<div class="hint" style="margin:4px 0 8px;">Opcional: haz foto de la hoja con la firma de DHV y queda guardada con la OF.</div>`}
+      <button type="button" class="btn btn-outline" style="margin:0;" onclick="escanearHojaFirmadaDesdeEntrega('${tipo}')">${entregaFirmadaSubida ? 'Escanear otra hoja' : 'Escanear hoja firmada'}</button>
+    </div>` : ''}
     <div class="sign-banner">
       <label>
-        <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()">
+        <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()" ${entregaFirmadaSubida ? 'checked' : ''}>
         <span>Confirmo que <b id="signLabelName">la persona de DHV</b> firmará la hoja de picking antes de irme</span>
       </label>
     </div>
@@ -16322,6 +16333,10 @@ function entregar(tipo, manteniendoEstado){
   toggleBtnEntrega();
 }
 
+function escanearHojaFirmadaDesdeEntrega(tipo){
+  guardarBorradorEntrega();
+  abrirEscanerHoja(ofEnDetalle, tipo);
+}
 function guardarBorradorEntrega(){
   const campoA = document.getElementById('entregaA');
   const campoNota = document.getElementById('entregaNota');
@@ -16462,6 +16477,7 @@ async function confirmarEntrega(tipo){
     abrirDetalle(p.id);
 
     encolarOperacion('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota }, p.id, (tipo==='completa' ? 'Entregar' : 'Entrega parcial') + ' OF ' + p.of);
+    entregaFirmadaSubida = false;
   } catch(errGeneral){
     toast('Algo falló al confirmar — inténtalo de nuevo');
   }
