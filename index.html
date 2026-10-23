@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23oct-0930</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23oct-1010</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -490,7 +490,7 @@
 
     <div class="row2">
       <div>
-        <label>Proyecto</label>
+        <label>Proyecto <span style="color:#C62828;">*</span></label>
         <input type="text" id="f_proyecto" placeholder="Ej. 2024-275">
       </div>
       <div>
@@ -648,7 +648,7 @@
     <label>OF</label>
     <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
     <div class="row2">
-      <div><label>Proyecto</label><input type="text" id="rp_proyecto" placeholder="Ej. 2024-275"></div>
+      <div><label>Proyecto <span style="color:#C62828;">*</span></label><input type="text" id="rp_proyecto" placeholder="Ej. 2024-275"></div>
       <div><label>Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
     </div>
     <button class="btn btn-primary" onclick="empezarBipado()">Empezar a escanear</button>
@@ -13976,6 +13976,7 @@ async function guardarPicking(){
 
   if(!of){ toast('Falta el número de OF'); return; }
   if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
+  if(!proyecto){ toast('Falta el proyecto (es obligatorio)'); const cp = document.getElementById('f_proyecto'); if(cp) cp.focus(); return; }
   if(cajas===0 && !Object.keys(fueraSeleccion).some(k=>fueraSeleccion[k])){ toast('Sin cajas: marca qué componentes van fuera de la caja'); return; }
   const itemsFaltan = itemsParaUbicar().filter(it=>!ubicacionesSeleccion[it]);
   if(itemsFaltan.length){ toast('Falta elegir dónde va: ' + itemsFaltan.join(', ')); return; }
@@ -15152,6 +15153,7 @@ function empezarBipado(){
   const subproyecto = document.getElementById('rp_subproyecto').value.trim();
   if(!of){ toast('Falta el número de OF'); return; }
   if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
+  if(!proyecto){ toast('Falta el proyecto (es obligatorio)'); const cp = document.getElementById('rp_proyecto'); if(cp) cp.focus(); return; }
   borradorActivoId = null;
   sesionPicking = { of, proyecto, subproyecto, componentes: [], incidencias: [] };
   document.getElementById('rpBipOf').textContent = of;
