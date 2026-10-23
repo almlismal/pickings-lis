@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v22oct-1700</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23oct-0930</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12392,9 +12392,10 @@ function abrirCambioUsuario(forzado){
     html += `<span class="name-pill ${n===usuarioActual?'sel':''}" onclick="elegirUsuario('${n.replace(/'/g,"\\'")}')">${n}</span>`;
   });
   html += `</div>
-    <label>Añadir nombre nuevo</label>
-    <input type="text" id="nuevoNombre" placeholder="Nombre y apellido">
-    <button class="btn btn-primary" onclick="anadirNombre()">Guardar y usar</button>
+    <label>Si no estás en la lista, escribe tu nombre</label>
+    <input type="text" id="nuevoNombre" placeholder="Nombre y apellido (solo letras, no el PIN)" autocomplete="off" oninput="avisoNombreLogin('')">
+    <div id="avisoNombre" class="hint" style="color:#B33A3A; margin:4px 0 0;"></div>
+    <button class="btn btn-primary" onclick="anadirNombre()">Buscar y entrar</button>
     ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="abrirConfigurarPin()">Configurar mi PIN</button>` : ''}
     ${(usuarioActual && !forzado) ? `<button class="btn btn-outline" onclick="cerrarSesion()" style="color:#B33A3A; border-color:#B33A3A;">Cerrar sesión</button>` : ''}`;
   mostrarSheet(html, !!forzado);
@@ -12463,6 +12464,14 @@ async function entrarComoUsuario(n){
   if(!usuariosRemotos.some(u=>claveNombre(u['Nombre'])===claveNombre(n))){
     try{
       const resultado = await llamarBackend('guardarUsuario', { nombre: n, pin: '', por: n });
+      if(resultado && resultado.ok === false){
+        // El servidor no acepta ese nombre (p. ej. lleva números): no se entra ni se guarda nada.
+        usuarioActual = ''; localStorage.removeItem(LS_USER);
+        actualizarChipUsuario(); actualizarVisibilidadAdmin();
+        toast(resultado.error || 'No se pudo registrar ese nombre');
+        setTimeout(()=>abrirCambioUsuario(true), 300);
+        return;
+      }
       if(resultado && resultado.usuarios) usuariosRemotos = limpiarUsuarios(resultado.usuarios);
       else usuariosRemotos.push({ 'Nombre': n, 'PIN': '' });
     } catch(err){
@@ -12500,10 +12509,43 @@ async function reintentarListaUsuarios(){
   if(cargarNombres().length) refrescarListaLogin();
   else toast('Sin conexión con la hoja — inténtalo de nuevo en un momento');
 }
+function avisoNombreLogin(msg){ const e = document.getElementById('avisoNombre'); if(e) e.textContent = msg || ''; }
+// Un nombre válido solo lleva letras (con tildes/ñ), espacios y . ' - ; nunca números
+// (así no se cuela un PIN como "1234" en la lista de usuarios).
+function nombreUsuarioValido(n){
+  const t = String(n||'').trim();
+  if(t.length < 2 || t.length > 40) return false;
+  if(!/^[\p{L}][\p{L} .'’-]*$/u.test(t)) return false;
+  return (t.match(/\p{L}/gu) || []).length >= 2;
+}
+function distanciaNombres(a, b){
+  const m = a.length, n = b.length; if(!m) return n; if(!n) return m;
+  let prev = Array.from({length:n+1}, (_,j)=>j);
+  for(let i=1;i<=m;i++){
+    const cur = [i];
+    for(let j=1;j<=n;j++) cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1] + (a[i-1]===b[j-1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+function usuariosParecidos(nombre){
+  const k = claveNombre(nombre);
+  return cargarNombres().filter(u=>{
+    const c = claveNombre(u);
+    if(c === k) return false;
+    return distanciaNombres(c, k) <= 2 || (k.length >= 3 && (c.includes(k) || k.includes(c)));
+  }).slice(0, 4);
+}
 async function anadirNombre(){
   const inp = document.getElementById('nuevoNombre');
-  const val = inp.value.trim();
-  if(!val){ toast('Escribe tu nombre'); return; }
+  const val = inp.value.replace(/\s+/g,' ').trim();
+  if(!val){ avisoNombreLogin('Escribe tu nombre'); return; }
+  if(!nombreUsuarioValido(val)){
+    avisoNombreLogin(/^[\d\s]+$/.test(val)
+      ? 'Eso parece un número o un PIN. Escribe tu nombre (y apellido), solo con letras. El PIN se pide después.'
+      : 'El nombre solo puede llevar letras (sin números ni símbolos).');
+    return;
+  }
   // Sin la lista de usuarios no se puede saber si ese nombre ya existe (y
   // tiene PIN): se intenta cargarla antes de dejar entrar, para no saltarse
   // el PIN de nadie ni pisar el de alguien que ya está dado de alta.
@@ -12515,7 +12557,23 @@ async function anadirNombre(){
       return;
     }
   }
-  elegirUsuario(val);
+  // Si ya existe (sin importar mayúsculas ni tildes), se entra como ese usuario, con su PIN.
+  const existente = cargarNombres().find(u=>claveNombre(u)===claveNombre(val));
+  if(existente){ elegirUsuario(existente); return; }
+  // No existe: se avisa y se pide confirmar antes de registrarlo como nuevo.
+  const parecidos = usuariosParecidos(val);
+  mostrarSheet(`
+    <h3>No se encontró el usuario «${escapeHtml(val)}»</h3>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">Ese nombre no está en la lista de usuarios.</p>
+    ${parecidos.length ? `<div class="hint" style="margin:0 0 6px;"><b>¿Eres alguno de estos?</b></div><div style="margin-bottom:10px;">${parecidos.map(n=>`<span class="name-pill" onclick="elegirUsuario('${n.replace(/'/g,"\\'")}')">${escapeHtml(n)}</span>`).join('')}</div>` : ''}
+    <p style="font-size:14px; margin:0 0 10px;">Si es la <b>primera vez</b> que usas la app, puedes registrarte como usuario nuevo.</p>
+    <button class="btn btn-primary" onclick="confirmarNuevoUsuario('${val.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">Registrar «${escapeHtml(val)}» como usuario nuevo</button>
+    <button class="btn btn-outline" onclick="abrirCambioUsuario(loginForzado)">Volver a la lista</button>
+  `, loginForzado);
+}
+function confirmarNuevoUsuario(nombre){
+  if(!nombreUsuarioValido(nombre)){ toast('El nombre solo puede llevar letras'); abrirCambioUsuario(loginForzado); return; }
+  entrarComoUsuario(nombre);
 }
 
 /* ---------- sheet modal genérico ---------- */
