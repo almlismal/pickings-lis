@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23oct-1010</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v26oct-1250</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -15636,21 +15636,24 @@ function confirmarAgregarComponentesExistente(modo){
    hechas. Es independiente de la hoja que genera la app: no la cambia ni la sustituye. */
 let hojaEsc = null; // { id, paginas:[{bytes,w,h,thumb}], pdf:{bytes,nombre}|null, subiendo, opId }
 const HOJA_ESC_LADO_MAX = 2000, HOJA_ESC_CALIDAD = 0.78, HOJA_ESC_MAX_PDF = 9 * 1024 * 1024;
-function abrirEscanerHoja(id, volverAEntrega){
-  const p = DB.find(x=>x.id===id);
-  if(!p){ toast('No se encontró esa OF'); return; }
+async function abrirEscanerHoja(id, volverAEntrega){
+  // Las OF entregadas solo están en DB "un momento" (una actualización en segundo plano las saca):
+  // si ya no está, se vuelve a pedir en vez de decir que no se encuentra.
+  let p = DB.find(x=>x.id===id);
+  if(!p) p = await asegurarPickingEnDB(id);
+  if(!p){ toast('No se pudo cargar esa OF. Comprueba la conexión e inténtalo de nuevo.'); return; }
   if(!esAdminSheet(usuarioActual)){ toast('Solo para administradores'); return; }
-  hojaEsc = { id, paginas: [], pdf: null, subiendo: false, opId: '', volverA: volverAEntrega || '' };
+  // Se guardan los datos de la OF dentro del propio escáner, para no depender de que siga en DB.
+  hojaEsc = { id, of: p.of, proyecto: p.proyecto, paginas: [], pdf: null, subiendo: false, opId: '', volverA: volverAEntrega || '' };
   pintarEscanerHoja();
 }
 function pintarEscanerHoja(){
   const h = hojaEsc; if(!h) return;
-  const p = DB.find(x=>x.id===h.id);
   const n = h.paginas.length;
   const miniaturas = h.paginas.map((pg,i)=>`<div style="position:relative; width:72px;"><img src="${pg.thumb}" style="width:72px; height:96px; object-fit:cover; border:1px solid #C9D1DC; border-radius:6px; display:block;"><span style="position:absolute; left:4px; top:4px; background:#1F4E79; color:#fff; font-size:11px; border-radius:8px; padding:0 6px;">${i+1}</span><button type="button" onclick="quitarPaginaHojaEsc(${i})" ${h.subiendo?'disabled':''} style="position:absolute; right:2px; top:2px; border:0; background:#B33A3A; color:#fff; border-radius:50%; width:22px; height:22px; font-size:14px; line-height:20px; padding:0;">×</button></div>`).join('');
   const listo = n > 0 || !!h.pdf;
   mostrarSheet(`
-    <h3>Escanear hoja de la OF ${escapeHtml(p ? p.of : '')}</h3>
+    <h3>Escanear hoja de la OF ${escapeHtml(h.of || '')}</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Haz una foto de cada página (de frente y con buena luz). La app las junta en un solo PDF y lo guarda en la carpeta del proyecto.</p>
     <input type="file" id="hojaEscFoto" accept="image/*" capture="environment" style="display:none" onchange="anadirArchivosHojaEsc(this)">
     <input type="file" id="hojaEscArchivo" accept="application/pdf,image/*" multiple style="display:none" onchange="anadirArchivosHojaEsc(this)">
@@ -15759,8 +15762,6 @@ function bytesABase64(bytes){
 }
 async function subirHojaEscaneadaApp(){
   const h = hojaEsc; if(!h || h.subiendo) return;
-  const p = DB.find(x=>x.id===h.id);
-  if(!p){ toast('No se encontró esa OF'); return; }
   if(!h.paginas.length && !h.pdf){ toast('Haz alguna foto o elige un PDF'); return; }
   if(navigator.onLine === false){ toast('Sin conexión: se necesita internet para subir la hoja'); return; }
   h.subiendo = true; pintarEscanerHoja();
@@ -15772,19 +15773,22 @@ async function subirHojaEscaneadaApp(){
     if(!h.opId) h.opId = 'esc_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
     if(est()) est().textContent = 'Subiendo ' + Math.round(bytes.length/1024) + ' KB… no cierres la app.';
     const res = await llamarBackend('subirHojaEscaneada', {
-      id: p.id, of: p.of, proyecto: p.proyecto, base64: bytesABase64(bytes), mime: 'application/pdf',
+      id: h.id, of: h.of, proyecto: h.proyecto, base64: bytesABase64(bytes), mime: 'application/pdf',
       paginas: h.pdf ? 0 : h.paginas.length, subidoPor: usuarioActual || ''
     }, h.opId, 120000);
     if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
-    if(!p.hojasEscaneadas) p.hojasEscaneadas = [];
-    p.hojasEscaneadas.push(res.hoja || { url: '', fecha: new Date().toISOString(), subidoPor: usuarioActual || '', paginas: h.paginas.length });
-    try{ guardarDBLocal(); }catch(e){}
+    const p = DB.find(x=>x.id===h.id);
+    if(p){
+      if(!p.hojasEscaneadas) p.hojasEscaneadas = [];
+      p.hojasEscaneadas.push(res.hoja || { url: '', fecha: new Date().toISOString(), subidoPor: usuarioActual || '', paginas: h.paginas.length });
+      try{ guardarDBLocal(); }catch(e){}
+    }
     h.paginas.forEach(pg=>{ try{ URL.revokeObjectURL(pg.thumb); }catch(e){} });
     const volverA = h.volverA;
     hojaEsc = null; cerrarSheet();
     toast('Hoja guardada');
     if(volverA){ entregaFirmadaSubida = true; entregar(volverA, true); return; }
-    if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') abrirDetalle(p.id);
+    if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') reabrirDetalleSeguro(h.id);
   }catch(err){
     h.subiendo = false; pintarEscanerHoja();
     const e2 = est(); if(e2) e2.innerHTML = '<span style="color:#B33A3A;">No se pudo subir: ' + escapeHtml(err && err.message ? err.message : 'error') + '. Tus páginas siguen aquí: toca «Subir hoja» para reintentar.</span>';
@@ -15793,8 +15797,8 @@ async function subirHojaEscaneadaApp(){
 
 
 
-function verHojasFirmadas(id){
-  const p = DB.find(x=>x.id===id);
+async function verHojasFirmadas(id){
+  const p = DB.find(x=>x.id===id) || await asegurarPickingEnDB(id);
   const hojas = p && p.hojasEscaneadas ? p.hojasEscaneadas : [];
   if(!p || !hojas.length){ toast('Esta OF no tiene hoja escaneada'); return; }
   const admin = esAdminSheet(usuarioActual);
@@ -15812,7 +15816,7 @@ function verHojasFirmadas(id){
 }
 
 async function borrarHojaEscaneada(id, indice){
-  const p = DB.find(x=>x.id===id);
+  const p = DB.find(x=>x.id===id) || await asegurarPickingEnDB(id);
   const h = p && p.hojasEscaneadas ? p.hojasEscaneadas[indice] : null;
   if(!p || !h){ toast('No se encontró esa hoja'); return; }
   if(!esAdminSheet(usuarioActual)){ toast('Solo para administradores'); return; }
@@ -15826,7 +15830,7 @@ async function borrarHojaEscaneada(id, indice){
     try{ guardarDBLocal(); }catch(e){}
     toast('Hoja eliminada');
     cerrarSheet();
-    if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') abrirDetalle(p.id);
+    if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') reabrirDetalleSeguro(p.id);
   }catch(err){
     toast('No se pudo eliminar: ' + (err && err.message ? err.message : 'error'));
   }
