@@ -45,6 +45,7 @@
   .okmark{ width:46px; height:46px; line-height:46px; margin:0 auto; border-radius:50%; background:var(--ok); color:#fff; font-size:24px; font-weight:700; text-align:center; }
 
   /* ---- OF duplicadas ---- */
+  .badge-ambar{ display:inline-block; min-width:20px; height:20px; line-height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#E08A00; color:#fff; font-size:12px; font-weight:800; text-align:center; vertical-align:middle; }
   .badge-rojo{ display:inline-block; min-width:20px; height:20px; line-height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#C62828; color:#fff; font-size:12px; font-weight:800; text-align:center; vertical-align:middle; }
   .dup-grupo{ background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:12px 14px; margin-bottom:12px; }
   .dup-grupo.rojo{ border:2px solid #C62828; background:#FFF5F4; }
@@ -444,7 +445,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v27oct-1210</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v27oct-1810</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -533,6 +534,7 @@
     <button class="btn btn-outline" onclick="ir('entregados')" style="margin-top:10px;">Ver entregados</button>
     <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">Ver resumen</button>
     <button class="btn btn-outline" id="btnVerDuplicadas" onclick="ir('duplicadas')" style="margin-top:10px; display:none;">OF duplicadas<span id="badgeDuplicadas" class="badge-rojo" style="display:none;"></span></button>
+    <button class="btn btn-outline" id="btnVerAntiguas" onclick="ir('antiguas')" style="margin-top:10px; display:none;">OF antiguas<span id="badgeAntiguas2m" class="badge-rojo" style="display:none;"></span><span id="badgeAntiguas45" class="badge-ambar" style="display:none;"></span></button>
     <button class="btn btn-outline" id="btnVerInventario" onclick="ir('inventario')" style="margin-top:10px; display:none;">Inventario de cajas</button>
   </section>
 
@@ -611,6 +613,15 @@
   </section>
 
   <!-- ============ OF DUPLICADAS (solo administradores) ============ -->
+  <!-- ============ OF ANTIGUAS (solo administradores) ============ -->
+  <section class="screen" id="screen-antiguas">
+    <div class="screen-title">
+      <button class="back" onclick="ir('buscar')">←</button>
+      <h2>OF antiguas pendientes</h2>
+    </div>
+    <div id="antiguasContenido"></div>
+  </section>
+
   <section class="screen" id="screen-duplicadas">
     <div class="screen-title">
       <button class="back" onclick="ir('buscar')">←</button>
@@ -11114,6 +11125,7 @@ const LS_COLA_SYNC = 'pickings_lis_cola_sync_v1';
 
 function guardarDBLocal(){
   try{ localStorage.setItem(LS_DB_LOCAL, JSON.stringify(DB)); } catch(e){}
+  try{ actualizarBadgeAntiguas(); }catch(e){}
 }
 function cargarDBLocalGuardado(){
   try{ return JSON.parse(localStorage.getItem(LS_DB_LOCAL)) || null; } catch(e){ return null; }
@@ -12336,7 +12348,7 @@ function ir(pantalla, esVolver){
   // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
   // mismos resultados de búsqueda) y solo se restaura el scroll.
   if(pantalla==='pendientes' || pantalla==='buscar' || pantalla==='ubicaciones') actualizarBarraLote(); else ocultarBarraLote();
-  if(esVolver){ if(pantalla==='inventario') renderInventario(); return; }
+  if(esVolver){ if(pantalla==='inventario') renderInventario(); if(pantalla==='antiguas') renderAntiguas(); return; }
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
   if(pantalla==='ubicaciones') entrarAUbicaciones();
@@ -12344,6 +12356,7 @@ function ir(pantalla, esVolver){
   if(pantalla==='resumen') entrarAResumen();
   if(pantalla==='duplicadas') entrarADuplicadas();
   if(pantalla==='inventario') entrarAInventario();
+  if(pantalla==='antiguas') entrarAAntiguas();
   if(pantalla==='escanear') iniciarEscaner();
   if(pantalla==='realizar-bip') iniciarBipCamara();
 }
@@ -12358,6 +12371,9 @@ function actualizarVisibilidadAdmin(){
   if(btnDup) btnDup.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
   const btnInv = document.getElementById('btnVerInventario');
   if(btnInv) btnInv.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
+  const btnAnt = document.getElementById('btnVerAntiguas');
+  if(btnAnt) btnAnt.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
+  try{ actualizarBadgeAntiguas(); }catch(e){}
   try{ actualizarBadgeDuplicadas(); }catch(e){}
 }
 
@@ -13531,6 +13547,58 @@ async function refrescarDuplicadas(){
   await enviarDupRevisadosPendientes();
   await Promise.allSettled([cargarLigeroYActualizarDB(), cargarEntregadosYActualizar(), cargarDupRevisadosServidor()]);
 }
+
+/* ---------- OF antiguas (solo administradores) ----------
+   Pendientes de entrega (no entregadas) según la fecha en que se registraron:
+   - "Más de 2 meses": registradas hace más de 2 meses (rojo).
+   - "Más de 45 días": más de 45 días pero todavía no 2 meses (ámbar).
+   Cada OF cuenta en un solo rango; al cumplir el plazo pasan solas de uno a otro.
+   Solo lee la lista: no cambia nada de lo registrado. */
+const DIAS_OF_ANTIGUA = 45;
+function pendientesAntiguas(){
+  const ahora = new Date();
+  const out = { dosMeses: [], dias45: [] };
+  (DB||[]).forEach(p=>{
+    if(!p || p.estado==='completado' || String(p.id).indexOf('tmp_')===0 || !p.fecha) return;
+    const f = new Date(p.fecha); if(isNaN(f.getTime())) return;
+    const dias = (ahora - f) / 86400000;
+    const dosMeses = new Date(f.getTime()); dosMeses.setMonth(dosMeses.getMonth() + 2);
+    if(ahora > dosMeses) out.dosMeses.push(p);
+    else if(dias > DIAS_OF_ANTIGUA) out.dias45.push(p);
+  });
+  const antes = (a,b)=> new Date(a.fecha) - new Date(b.fecha);
+  out.dosMeses.sort(antes); out.dias45.sort(antes);
+  return out;
+}
+function actualizarBadgeAntiguas(){
+  const b2 = document.getElementById('badgeAntiguas2m'), b45 = document.getElementById('badgeAntiguas45');
+  if(!b2 || !b45) return;
+  const a = esAdminSheet(usuarioActual) ? pendientesAntiguas() : { dosMeses: [], dias45: [] };
+  b2.textContent = a.dosMeses.length; b2.style.display = a.dosMeses.length ? '' : 'none';
+  b45.textContent = a.dias45.length; b45.style.display = a.dias45.length ? '' : 'none';
+}
+function renderAntiguas(){
+  const cont = document.getElementById('antiguasContenido');
+  if(!cont) return;
+  if(!esAdminSheet(usuarioActual)){ cont.innerHTML = '<div class="empty">Solo para administradores.</div>'; return; }
+  const a = pendientesAntiguas();
+  actualizarBadgeAntiguas();
+  if(!a.dosMeses.length && !a.dias45.length){
+    cont.innerHTML = '<div class="empty">No hay OF pendientes de más de 45 días.</div>';
+    return;
+  }
+  const bloque = (titulo, lista, clase, nota)=> `<div class="inv-sec ${clase}">${titulo}<span class="n">${lista.length}</span></div>
+    <div class="inv-nota">${nota}</div>
+    ${lista.length ? lista.map(p=>`<div class="hint" style="margin:8px 0 2px;">Registrada el ${escapeHtml(fechaCorta(p.fecha))} · hace ${diasPendiente(p)} días</div>${ticketHtml(p)}`).join('') : '<div class="hint" style="margin-bottom:8px;">Ninguna.</div>'}`;
+  cont.innerHTML =
+    bloque('Más de 2 meses', a.dosMeses, 'rojo', 'Registradas hace más de 2 meses y todavía sin entregar. La más antigua, primero.') +
+    bloque('Más de 45 días', a.dias45, '', 'Llevan más de 45 días pendientes. Pasan solas a "Más de 2 meses" al cumplirse el plazo.');
+}
+function entrarAAntiguas(){
+  renderAntiguas();
+  sincronizar().then(renderAntiguas).catch(()=>{});
+}
+
 function entrarADuplicadas(){
   renderDuplicadas();
   refrescarDuplicadas().then(renderDuplicadas).catch(()=>{});
@@ -14681,7 +14749,7 @@ function renderResultadosBuscar(){
 // "Buscar" — y sin recargar ni vaciar nada (ir(x, true) se salta eso).
 let pantallaOrigenDetalle = 'buscar';
 let scrollDetalleOrigen = 0;
-const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas','screen-inventario'];
+const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas','screen-inventario','screen-antiguas'];
 function abrirDetalle(id){
   // Solo se recuerda el origen cuando se viene de verdad de una de las 3
   // listas — si se llega aquí desde otro paso intermedio (p.ej. al volver
