@@ -444,7 +444,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v26oct-1250</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v27oct-1210</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -15787,7 +15787,7 @@ async function subirHojaEscaneadaApp(){
     const volverA = h.volverA;
     hojaEsc = null; cerrarSheet();
     toast('Hoja guardada');
-    if(volverA){ entregaFirmadaSubida = true; entregar(volverA, true); return; }
+    if(volverA){ if(volverA === 'completa') entregaFirmadaSubida = true; entregar(volverA, true); return; }
     if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') reabrirDetalleSeguro(h.id);
   }catch(err){
     h.subiendo = false; pintarEscanerHoja();
@@ -16256,20 +16256,29 @@ function entregarLote(manteniendoEstado){
     entregaDraft = { a:'', nota:'' };
   }
   const quienEntrega = entregaPorActivo || usuarioActual;
+  const adminHojas = esAdminSheet(usuarioActual);
+  const todasConHoja = adminHojas && ids.every(id=>{ const q = DB.find(x=>x.id===id); return q && q.hojasEscaneadas && q.hojasEscaneadas.length; });
   const filas = ids.map(id=>{
     const p = DB.find(x=>x.id===id);
     const motivos = motivosAtencionLote(p);
+    const nHojas = (p.hojasEscaneadas || []).length;
+    const bloqueHoja = (adminHojas && String(p.id).indexOf('tmp_')!==0) ? `<div style="margin-top:6px;">
+        ${nHojas ? `<span style="color:#1B7F3B; font-size:13px;"><b>✓ Hoja firmada adjuntada${nHojas>1 ? ' ('+nHojas+')' : ''}</b></span> ` : ''}
+        <button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:5px 10px; font-size:13px;" onclick="escanearHojaFirmadaDesdeLote('${p.id}')">${nHojas ? 'Escanear otra' : 'Escanear hoja firmada'}</button>
+      </div>` : '';
     return `<div style="display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--line);">
       <div style="flex:1;">
         <div><b style="font-family:var(--mono);">OF ${escapeHtml(p.of)}</b> · ${escapeHtml(p.proyecto || '—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</div>
         ${motivos.length ? `<div style="font-size:12px; color:var(--warn-ink);">${escapeHtml(motivos.join(' · '))}</div>` : ''}
+        ${bloqueHoja}
       </div>
       <span class="link-action" style="color:#B33A3A;" onclick="quitarDeEntregaLote('${p.id}')">Quitar</span>
     </div>`;
   }).join('');
   mostrarSheet(`
     <h3>Entregar ${ids.length} picking${ids.length===1?'':'s'}</h3>
-    <div style="max-height:30vh; overflow:auto; margin-bottom:12px;">${filas}</div>
+    ${adminHojas ? `<div class="hint" style="margin:0 0 6px;">Opcional: escanea la hoja firmada de cada OF (una o varias hojas por OF).</div>` : ''}
+    <div style="max-height:40vh; overflow:auto; margin-bottom:12px;">${filas}</div>
     <label>¿Quién entrega?</label>
     <div class="hint" style="margin:0 0 4px;">La entrega queda registrada a nombre de: <b>${escapeHtml(quienEntrega)}</b>${entregaPorActivo ? ' (verificado con su PIN)' : ''}</div>
     <div class="hint" style="margin:0 0 14px;"><span class="link-action" onclick="abrirCambioEntregaPor('lote')">¿Entrega otra persona? Cambiar</span></div>
@@ -16283,7 +16292,7 @@ function entregarLote(manteniendoEstado){
 
     <div class="sign-banner">
       <label>
-        <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()">
+        <input type="checkbox" id="confirmFirma" onchange="toggleBtnEntrega()" ${todasConHoja ? 'checked' : ''}>
         <span>Confirmo que <b id="signLabelName">la persona de DHV</b> firmará las hojas de picking antes de irme</span>
       </label>
     </div>
@@ -16292,6 +16301,10 @@ function entregarLote(manteniendoEstado){
   `);
   actualizarTextoFirma();
   toggleBtnEntrega();
+}
+function escanearHojaFirmadaDesdeLote(id){
+  guardarBorradorEntrega();
+  abrirEscanerHoja(id, 'lote');
 }
 function quitarDeEntregaLote(id){
   guardarBorradorEntrega();
