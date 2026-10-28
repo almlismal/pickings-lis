@@ -258,6 +258,12 @@
     border-color: var(--ink); border-width: 2px; color: var(--ink); font-weight:700; background:#fff;
   }
   .loc-chip.active::before{ content: "✓ "; }
+  .hueco-tabla{ border-collapse:separate; border-spacing:5px; margin:6px auto 4px; }
+  .hueco-tabla th{ font-size:12px; font-weight:700; color:var(--ink-soft); padding:0 2px; }
+  .hueco-celda{ width:60px; height:42px; border:1.5px solid var(--line); border-radius:8px; background:#fff; font-size:14px; font-weight:700; color:var(--ink); cursor:pointer; padding:0; }
+  .hueco-celda.ocupado{ background:#FFF4D6; border-color:#E0B64A; }
+  .hueco-celda.proyecto{ border-color:#1B7F3B; border-width:2.5px; }
+  .hueco-celda.actual{ background:var(--ink); color:#fff; border-color:var(--ink); }
   .loc-chip.add{
     grid-column: 1 / -1;
     border-style: dashed; border-color: var(--accent); color: var(--accent); font-weight:600;
@@ -445,7 +451,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v27oct-1810</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1620</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -492,7 +498,7 @@
     <div class="row2">
       <div>
         <label>Proyecto <span style="color:#C62828;">*</span></label>
-        <input type="text" id="f_proyecto" placeholder="Ej. 2024-275">
+        <input type="text" id="f_proyecto" placeholder="Ej. 2024-275" oninput="renderUbicacionPills()">
       </div>
       <div>
         <label>Subproyecto</label>
@@ -729,6 +735,7 @@
 <div class="toast" id="toast"></div>
 <div id="loteBarra">
   <button class="btn btn-primary" id="loteBtnEntregar" onclick="abrirEntregaLote()" style="margin:0; flex:1;" disabled>Marca los pickings a entregar</button>
+  <button class="btn btn-outline" id="loteBtnReubicar" onclick="abrirReubicarLote()" style="margin:0; width:auto; padding:0 12px; display:none;" disabled>Reubicar</button>
   <button class="btn btn-outline" onclick="toggleLoteModo()" style="margin:0; width:auto; padding:0 16px;">Cancelar</button>
 </div>
 
@@ -12654,22 +12661,245 @@ function confirmarAnadirFuera(){
   toast('Añadido: ' + val);
 }
 
+/* ---------- Ubicaciones: plano de huecos Z-00-<estantería 01-04>-<altura A-F> ----------
+   A es la altura más alta y F la más baja. Se elige tocando el hueco del plano (o escribiendo
+   "2c"). Aparte de los huecos solo hay tres ubicaciones fijas. Las ubicaciones antiguas de
+   OF ya registradas (Carpa, Almacén…) se siguen viendo tal cual, pero ya no se ofrecen. */
+const HUECO_PREFIJO = 'Z-00';
+const HUECO_ESTANTERIAS = [1,2,3,4];
+const HUECO_ALTURAS = ['A','B','C','D','E','F'];
+const UBICACIONES_FIJAS = ['Estantería de perfiles','Estantería de plantillas','Picking urgentes'];
+// De momento "Otra ubicación…" y los "otros sitios ya usados" solo los ven los administradores.
+// Para liberarlo a todo el equipo basta poner false.
+const UBICACION_LIBRE_SOLO_ADMIN = true;
+function ubicacionLibreDisponible(){ return !UBICACION_LIBRE_SOLO_ADMIN || esAdminSheet(usuarioActual); }
+function codigoHueco(e, a){ return HUECO_PREFIJO + '-0' + e + '-' + a; }
+function esHueco(v){ return /^Z-00-0[1-4]-[A-F]$/.test(String(v||'').trim()); }
+function atajoAHueco(txt){
+  const t = String(txt||'').toUpperCase().replace(/^Z-?00-?/, '').replace(/[\s._-]+/g, '');
+  let m = /^0?([1-4])([A-F])$/.exec(t); if(m) return codigoHueco(m[1], m[2]);
+  m = /^([A-F])0?([1-4])$/.exec(t); if(m) return codigoHueco(m[2], m[1]);
+  return '';
+}
+function claveProyecto(v){ return normalizarNombre(String(v||'')).replace(/\s+/g,' '); }
+// Qué hay ahora en cada sitio (solo OF pendientes): { sitio: { n, proyectos:Set } }
+function ocupacionUbicaciones(excluirId){
+  const mapa = {};
+  (DB||[]).forEach(p=>{
+    if(!p || p.estado==='completado' || p.id===excluirId) return;
+    const vistos = new Set();
+    Object.values(p.ubicaciones||{}).forEach(v=>{
+      const sitio = String(v||'').trim(); if(!sitio || vistos.has(sitio)) return;
+      vistos.add(sitio);
+      if(!mapa[sitio]) mapa[sitio] = { n:0, proyectos:new Set() };
+      mapa[sitio].n++; mapa[sitio].proyectos.add(claveProyecto(p.proyecto));
+    });
+  });
+  return mapa;
+}
+// Sitios donde ya hay OF del mismo proyecto (primero con la misma cosa: Cajas, perfiles…)
+function sugerenciasUbicacionProyecto(proyecto, item, excluirId){
+  const k = claveProyecto(proyecto); if(!k) return [];
+  const mismo = {}, cualquiera = {};
+  (DB||[]).forEach(p=>{
+    if(!p || p.estado==='completado' || p.id===excluirId || claveProyecto(p.proyecto)!==k) return;
+    Object.entries(p.ubicaciones||{}).forEach(([it,v])=>{
+      const sitio = String(v||'').trim();
+      if(!esHueco(sitio) && !UBICACIONES_FIJAS.includes(sitio)) return;
+      cualquiera[sitio] = (cualquiera[sitio]||0) + 1;
+      if(it===item) mismo[sitio] = (mismo[sitio]||0) + 1;
+    });
+  });
+  const fuente = Object.keys(mismo).length ? mismo : cualquiera;
+  return Object.entries(fuente).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([valor,n])=>({ valor, n }));
+}
+function tituloItemUbic(item, cajas){ return item==='Cajas' ? 'Cajas de picking' + (cajas!=null ? ' ('+cajas+')' : '') : item; }
+
+let selUbic = null; // { item, proyecto, excluirId, actual, titulo, cb }
+function abrirSelectorUbicacion(cfg){
+  selUbic = cfg;
+  const ocup = ocupacionUbicaciones(cfg.excluirId);
+  // Otros sitios que ya se están usando en OF pendientes (se ofrecen a todos; se van solos al dejar de usarse)
+  const libre = ubicacionLibreDisponible();
+  const otras = libre ? Object.keys(ocup).filter(k=> !esHueco(k) && !UBICACIONES_FIJAS.includes(k)).sort((a,b)=>ocup[b].n-ocup[a].n).slice(0,8) : [];
+  cfg.candidatas = UBICACIONES_FIJAS.concat(otras);
+  const kProy = claveProyecto(cfg.proyecto);
+  const sugs = sugerenciasUbicacionProyecto(cfg.proyecto, cfg.item, cfg.excluirId);
+  const filas = HUECO_ALTURAS.map(a=>`<tr><th>${a}</th>${HUECO_ESTANTERIAS.map(e=>{
+    const c = codigoHueco(e, a), o = ocup[c];
+    const cls = ['hueco-celda'];
+    if(o) cls.push('ocupado');
+    if(o && kProy && o.proyectos.has(kProy)) cls.push('proyecto');
+    if(cfg.actual === c) cls.push('actual');
+    return `<td><button type="button" class="${cls.join(' ')}" onclick="elegirUbicacionSelector('${c}')">${o ? o.n : ''}</button></td>`;
+  }).join('')}</tr>`).join('');
+  mostrarSheet(`
+    <h3>Ubicación — ${escapeHtml(cfg.titulo || cfg.item)}</h3>
+    ${sugs.length ? `<div class="hint" style="margin:0 0 6px;"><b>Ya hay OF del proyecto ${escapeHtml(cfg.proyecto)} en:</b></div>
+      <div style="margin-bottom:10px;">${sugs.map(x=>`<button type="button" class="btn btn-primary" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;" onclick="elegirUbicacionSelector('${escapeAtributo(x.valor)}')">${escapeHtml(x.valor)} · ${x.n} OF</button>`).join('')}</div>` : ''}
+    <div style="display:flex; gap:8px; align-items:stretch; margin-bottom:6px;">
+      <input type="text" id="atajoHueco" placeholder="Escribe ej. 2c" autocomplete="off" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarAtajoHueco(); event.preventDefault(); }">
+      <button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:0 16px;" onclick="aplicarAtajoHueco()">Poner</button>
+    </div>
+    <div id="avisoAtajoHueco" class="hint" style="color:#B33A3A; margin:0;"></div>
+    <div class="hint" style="margin:6px 0 0; text-align:center;">Toca el hueco · estantería 1 a 4 (columnas) · altura A (arriba) a F (abajo)</div>
+    <table class="hueco-tabla"><thead><tr><th></th>${HUECO_ESTANTERIAS.map(e=>`<th>Est. ${e}</th>`).join('')}</tr></thead><tbody>${filas}</tbody></table>
+    <div class="hint" style="margin:0 0 10px; text-align:center;">Amarillo = ya hay OF · Borde verde = hay OF de este proyecto · el número son las OF que hay</div>
+    ${UBICACIONES_FIJAS.map(u=>`<button type="button" class="btn btn-outline" style="margin-top:6px;${cfg.actual===u ? ' border-color:var(--ink); border-width:2px;' : ''}" onclick="elegirUbicacionSelector('${escapeAtributo(u)}')">${escapeHtml(u)}</button>`).join('')}
+    ${otras.length ? `<div class="hint" style="margin:12px 0 4px;"><b>Otros sitios ya usados:</b></div><div>${otras.map(u=>`<button type="button" class="btn btn-outline" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;${cfg.actual===u ? ' border-color:var(--ink); border-width:2px;' : ''}" onclick="elegirUbicacionSelector('${escapeAtributo(u)}')">${escapeHtml(u)} · ${ocup[u].n}</button>`).join('')}</div>` : ''}
+    ${libre ? `<button type="button" class="btn btn-outline" style="margin-top:10px;" onclick="mostrarOtraUbicacion()">Otra ubicación…</button>` : ''}
+    ${libre ? `<div id="bloqueOtraUbic" style="display:none; margin-top:8px;">
+      <div style="display:flex; gap:8px; align-items:stretch;">
+        <input type="text" id="otraUbic" placeholder="Ej. Esclusa" autocomplete="off" maxlength="40" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarOtraUbicacion(); event.preventDefault(); }" oninput="avisoOtraUbicacion('')">
+        <button type="button" class="btn btn-primary" style="margin:0; width:auto; padding:0 16px;" onclick="aplicarOtraUbicacion()">Poner</button>
+      </div>
+      <div id="avisoOtraUbic" class="hint" style="margin:6px 0 0;"></div>
+    </div>` : ''}
+    <button type="button" class="btn btn-outline" style="margin-top:14px;" onclick="cancelarSelectorUbicacion()">Cancelar</button>
+  `);
+}
+function mostrarOtraUbicacion(){
+  const b = document.getElementById('bloqueOtraUbic'); if(b) b.style.display = '';
+  const c = document.getElementById('otraUbic'); if(c) c.focus();
+}
+function avisoOtraUbicacion(html){ const a = document.getElementById('avisoOtraUbic'); if(a) a.innerHTML = html || ''; }
+// Un sitio válido lleva letras (y puede llevar números, espacios y . - / ( ) º ª); nunca comas, dos puntos ni comillas.
+function ubicacionLibreValida(t){
+  if(t.length < 2 || t.length > 40) return false;
+  if(!/^[\p{L}\d][\p{L}\d .\-\/()ºª]*$/u.test(t)) return false;
+  return (t.match(/\p{L}/gu) || []).length >= 2;
+}
+function aplicarOtraUbicacion(){
+  const cfg = selUbic; if(!cfg) return;
+  const campo = document.getElementById('otraUbic');
+  let v = (campo ? campo.value : '').replace(/\s+/g,' ').trim();
+  if(!v){ avisoOtraUbicacion('Escribe el sitio.'); return; }
+  const hueco = atajoAHueco(v);                       // "2c" es un hueco, no un sitio libre
+  if(hueco){ elegirUbicacionSelector(hueco); return; }
+  if(!ubicacionLibreValida(v)){ avisoOtraUbicacion('<span style="color:#B33A3A;">Solo letras y números (sin comas, dos puntos ni símbolos raros), por ejemplo: Esclusa.</span>'); return; }
+  v = v.charAt(0).toUpperCase() + v.slice(1);
+  const k = claveNombre(v);
+  const igual = (cfg.candidatas || []).find(c=>claveNombre(c)===k);
+  if(igual){ elegirUbicacionSelector(igual); return; }
+  const parecidas = (cfg.candidatas || []).filter(c=>{ const kc = claveNombre(c); return distanciaNombres(kc, k) <= 2 || (k.length>=4 && (kc.includes(k) || k.includes(kc))); }).slice(0,3);
+  if(parecidas.length && !cfg.confirmadaOtra){
+    cfg.confirmadaOtra = v;
+    avisoOtraUbicacion('<b>¿Quisiste decir…?</b><div style="margin-top:6px;">' + parecidas.map(c=>`<button type="button" class="btn btn-outline" style="margin:0 6px 6px 0; width:auto; padding:8px 12px;" onclick="elegirUbicacionSelector('${escapeAtributo(c)}')">${escapeHtml(c)}</button>`).join('') + `<button type="button" class="btn btn-primary" style="margin:0 0 6px 0; width:auto; padding:8px 12px;" onclick="elegirUbicacionSelector('${escapeAtributo(v)}')">No, usar «${escapeHtml(v)}»</button></div>`);
+    return;
+  }
+  elegirUbicacionSelector(v);
+}
+function aplicarAtajoHueco(){
+  const c = document.getElementById('atajoHueco');
+  const v = atajoAHueco(c ? c.value : '');
+  if(!v){ const a = document.getElementById('avisoAtajoHueco'); if(a) a.textContent = 'Escribe estantería (1-4) y altura (A-F), por ejemplo 2c'; return; }
+  elegirUbicacionSelector(v);
+}
+function elegirUbicacionSelector(valor){
+  const cfg = selUbic; selUbic = null;
+  if(!cfg) return;
+  cerrarSheet();
+  if(cfg.cb) cfg.cb(valor);
+}
+function cancelarSelectorUbicacion(){
+  const cfg = selUbic; selUbic = null;
+  cerrarSheet();
+  if(cfg && cfg.alCancelar) cfg.alCancelar();
+}
+
 function renderUbicacionPills(){
   const cont = document.getElementById('ubicacionesContainer');
   const items = itemsParaUbicar();
-  const opciones = UBICACION_BASE.concat(cargarExtrasUbicacion());
   const cajas = leerCajasForm();
+  const proyecto = (document.getElementById('f_proyecto') || {}).value || '';
   cont.innerHTML = items.map(item=>{
-    const chips = opciones.map(op=>{
-      const active = ubicacionesSeleccion[item] === op ? 'active' : '';
-      return `<div class="loc-chip ${active}" data-item="${item}" data-label="${op}" onclick="toggleUbicacionItem(this)">${op}</div>`;
-    }).join('') + `<div class="loc-chip add" onclick="abrirAnadirUbicacion('${item}')">+ Añadir otra</div>`;
-    const titulo = item === 'Cajas' ? `Cajas de picking (${cajas})` : item;
+    const sel = ubicacionesSeleccion[item];
+    const sugs = sugerenciasUbicacionProyecto(proyecto, item, editingId);
+    const chips = sugs.map(x=>`<div class="loc-chip ${sel===x.valor ? 'active' : ''}" data-item="${escapeAtributo(item)}" onclick="ponerUbicacionItem('${escapeAtributo(item)}','${escapeAtributo(x.valor)}')">${escapeHtml(x.valor)} · mismo proyecto</div>`).join('');
+    const otra = (sel && !sugs.some(x=>x.valor===sel)) ? `<div class="loc-chip active" style="grid-column:1 / -1;">${escapeHtml(sel)}</div>` : '';
     return `<div class="ubic-item">
-      <span class="ubic-nombre">${titulo}</span>
-      <div class="ubic-grid">${chips}</div>
+      <span class="ubic-nombre">${escapeHtml(tituloItemUbic(item, cajas))}</span>
+      <div class="ubic-grid">${chips}${otra}<div class="loc-chip add" onclick="elegirUbicacionForm('${escapeAtributo(item)}')">${sel ? 'Cambiar ubicación' : 'Elegir ubicación'}</div></div>
     </div>`;
   }).join('');
+}
+function ponerUbicacionItem(item, valor){
+  ubicacionesSeleccion[item] = valor;
+  renderUbicacionPills();
+}
+function elegirUbicacionForm(item){
+  const proyecto = (document.getElementById('f_proyecto') || {}).value || '';
+  abrirSelectorUbicacion({
+    item, proyecto: proyecto.trim(), excluirId: editingId, actual: ubicacionesSeleccion[item] || '',
+    titulo: tituloItemUbic(item, leerCajasForm()),
+    cb: v=>{ ubicacionesSeleccion[item] = v; renderUbicacionPills(); }
+  });
+}
+
+/* ---------- Reubicar una OF ya registrada ---------- */
+let reub = null; // { id, nuevas:{item:valor} }
+function abrirReubicar(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p){ toast('No se encontró esa OF'); return; }
+  if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
+  if(p.estado==='completado'){ toast('Esta OF ya está entregada'); return; }
+  reub = { id, nuevas: {...(p.ubicaciones||{})} };
+  pintarReubicar();
+}
+function pintarReubicar(){
+  const r = reub; if(!r) return;
+  const p = DB.find(x=>x.id===r.id); if(!p){ reub = null; cerrarSheet(); return; }
+  const items = itemsParaUbicarDe(p);
+  const hayCambio = items.some(it=> (r.nuevas[it]||'') !== ((p.ubicaciones||{})[it]||''));
+  const filas = items.map(it=>{
+    const antes = (p.ubicaciones||{})[it] || '', ahora = r.nuevas[it] || '';
+    return `<div class="ubic-item"><span class="ubic-nombre">${escapeHtml(tituloItemUbic(it, p.cajas))}</span>
+      <div style="margin-bottom:8px;">${antes ? 'Ahora: <b>'+escapeHtml(antes)+'</b>' : '<span class="hint">Sin ubicación anotada</span>'}${(ahora && ahora!==antes) ? ' → <b style="color:#1B7F3B;">'+escapeHtml(ahora)+'</b>' : ''}</div>
+      <button type="button" class="btn btn-outline" style="margin:0;" onclick="elegirUbicacionReubicar('${escapeAtributo(it)}')">${(ahora && ahora!==antes) ? 'Cambiar otra vez' : 'Elegir nueva ubicación'}</button></div>`;
+  }).join('');
+  mostrarSheet(`
+    <h3>Reubicar OF ${escapeHtml(p.of)}</h3>
+    <div class="hint" style="margin:0 0 6px;">${escapeHtml(p.proyecto || '—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}. Las cajas de una OF van juntas.</div>
+    ${filas}
+    ${items.length > 1 ? `<button type="button" class="btn btn-outline" style="margin-top:10px;" onclick="elegirUbicacionReubicar('*')">Mover todo al mismo sitio</button>` : ''}
+    <button type="button" class="btn btn-primary" style="margin-top:12px; ${hayCambio ? '' : 'opacity:0.5;'}" onclick="confirmarReubicar()">Guardar nueva ubicación</button>
+    <button type="button" class="btn btn-outline" onclick="reub=null; cerrarSheet();">Cancelar</button>
+  `);
+}
+function elegirUbicacionReubicar(item){
+  const r = reub; if(!r) return;
+  const p = DB.find(x=>x.id===r.id); if(!p) return;
+  const todos = item === '*';
+  abrirSelectorUbicacion({
+    item: todos ? (p.cajas>0 ? 'Cajas' : (itemsParaUbicarDe(p)[0] || 'Cajas')) : item,
+    proyecto: p.proyecto, excluirId: p.id, actual: todos ? '' : (r.nuevas[item] || ''),
+    titulo: todos ? 'todo (OF ' + p.of + ')' : tituloItemUbic(item, p.cajas),
+    cb: v=>{ if(todos) itemsParaUbicarDe(p).forEach(it=> r.nuevas[it] = v); else r.nuevas[item] = v; pintarReubicar(); },
+    alCancelar: ()=> pintarReubicar()
+  });
+}
+function confirmarReubicar(){
+  const r = reub; if(!r) return;
+  const p = DB.find(x=>x.id===r.id);
+  if(!p){ reub = null; cerrarSheet(); toast('No se encontró esa OF'); return; }
+  const ubicacionesFinal = {...(p.ubicaciones||{})};
+  itemsParaUbicarDe(p).forEach(it=>{ if(r.nuevas[it]) ubicacionesFinal[it] = r.nuevas[it]; });
+  const cambios = diffCambios(p, { of: p.of, proyecto: p.proyecto||'', subproyecto: p.subproyecto||'', cajas: p.cajas, obs: p.observaciones||'', fuera: p.fuera, ubicaciones: ubicacionesFinal });
+  if(!cambios.length){ toast('No has cambiado ninguna ubicación'); return; }
+  const motivo = 'Reubicado';
+  const datosEnvio = {
+    id: p.id, of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto, cajas: p.cajas,
+    fuera: formatFuera(p.fuera), ubicaciones: formatUbicaciones(ubicacionesFinal),
+    observaciones: p.observaciones, editadoPor: usuarioActual, motivo, cambios
+  };
+  p.ubicaciones = ubicacionesFinal;
+  if(!p.ediciones) p.ediciones = [];
+  p.ediciones.push({ editadoPor: usuarioActual, fecha: new Date().toISOString(), motivo, cambios });
+  guardarDBLocal();
+  reub = null; cerrarSheet();
+  toast('Reubicada: ' + cambios.map(c=>c.replace(/^Ubicación /,'')).join(' · '));
+  abrirDetalle(p.id);
+  encolarOperacion('editarPicking', datosEnvio, p.id, 'Reubicar OF ' + p.of);
 }
 // Nº de cajas del formulario: 0 vale (picking sin caja); si se deja vacío o
 // con algo raro, 1 como siempre.
@@ -13060,7 +13290,7 @@ function clasificarInventario(){
     const k = normOfInv(r['OF']); if(!k) return;
     const id = String(r['ID']||'');
     conocidas[k] = String(r['OF']).trim();
-    (entregadas[k] = entregadas[k] || {})[id] = { id, of:String(r['OF']||''), proyecto:String(r['Proyecto']||''), subproyecto:String(r['Subproyecto']||''), cajas:r['Cajas'], quien:String(r['Registrado por']||''), fecha:r['Fecha'], entregadoA:String(r['Entregado a']||''), fechaEntrega:r['Fecha de entrega'] };
+    (entregadas[k] = entregadas[k] || {})[id] = { id, of:String(r['OF']||''), proyecto:String(r['Proyecto']||''), subproyecto:String(r['Subproyecto']||''), cajas:r['Cajas'], quien:String(r['Registrado por']||''), fecha:r['Fecha'], entregadoA:String(r['Entregado a']||''), fechaEntrega:r['Fecha de entrega'], ubic: formatUbicaciones(parseUbicaciones(r['Ubicaciones'])) };
   });
   const grupos = {}, orden = [];
   inventario.entradas.forEach(e=>{
@@ -13301,10 +13531,14 @@ function fechaCompletaInv(v){
   const d = new Date(v); if(!v || isNaN(d.getTime())) return '';
   return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
 }
-const COLS_INV = ['Resultado','OF','Nº de conteo','Veces contada','Posible error de tecleo (parecida a)','Proyecto','Subproyecto','Cajas registradas','Registrado por','Fecha de registro','Estado en la app','Entregado a','Fecha de entrega'];
+const COLS_INV = ['Resultado','OF','Nº de conteo','Veces contada','Posible error de tecleo (parecida a)','Proyecto','Subproyecto','Cajas registradas','Registrado por','Fecha de registro','Estado en la app','Entregado a','Fecha de entrega','Ubicación'];
+function ubicTextoInv(p){
+  if(p && p.ubicaciones && typeof p.ubicaciones === 'object') return formatUbicaciones(p.ubicaciones);
+  return String((p && p.ubic) || '');
+}
 function filasInventario(res){
   const filas = [];
-  const add = (resultado, of, pos, veces, sug, p, estado, ent)=> filas.push([resultado, of, pos.length ? pos.map(n=>'#'+n).join(' ') : '', veces, sug, p ? p.proyecto : '', p ? p.subproyecto : '', p ? p.cajas : '', p ? (p.registradoPor || p.quien) : '', p ? fechaCompletaInv(p.fecha) : '', estado, ent ? ent.entregadoA : '', ent ? fechaCompletaInv(ent.fechaEntrega) : ''].map(x=> x==null ? '' : String(x)));
+  const add = (resultado, of, pos, veces, sug, p, estado, ent)=> filas.push([resultado, of, pos.length ? pos.map(n=>'#'+n).join(' ') : '', veces, sug, p ? p.proyecto : '', p ? p.subproyecto : '', p ? p.cajas : '', p ? (p.registradoPor || p.quien) : '', p ? fechaCompletaInv(p.fecha) : '', estado, ent ? ent.entregadoA : '', ent ? fechaCompletaInv(ent.fechaEntrega) : '', p ? ubicTextoInv(p) : ''].map(x=> x==null ? '' : String(x)));
   res.noreg.forEach(it=> add('Sin registrar en la app', it.of, it.pos, it.veces, it.sugerencias.map(x=>x.of).join(' / '), null, 'No existe', null));
   res.faltan.forEach(p=> add('Pendiente en la app, NO contada (la caja no está)', p.of, [], 0, '', p, 'Pendiente', null));
   res.entregadas.forEach(it=>{ const r = it.ent[it.ent.length-1]; add('Contada, pero entregada en la app', it.of, it.pos, it.veces, '', r, 'Entregada', r); });
@@ -13371,7 +13605,7 @@ function verInventarioGuardado(id){
   const bloques = orden.filter(k=>grupos[k]).map(k=>{
     const rojo = k.indexOf('Contada y registrada')!==0;
     return `<div class="inv-sec ${rojo?'rojo':''}">${escapeHtml(k)}<span class="n">${grupos[k].length}</span></div>` +
-      grupos[k].map(f=>`<div style="padding:6px 2px; border-bottom:1px solid #E6EAF0; font-size:14px;"><span class="mono"><b>${escapeHtml(f[1])}</b></span>${f[2] ? ' <span class="hint" style="margin:0;">' + escapeHtml(f[2]) + '</span>' : ''}${f[4] ? ' <span style="color:#C62828;">¿' + escapeHtml(f[4]) + '?</span>' : ''}<br><span class="hint" style="margin:0;">${escapeHtml([f[5], f[6]].filter(Boolean).join(' · '))}${f[11] ? ' · Entregado a ' + escapeHtml(f[11]) : ''}</span></div>`).join('');
+      grupos[k].map(f=>`<div style="padding:6px 2px; border-bottom:1px solid #E6EAF0; font-size:14px;"><span class="mono"><b>${escapeHtml(f[1])}</b></span>${f[2] ? ' <span class="hint" style="margin:0;">' + escapeHtml(f[2]) + '</span>' : ''}${f[4] ? ' <span style="color:#C62828;">¿' + escapeHtml(f[4]) + '?</span>' : ''}<br><span class="hint" style="margin:0;">${escapeHtml([f[5], f[6]].filter(Boolean).join(' · '))}${f[11] ? ' · Entregado a ' + escapeHtml(f[11]) : ''}${f[13] ? ' · Ubicación: ' + escapeHtml(f[13]) : ''}</span></div>`).join('');
   }).join('');
   mostrarSheet(`<h3>Inventario del ${escapeHtml(fechaCompletaInv(h.fecha))}</h3>
     <div class="hint">${h.usuario ? 'Hecho por ' + escapeHtml(h.usuario) + '. ' : ''}${resumenInvHtml(h)}</div>
@@ -14884,6 +15118,7 @@ function detalleHtml(p){
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
+      ${(!entregado && usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirReubicar('${p.id}')" style="margin-top:8px;">Reubicar</button>` : ''}
       ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')" style="margin-top:8px;">Ver hoja de picking firmada${p.hojasEscaneadas.length>1 ? ' ('+p.hojasEscaneadas.length+')' : ''}</button>` : ((entregado && esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirEscanerHoja('${p.id}')" style="margin-top:8px;">Escanear hoja de picking</button>` : '')}
       ${gestionBtns}
     </div>
@@ -16299,6 +16534,12 @@ function actualizarBarraLote(){
   const btn = document.getElementById('loteBtnEntregar');
   btn.textContent = n ? `Entregar ${n} seleccionado${n===1?'':'s'}` : 'Marca los pickings a entregar';
   btn.disabled = !n;
+  const br = document.getElementById('loteBtnReubicar');
+  if(br){
+    br.style.display = usuarioActual ? '' : 'none';
+    br.textContent = n ? `Reubicar ${n}` : 'Reubicar';
+    br.disabled = !n;
+  }
 }
 
 function motivosAtencionLote(p){
@@ -16309,6 +16550,83 @@ function motivosAtencionLote(p){
   if(p.entregas && p.entregas.length) m.push('ya tiene una entrega anotada');
   if(p.observaciones) m.push('observaciones: ' + p.observaciones);
   return m;
+}
+/* ---------- Reubicar varias OF a la vez (desde la selección) ---------- */
+let reubLote = null; // { ids:[], conFuera:false }
+function abrirReubicarLote(){
+  if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
+  const todos = idsLoteVigentes().map(id=>DB.find(x=>x.id===id)).filter(Boolean);
+  const validos = todos.filter(p=> p.sync!=='pendiente' && !String(p.id).startsWith('tmp_'));
+  const omitidas = todos.length - validos.length;
+  if(!validos.length){ toast(todos.length ? 'Esas OF aún se están sincronizando; espera un momento' : 'No hay pickings seleccionados'); return; }
+  reubLote = { ids: validos.map(p=>p.id), conFuera: false, omitidas };
+  pintarReubicarLote();
+}
+function itemsMoverLote(p){
+  return reubLote && reubLote.conFuera ? itemsParaUbicarDe(p) : (p.cajas>0 ? ['Cajas'] : []);
+}
+function pintarReubicarLote(){
+  const r = reubLote; if(!r) return;
+  const ps = r.ids.map(id=>DB.find(x=>x.id===id)).filter(p=>p && p.estado!=='completado');
+  r.ids = ps.map(p=>p.id);
+  if(!ps.length){ reubLote = null; cerrarSheet(); return; }
+  const hayFuera = ps.some(p=> fueraActivas(p).length);
+  const afectadas = ps.filter(p=> itemsMoverLote(p).length);
+  const filas = ps.map(p=>{
+    const its = itemsMoverLote(p);
+    const ubic = its.length ? its.map(it=> (p.ubicaciones||{})[it] || 'sin ubicación').filter((v,i,a)=>a.indexOf(v)===i).join(' / ') : '<i>nada que mover</i>';
+    return `<div style="display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px solid var(--line,#eee); font-size:14px;"><b>${escapeHtml(p.of)}</b><span style="text-align:right;">${its.length ? escapeHtml(ubic) : ubic}</span></div>`;
+  }).join('');
+  mostrarSheet(`
+    <h3>Reubicar ${ps.length} OF</h3>
+    <div class="hint" style="margin:0 0 8px;">Se mueven las cajas de todas las OF marcadas al mismo sitio.${r.omitidas ? ' ('+r.omitidas+' no se incluyen porque aún se están sincronizando.)' : ''}</div>
+    <div style="max-height:34vh; overflow:auto; margin-bottom:10px;">${filas}</div>
+    ${hayFuera ? `<label style="display:flex; gap:8px; align-items:center; margin:6px 0 10px;"><input type="checkbox" ${r.conFuera?'checked':''} onchange="reubLote.conFuera=this.checked; pintarReubicarLote();" style="width:auto; margin:0;"> Mover también los componentes que están fuera de la caja</label>` : ''}
+    <button type="button" class="btn btn-primary" ${afectadas.length ? '' : 'disabled'} onclick="elegirUbicacionReubicarLote()">Elegir nueva ubicación</button>
+    <button type="button" class="btn btn-outline" onclick="reubLote=null; cerrarSheet();">Cancelar</button>
+  `);
+}
+function elegirUbicacionReubicarLote(){
+  const r = reubLote; if(!r) return;
+  const ps = r.ids.map(id=>DB.find(x=>x.id===id)).filter(Boolean);
+  const proys = Array.from(new Set(ps.map(p=>claveProyecto(p.proyecto)).filter(Boolean)));
+  const proyecto = proys.length===1 ? (ps.find(p=>p.proyecto)||{}).proyecto : '';
+  abrirSelectorUbicacion({
+    item: 'Cajas', proyecto, excluirId: null, actual: '',
+    titulo: ps.length + ' OF' + (proyecto ? ' · ' + proyecto : ''),
+    cb: v=> confirmarReubicarLote(v),
+    alCancelar: ()=> pintarReubicarLote()
+  });
+}
+function confirmarReubicarLote(destino){
+  const r = reubLote; if(!r) return;
+  const ps = r.ids.map(id=>DB.find(x=>x.id===id)).filter(p=>p && p.estado!=='completado');
+  let movidas = 0, igual = 0;
+  ps.forEach(p=>{
+    const its = itemsMoverLote(p);
+    if(!its.length) return;
+    const ubicacionesFinal = {...(p.ubicaciones||{})};
+    its.forEach(it=> ubicacionesFinal[it] = destino);
+    const cambios = diffCambios(p, { of: p.of, proyecto: p.proyecto||'', subproyecto: p.subproyecto||'', cajas: p.cajas, obs: p.observaciones||'', fuera: p.fuera, ubicaciones: ubicacionesFinal });
+    if(!cambios.length){ igual++; return; }
+    const motivo = 'Reubicado';
+    const datosEnvio = {
+      id: p.id, of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto, cajas: p.cajas,
+      fuera: formatFuera(p.fuera), ubicaciones: formatUbicaciones(ubicacionesFinal),
+      observaciones: p.observaciones, editadoPor: usuarioActual, motivo, cambios
+    };
+    p.ubicaciones = ubicacionesFinal;
+    if(!p.ediciones) p.ediciones = [];
+    p.ediciones.push({ editadoPor: usuarioActual, fecha: new Date().toISOString(), motivo, cambios });
+    encolarOperacion('editarPicking', datosEnvio, p.id, 'Reubicar OF ' + p.of);
+    movidas++;
+  });
+  guardarDBLocal();
+  reubLote = null;
+  loteSeleccion.clear();
+  refrescarVistaLote();
+  actualizarBarraLote();
+  toast(movidas ? `${movidas} OF reubicada${movidas===1?'':'s'} en ${destino}` + (igual ? ` (${igual} ya estaban ahí)` : '') : 'Ya estaban todas en ese sitio');
 }
 function idsLoteVigentes(){
   return Array.from(loteSeleccion).filter(id=>{ const p = DB.find(x=>x.id===id); return p && p.estado!=='completado'; });
