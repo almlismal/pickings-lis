@@ -294,6 +294,12 @@
   .pl-c{ position:relative; }
   .pl-c.rec{ box-shadow:0 0 0 3px #E0A800; }
   .pl-star{ position:absolute; top:-6px; right:-4px; font-size:13px; line-height:1; }
+  .ub-cab{ background:var(--ink); color:#fff; border-radius:12px; padding:10px 14px; margin:0 0 10px; }
+  .ub-que{ font-size:11.5px; opacity:.8; text-transform:uppercase; letter-spacing:.04em; }
+  .ub-of{ font-family:var(--mono); font-size:24px; font-weight:800; margin-top:2px; }
+  .ub-cajas{ font-size:20px; font-weight:800; margin-top:4px; }
+  .ub-proy{ font-size:15px; margin-top:2px; } .ub-proy b{ font-size:17px; }
+  .ub-lista{ font-size:12px; opacity:.85; margin-top:4px; font-family:var(--mono); }
   .rec-boton{ display:block; width:100%; cursor:pointer; font-family:inherit; color:var(--ink); }
   .rec-boton em{ display:block; font-style:normal; font-weight:800; font-size:14px; color:#fff; background:#1B7F3B; border-radius:8px; padding:8px; margin-top:8px; }
   .rec-linea{ background:#FFF8E1; border:1.5px solid #E0A800; border-radius:10px; padding:8px 10px; margin:0 0 8px; font-size:13px; text-align:center; }
@@ -495,7 +501,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1930</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-2000</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12858,7 +12864,7 @@ function abrirSelectorUbicacion(cfg){
   }).join('') + '</div></div>').join('');
   const letras = '<div class="pl-letras">' + HUECO_ALTURAS.map(a=>`<div>${a}</div>`).join('') + '</div>';
   mostrarSheet(`
-    <h3>Ubicación — ${escapeHtml(cfg.titulo || cfg.item)}</h3>
+    ${cabeceraSelectorUbic(cfg)}
     ${sugs.length ? `<div class="hint" style="margin:0 0 6px;"><b>Ya hay OF del proyecto ${escapeHtml(cfg.proyecto)} en:</b></div>
       <div style="margin-bottom:10px;">${sugs.map(x=>`<button type="button" class="btn btn-primary" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;" onclick="elegirUbicacionSelector('${escapeAtributo(x.valor)}')">${escapeHtml(x.valor)} · ${x.n} OF</button>`).join('')}</div>` : ''}
     ${rec ? `<button type="button" class="rec-linea rec-boton" onclick="elegirUbicacionSelector('${rec.codigo}')">⭐ <b>Sugerido: ${rec.codigo}</b><span>${escapeHtml(rec.motivo)}</span><em>Toca para poner aquí</em></button>` : (cfg.item==='Cajas' ? `<div class="rec-linea sin">No hay un sitio claro para ${Number(cfg.cajas)||1} caja${(Number(cfg.cajas)||1)===1?'':'s'} juntas: elige tú.</div>` : '')}
@@ -12882,6 +12888,24 @@ function abrirSelectorUbicacion(cfg){
     </div>` : ''}
     <button type="button" class="btn btn-outline" style="margin-top:14px;" onclick="cancelarSelectorUbicacion()">Cancelar</button>
   `);
+}
+// Qué se está ubicando: OF y proyecto bien grandes para comprobar que es justo lo que quieres mover
+function cabeceraSelectorUbic(cfg){
+  const ofs = cfg.ofs && cfg.ofs.length ? cfg.ofs : (cfg.of ? [cfg.of] : []);
+  const proy = cfg.proyecto ? escapeHtml(cfg.proyecto) : '<span style="opacity:.7;">sin proyecto</span>';
+  let principal = '';
+  if(ofs.length===1) principal = 'OF ' + escapeHtml(ofs[0]);
+  else if(ofs.length>1) principal = ofs.length + ' OF';
+  const detalle = ofs.length>1 ? '<div class="ub-lista">' + ofs.slice(0,8).map(escapeHtml).join(' · ') + (ofs.length>8 ? ' · …' : '') + '</div>' : '';
+  const total = Number(cfg.cajas)||0;
+  const cajasHtml = (cfg.item==='Cajas' && total>0) ? `<div class="ub-cajas">📦 ${total} caja${total===1?'':'s'}${ofs.length>1 ? ' en total' : ''}</div>` : '';
+  return `<div class="ub-cab">
+    <div class="ub-que">Vas a ubicar${cfg.item==='Cajas' ? '' : ' · ' + escapeHtml(cfg.titulo || cfg.item)}</div>
+    ${principal ? `<div class="ub-of">${principal}</div>` : ''}
+    <div class="ub-proy">Proyecto <b>${proy}</b></div>
+    ${cajasHtml}
+    ${detalle}
+  </div>`;
 }
 function mostrarOtraUbicacion(){
   const b = document.getElementById('bloqueOtraUbic'); if(b) b.style.display = '';
@@ -12955,7 +12979,7 @@ function ponerUbicacionItem(item, valor){
 function elegirUbicacionForm(item){
   const proyecto = (document.getElementById('f_proyecto') || {}).value || '';
   abrirSelectorUbicacion({
-    item, proyecto: proyecto.trim(), excluirId: editingId, actual: ubicacionesSeleccion[item] || '',
+    item, proyecto: proyecto.trim(), of: ((document.getElementById('f_of') || {}).value || '').trim(), excluirId: editingId, actual: ubicacionesSeleccion[item] || '',
     titulo: tituloItemUbic(item, leerCajasForm()), cajas: item==='Cajas' ? leerCajasForm() : 0,
     cb: v=>{ ubicacionesSeleccion[item] = v; renderUbicacionPills(); }
   });
@@ -12998,7 +13022,7 @@ function elegirUbicacionReubicar(item){
   const todos = item === '*';
   abrirSelectorUbicacion({
     item: todos ? (p.cajas>0 ? 'Cajas' : (itemsParaUbicarDe(p)[0] || 'Cajas')) : item,
-    proyecto: p.proyecto, excluirId: p.id, actual: todos ? '' : (r.nuevas[item] || ''),
+    proyecto: p.proyecto, of: p.of, excluirId: p.id, actual: todos ? '' : (r.nuevas[item] || ''),
     titulo: todos ? 'todo (OF ' + p.of + ')' : tituloItemUbic(item, p.cajas),
     cajas: (todos || item==='Cajas') ? (Number(p.cajas)||0) : 0,
     cb: v=>{ if(todos) itemsParaUbicarDe(p).forEach(it=> r.nuevas[it] = v); else r.nuevas[item] = v; pintarReubicar(); },
@@ -16733,7 +16757,7 @@ function elegirUbicacionReubicarLote(){
   const proys = Array.from(new Set(ps.map(p=>claveProyecto(p.proyecto)).filter(Boolean)));
   const proyecto = proys.length===1 ? (ps.find(p=>p.proyecto)||{}).proyecto : '';
   abrirSelectorUbicacion({
-    item: 'Cajas', proyecto, excluirId: ps.map(p=>p.id), actual: '',
+    item: 'Cajas', proyecto, ofs: ps.map(p=>p.of), excluirId: ps.map(p=>p.id), actual: '',
     titulo: ps.length + ' OF' + (proyecto ? ' · ' + proyecto : ''),
     cajas: ps.reduce((t,p)=> t + (itemsMoverLote(p).includes('Cajas') ? (Number(p.cajas)||0) : 0), 0),
     cb: v=> confirmarReubicarLote(v),
