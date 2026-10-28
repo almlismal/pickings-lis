@@ -273,6 +273,29 @@
   .alt-fila.actual .alt-cajas{ color:#dfe5ee; }
   .alt-fila.proyecto{ border-color:#1B7F3B; border-width:2.5px; }
   .alt-fila.actual{ background:var(--ink); color:#fff; border-color:var(--ink); } .alt-fila.actual .alt-letra{ background:#fff; color:var(--ink); } .alt-fila.actual small{ color:#dfe5ee; }
+  .rec-card{ border:3px solid #1B7F3B; border-radius:18px; padding:16px 12px; text-align:center; background:#F2FAF4; margin:6px 0 12px; }
+  .rec-k{ font-size:13px; font-weight:800; color:#1B7F3B; letter-spacing:.04em; }
+  .rec-cod{ font-size:34px; font-weight:900; margin:4px 0; color:var(--ink); }
+  .rec-why{ font-size:14px; color:var(--ink-soft); line-height:1.35; }
+  .rec-btn{ font-size:19px; font-weight:800; padding:18px; background:#1B7F3B; border-color:#1B7F3B; margin-top:12px; }
+  .mini-est{ display:flex; gap:6px; justify-content:center; margin:12px 0 2px; }
+  .mini-rack{ width:44px; border:3px solid #6b7686; border-bottom:0; background:#F6F7F9; }
+  .mini-rack i{ display:block; height:13px; border-bottom:3px solid #8a95a5; }
+  .mini-rack i.me{ background:#1B7F3B; } .mini-rack i.p{ background:#BFE3C8; }
+  .pl-est{ display:flex; gap:6px; align-items:flex-start; }
+  .pl-letras{ width:14px; padding-top:41px; } .pl-letras div{ height:52px; display:flex; align-items:center; font-weight:800; font-size:12px; color:var(--ink-soft); }
+  .pl-col{ flex:1; min-width:0; } .pl-n{ text-align:center; font-weight:700; font-size:12.5px; height:36px; } .pl-n small{ display:block; font-weight:400; font-size:10px; color:var(--ink-soft); }
+  .pl-rack{ border:4px solid #6b7686; border-bottom:0; border-radius:3px 3px 0 0; background:#F6F7F9; }
+  .pl-lv{ height:52px; border-bottom:5px solid #8a95a5; padding:2px; }
+  .pl-c{ width:100%; height:100%; border:1.5px solid #D3D9E1; border-radius:5px; padding:0; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--ink); font-family:inherit; white-space:nowrap; }
+  .pl-nom{ font-size:8.5px; font-weight:800; color:#3b4654; letter-spacing:-.2px; } .pl-num{ font-size:12px; font-weight:800; margin-top:1px; }
+  .pl-c.v0,.pl-leg s.v0{ background:#fff; } .pl-c.v1,.pl-leg s.v1{ background:#D9ECFB; } .pl-c.v2,.pl-leg s.v2{ background:#FFD9A0; } .pl-c.v3,.pl-leg s.v3{ background:#F4A9A1; }
+  .pl-c.proyecto{ border:2.5px solid #1B7F3B; }
+  .pl-c.rec{ box-shadow:0 0 0 2px #1B7F3B; }
+  .pl-c.actual{ outline:3px solid var(--ink); outline-offset:-1px; }
+  .pl-leg{ display:flex; flex-wrap:wrap; gap:4px 10px; justify-content:center; font-size:11px; color:var(--ink-soft); margin:10px 0; }
+  .pl-leg s{ display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; text-decoration:none; border:1.5px solid #D3D9E1; }
+  .pl-leg s.pl-verde{ border:2.5px solid #1B7F3B; background:#fff; }
   .hueco-tabla{ border-collapse:separate; border-spacing:5px; margin:6px auto 4px; }
   .hueco-tabla th{ font-size:12px; font-weight:700; color:var(--ink-soft); padding:0 2px; }
   .hueco-celda{ width:60px; height:42px; border:1.5px solid var(--line); border-radius:8px; background:#fff; font-size:14px; font-weight:700; color:var(--ink); cursor:pointer; padding:0; }
@@ -466,7 +489,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1735</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1800</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12701,10 +12724,11 @@ function atajoAHueco(txt){
 }
 function claveProyecto(v){ return normalizarNombre(String(v||'')).replace(/\s+/g,' '); }
 // Qué hay ahora en cada sitio (solo OF pendientes): { sitio: { n, proyectos:Set } }
+function idExcluido(excluirId, id){ return Array.isArray(excluirId) ? excluirId.includes(id) : (excluirId!=null && excluirId===id); }
 function ocupacionUbicaciones(excluirId){
   const mapa = {};
   (DB||[]).forEach(p=>{
-    if(!p || p.estado==='completado' || p.id===excluirId) return;
+    if(!p || p.estado==='completado' || idExcluido(excluirId, p.id)) return;
     const vistos = new Set();
     Object.values(p.ubicaciones||{}).forEach(v=>{
       const sitio = String(v||'').trim(); if(!sitio || vistos.has(sitio)) return;
@@ -12720,7 +12744,7 @@ function sugerenciasUbicacionProyecto(proyecto, item, excluirId){
   const k = claveProyecto(proyecto); if(!k) return [];
   const mismo = {}, cualquiera = {};
   (DB||[]).forEach(p=>{
-    if(!p || p.estado==='completado' || p.id===excluirId || claveProyecto(p.proyecto)!==k) return;
+    if(!p || p.estado==='completado' || idExcluido(excluirId, p.id) || claveProyecto(p.proyecto)!==k) return;
     Object.entries(p.ubicaciones||{}).forEach(([it,v])=>{
       const sitio = String(v||'').trim();
       if(!esHueco(sitio) && !UBICACIONES_FIJAS.includes(sitio)) return;
@@ -12733,7 +12757,67 @@ function sugerenciasUbicacionProyecto(proyecto, item, excluirId){
 }
 function tituloItemUbic(item, cajas){ return item==='Cajas' ? 'Cajas de picking' + (cajas!=null ? ' ('+cajas+')' : '') : item; }
 
-let selUbic = null; // { item, proyecto, excluirId, actual, titulo, cb }
+let selUbic = null; // { item, proyecto, excluirId (id o lista), actual, titulo, cajas, cb, verPlano }
+const ALTURAS_ORDEN_PREF = ['C','D','B','E','F','A']; // para elegir un hueco vacío: las más cómodas primero
+const NOMBRE_ALTURA = { A:'la de arriba del todo', B:'la segunda desde arriba', C:'la tercera desde arriba', D:'la cuarta desde arriba', E:'la quinta desde arriba', F:'la de abajo del todo' };
+// Cuántas cajas de picking hay ya en cada hueco y de qué proyectos (solo OF pendientes, sin contar las excluidas)
+function estadoHuecos(excluirId){
+  const m = {};
+  HUECO_ESTANTERIAS.forEach(e=> HUECO_ALTURAS.forEach(a=>{ m[codigoHueco(e,a)] = { e, a, cajas:0, porProy:{}, max:cajasMaxHueco(a) }; }));
+  (DB||[]).forEach(p=>{
+    if(!p || p.estado==='completado' || idExcluido(excluirId, p.id)) return;
+    const vistos = new Set();
+    Object.entries(p.ubicaciones||{}).forEach(([it,v])=>{
+      const c = String(v||'').trim(); const h = m[c]; if(!h) return;
+      const k = claveProyecto(p.proyecto) || '—';
+      if(!h.porProy[k]) h.porProy[k] = { nombre: p.proyecto || 'Sin proyecto', n:0, cajas:0 };
+      if(!vistos.has(c)){ vistos.add(c); h.porProy[k].n++; }
+      if(it==='Cajas') { h.cajas += (Number(p.cajas)||0); h.porProy[k].cajas += (Number(p.cajas)||0); }
+    });
+  });
+  return m;
+}
+// Sitio recomendado para las cajas: junto al proyecto, donde quepan todas, sin mezclar con otros proyectos y sin mover nada.
+function recomendarHueco(cfg, est){
+  if(cfg.item!=='Cajas') return null;
+  const n = Math.max(1, Number(cfg.cajas)||1);
+  const k = claveProyecto(cfg.proyecto);
+  const quepa = h => h.max - h.cajas >= n;
+  const sinMezcla = h => Object.keys(h.porProy).every(x=> x===k);   // vacío o solo de este proyecto
+  const lista = Object.entries(est).map(([codigo,h])=>({codigo,...h})).filter(h=> h.codigo!==cfg.actual);
+  const nProy = h => (h.porProy[k] ? h.porProy[k].n : 0);
+  const delProy = k ? lista.filter(h=> nProy(h)>0) : [];
+  const nombreProy = cfg.proyecto || '';
+  // 1) donde ya está el proyecto y caben todas (el que más OF del proyecto tenga; a igualdad, el más justo)
+  const a1 = delProy.filter(quepa).sort((x,y)=> nProy(y)-nProy(x) || (x.max-x.cajas-n)-(y.max-y.cajas-n))[0];
+  if(a1) return { codigo:a1.codigo, motivo:'Aquí ya está el proyecto ' + nombreProy, paso:1 };
+  // 2) pegado a un hueco del proyecto (misma estantería, altura de al lado)
+  for(const base of delProy.sort((x,y)=>nProy(y)-nProy(x))){
+    const idx = HUECO_ALTURAS.indexOf(base.a);
+    for(const d of [1,-1]){
+      const a = HUECO_ALTURAS[idx+d]; if(!a) continue;
+      const h = lista.find(x=> x.e===base.e && x.a===a);
+      if(h && quepa(h) && sinMezcla(h)) return { codigo:h.codigo, motivo:'Pegado a donde ya está el proyecto ' + nombreProy + ' (' + base.codigo + ')', paso:2 };
+    }
+  }
+  // 3) otra balda de una estantería donde ya está el proyecto
+  const ests = Array.from(new Set(delProy.map(h=>h.e)));
+  const a3 = lista.filter(h=> ests.includes(h.e) && quepa(h) && sinMezcla(h)).sort((x,y)=> y.cajas-x.cajas)[0];
+  if(a3) return { codigo:a3.codigo, motivo:'En la estantería ' + a3.e + ', donde ya está el proyecto ' + nombreProy, paso:3 };
+  // 4) hueco vacío en la estantería con menos cajas de otros proyectos
+  const carga = {}; lista.forEach(h=>{ carga[h.e] = (carga[h.e]||0) + h.cajas; });
+  const vacios = lista.filter(h=> h.cajas===0 && quepa(h));
+  vacios.sort((x,y)=> carga[x.e]-carga[y.e] || ALTURAS_ORDEN_PREF.indexOf(x.a)-ALTURAS_ORDEN_PREF.indexOf(y.a) || x.e-y.e);
+  if(vacios[0]) return { codigo:vacios[0].codigo, motivo:'Hueco vacío en la estantería ' + vacios[0].e, paso:4 };
+  return null;
+}
+function miniEstanterias(est, rec, k){
+  return '<div class="mini-est">' + HUECO_ESTANTERIAS.map(e=>'<div class="mini-rack">' + HUECO_ALTURAS.map(a=>{
+    const c = codigoHueco(e,a), h = est[c];
+    const cls = c===rec ? 'me' : (k && h && h.porProy[k] ? 'p' : '');
+    return '<i class="'+cls+'"></i>';
+  }).join('') + '</div>').join('') + '</div>';
+}
 function abrirSelectorUbicacion(cfg){
   selUbic = cfg;
   const ocup = ocupacionUbicaciones(cfg.excluirId);
@@ -12742,24 +12826,51 @@ function abrirSelectorUbicacion(cfg){
   const otras = libre ? Object.keys(ocup).filter(k=> !esHueco(k) && !UBICACIONES_FIJAS.includes(k)).sort((a,b)=>ocup[b].n-ocup[a].n).slice(0,8) : [];
   cfg.candidatas = UBICACIONES_FIJAS.concat(otras);
   const kProy = claveProyecto(cfg.proyecto);
-  const sugs = sugerenciasUbicacionProyecto(cfg.proyecto, cfg.item, cfg.excluirId);
-  cfg.estSel = HUECO_ESTANTERIAS.find(e=> codigoHueco(e, 'A').slice(0,-1) === String(cfg.actual||'').slice(0,-1)) || 0;
-  const botonesEst = HUECO_ESTANTERIAS.map(e=>{
-    const tieneProy = kProy && HUECO_ALTURAS.some(a=>{ const o = ocup[codigoHueco(e,a)]; return o && o.proyectos.has(kProy); });
-    return `<button type="button" class="est-btn${tieneProy?' proyecto':''}${cfg.estSel===e?' on':''}" data-e="${e}" onclick="elegirEstanteriaSelector(${e})"><b>${e}</b><small>${HUECO_PREFIJO}-0${e}</small>${tieneProy ? '<small>hay '+escapeHtml(cfg.proyecto)+'</small>' : ''}</button>`;
-  }).join('');
+  const est = estadoHuecos(cfg.excluirId);
+  // Pantalla 1 (la de siempre): una recomendación y un botón grande. Solo para cajas.
+  if(cfg.item==='Cajas' && !cfg.verPlano){
+    const rec = recomendarHueco(cfg, est);
+    if(rec){
+      const h = est[rec.codigo];
+      cfg.recomendado = rec.codigo;
+      mostrarSheet(`
+        <h3>Ubicación — ${escapeHtml(cfg.titulo || cfg.item)}</h3>
+        <div class="rec-card">
+          <div class="rec-k">⭐ RECOMENDADO</div>
+          <div class="rec-cod">${rec.codigo}</div>
+          <div class="rec-why">Estantería ${h.e} · ${NOMBRE_ALTURA[h.a]}<br>${escapeHtml(rec.motivo)}</div>
+          ${miniEstanterias(est, rec.codigo, kProy)}
+        </div>
+        <button type="button" class="btn btn-primary rec-btn" onclick="elegirUbicacionSelector('${rec.codigo}')">Poner aquí</button>
+        <button type="button" class="btn btn-outline" onclick="mostrarPlanoSelector()">Elegir otro sitio</button>
+        <button type="button" class="btn btn-outline" style="margin-top:6px; border:none; color:var(--ink-soft);" onclick="cancelarSelectorUbicacion()">Cancelar</button>
+      `);
+      return;
+    }
+  }
+  const sugs = cfg.item==='Cajas' ? [] : sugerenciasUbicacionProyecto(cfg.proyecto, cfg.item, cfg.excluirId);
+  const nuevas = cfg.item==='Cajas' ? (Number(cfg.cajas)||0) : 0;
+  const racks = HUECO_ESTANTERIAS.map(e=>`<div class="pl-col"><div class="pl-n">${e}<small>${HUECO_PREFIJO}-0${e}</small></div><div class="pl-rack">` + HUECO_ALTURAS.map(a=>{
+    const c = codigoHueco(e,a), h = est[c];
+    const lleno = h.cajas >= h.max, noCaben = !lleno && nuevas>0 && h.cajas + nuevas > h.max;
+    const nivel = h.cajas===0 ? 'v0' : (lleno ? 'v3' : (h.cajas/h.max>=0.6 || noCaben ? 'v2' : 'v1'));
+    const cls = ['pl-c', nivel]; if(kProy && h.porProy[kProy]) cls.push('proyecto'); if(cfg.actual===c) cls.push('actual'); if(cfg.recomendado===c) cls.push('rec');
+    return `<div class="pl-lv"><button type="button" class="${cls.join(' ')}" onclick="elegirUbicacionSelector('${c}')"><span class="pl-nom">${c}</span><span class="pl-num">${h.cajas}/${h.max}</span></button></div>`;
+  }).join('') + '</div></div>').join('');
+  const letras = '<div class="pl-letras">' + HUECO_ALTURAS.map(a=>`<div>${a}</div>`).join('') + '</div>';
   mostrarSheet(`
     <h3>Ubicación — ${escapeHtml(cfg.titulo || cfg.item)}</h3>
     ${sugs.length ? `<div class="hint" style="margin:0 0 6px;"><b>Ya hay OF del proyecto ${escapeHtml(cfg.proyecto)} en:</b></div>
       <div style="margin-bottom:10px;">${sugs.map(x=>`<button type="button" class="btn btn-primary" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;" onclick="elegirUbicacionSelector('${escapeAtributo(x.valor)}')">${escapeHtml(x.valor)} · ${x.n} OF</button>`).join('')}</div>` : ''}
+    ${cfg.recomendado ? `<button type="button" class="btn btn-outline" style="margin:0 0 8px;" onclick="aplicarRecomendadoSelector()">⭐ Volver a la recomendación (${cfg.recomendado})</button>` : ''}
     <div style="display:flex; gap:8px; align-items:stretch; margin-bottom:6px;">
       <input type="text" id="atajoHueco" placeholder="Escribe ej. 2c" autocomplete="off" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarAtajoHueco(); event.preventDefault(); }">
       <button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:0 16px;" onclick="aplicarAtajoHueco()">Poner</button>
     </div>
     <div id="avisoAtajoHueco" class="hint" style="color:#B33A3A; margin:0;"></div>
-    <div class="hint" style="margin:8px 0 4px; text-align:left;"><b>1 · Estantería</b> de la zona <b>${HUECO_PREFIJO}</b></div>
-    <div class="est-fila">${botonesEst}</div>
-    <div id="huecoPaso2"></div>
+    <div class="hint" style="margin:6px 0 4px; text-align:center;">Toca el hueco donde las dejas · A = arriba, F = abajo</div>
+    <div class="pl-est">${letras}${racks}</div>
+    <div class="pl-leg"><span><s class="v0"></s>vacío</span><span><s class="v1"></s>con sitio</span><span><s class="v2"></s>casi lleno</span><span><s class="v3"></s>lleno</span><span><s class="pl-verde"></s>hay ${cfg.proyecto ? escapeHtml(cfg.proyecto) : 'el proyecto'}</span></div>
     ${UBICACIONES_FIJAS.map(u=>`<button type="button" class="btn btn-outline" style="margin-top:6px;${cfg.actual===u ? ' border-color:var(--ink); border-width:2px;' : ''}" onclick="elegirUbicacionSelector('${escapeAtributo(u)}')">${escapeHtml(u)}</button>`).join('')}
     ${otras.length ? `<div class="hint" style="margin:12px 0 4px;"><b>Otros sitios ya usados:</b></div><div>${otras.map(u=>`<button type="button" class="btn btn-outline" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;${cfg.actual===u ? ' border-color:var(--ink); border-width:2px;' : ''}" onclick="elegirUbicacionSelector('${escapeAtributo(u)}')">${escapeHtml(u)} · ${ocup[u].n}</button>`).join('')}</div>` : ''}
     ${libre ? `<button type="button" class="btn btn-outline" style="margin-top:10px;" onclick="mostrarOtraUbicacion()">Otra ubicación…</button>` : ''}
@@ -12772,40 +12883,9 @@ function abrirSelectorUbicacion(cfg){
     </div>` : ''}
     <button type="button" class="btn btn-outline" style="margin-top:14px;" onclick="cancelarSelectorUbicacion()">Cancelar</button>
   `);
-  if(cfg.estSel) elegirEstanteriaSelector(cfg.estSel);
 }
-// Paso 2: alturas de la estantería elegida. Se informa de lo que hay (proyectos y cajas /8); no bloquea: se puede elegir aunque esté lleno.
-function elegirEstanteriaSelector(e){
-  const cfg = selUbic; if(!cfg) return;
-  cfg.estSel = e;
-  document.querySelectorAll('.est-btn').forEach(b=> b.classList.toggle('on', Number(b.dataset.e)===e));
-  const kProy = claveProyecto(cfg.proyecto);
-  const cont = document.getElementById('huecoPaso2'); if(!cont) return;
-  const filas = HUECO_ALTURAS.map(a=>{
-    const c = codigoHueco(e, a);
-    const porProy = {};
-    (DB||[]).forEach(p=>{
-      if(!p || p.estado==='completado' || p.id===cfg.excluirId) return;
-      if(!Object.values(p.ubicaciones||{}).some(v=> String(v||'').trim()===c)) return;
-      const k = claveProyecto(p.proyecto)||'—';
-      if(!porProy[k]) porProy[k] = { nombre: p.proyecto || 'Sin proyecto', n:0 };
-      porProy[k].n++;
-    });
-    const hay = Object.keys(porProy);
-    // cajas que ya hay en el hueco (solo las "Cajas de picking" de OF pendientes)
-    let cajasHueco = 0;
-    (DB||[]).forEach(p=>{ if(p && p.estado!=='completado' && p.id!==cfg.excluirId && String((p.ubicaciones||{}).Cajas||'').trim()===c) cajasHueco += (Number(p.cajas)||0); });
-    const nuevas = cfg.item==='Cajas' ? (Number(cfg.cajas)||0) : 0;
-    const maxH = cajasMaxHueco(a);
-    const lleno = cajasHueco >= maxH, noCaben = !lleno && nuevas>0 && cajasHueco + nuevas > maxH;
-    const mismo = kProy && hay.includes(kProy);
-    const txt = hay.map(k=> escapeHtml(porProy[k].nombre) + ' · ' + porProy[k].n + ' OF').join(' · ');
-    const cls = ['alt-fila']; if(mismo) cls.push('proyecto'); if(cfg.actual===c) cls.push('actual'); if(lleno||noCaben) cls.push('justo');
-    const cuenta = cfg.item==='Cajas' ? `<span class="alt-cajas${lleno?' lleno':(noCaben?' justo':'')}">${cajasHueco}/${maxH}${lleno?' · lleno':(noCaben?' · no caben '+nuevas:'')}</span>` : '';
-    return `<button type="button" class="${cls.join(' ')}" onclick="elegirUbicacionSelector('${c}')"><span class="alt-letra">${a}</span><span class="alt-txt"><b>${c}</b>${txt ? '<small>'+txt+'</small>' : ''}</span>${cuenta}</button>`;
-  }).join('');
-  cont.innerHTML = `<div class="hint" style="margin:10px 0 4px; text-align:left;"><b>2 · Altura</b> en la estantería ${e} · ${HUECO_PREFIJO}-0${e}-? (A = arriba, F = abajo)</div>${filas}`;
-}
+function mostrarPlanoSelector(){ const cfg = selUbic; if(!cfg) return; cfg.verPlano = true; abrirSelectorUbicacion(cfg); }
+function aplicarRecomendadoSelector(){ const cfg = selUbic; if(!cfg) return; cfg.verPlano = false; abrirSelectorUbicacion(cfg); }
 function mostrarOtraUbicacion(){
   const b = document.getElementById('bloqueOtraUbic'); if(b) b.style.display = '';
   const c = document.getElementById('otraUbic'); if(c) c.focus();
@@ -16641,7 +16721,7 @@ function elegirUbicacionReubicarLote(){
   const proys = Array.from(new Set(ps.map(p=>claveProyecto(p.proyecto)).filter(Boolean)));
   const proyecto = proys.length===1 ? (ps.find(p=>p.proyecto)||{}).proyecto : '';
   abrirSelectorUbicacion({
-    item: 'Cajas', proyecto, excluirId: null, actual: '',
+    item: 'Cajas', proyecto, excluirId: ps.map(p=>p.id), actual: '',
     titulo: ps.length + ' OF' + (proyecto ? ' · ' + proyecto : ''),
     cajas: ps.reduce((t,p)=> t + (itemsMoverLote(p).includes('Cajas') ? (Number(p.cajas)||0) : 0), 0),
     cb: v=> confirmarReubicarLote(v),
