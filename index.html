@@ -291,7 +291,11 @@
   .pl-nom{ font-size:8.5px; font-weight:800; color:#3b4654; letter-spacing:-.2px; } .pl-num{ font-size:12px; font-weight:800; margin-top:1px; }
   .pl-c.v0,.pl-leg s.v0{ background:#fff; } .pl-c.v1,.pl-leg s.v1{ background:#D9ECFB; } .pl-c.v2,.pl-leg s.v2{ background:#FFD9A0; } .pl-c.v3,.pl-leg s.v3{ background:#F4A9A1; }
   .pl-c.proyecto{ border:2.5px solid #1B7F3B; }
-  .pl-c.rec{ box-shadow:0 0 0 2px #1B7F3B; }
+  .pl-c{ position:relative; }
+  .pl-c.rec{ box-shadow:0 0 0 3px #E0A800; }
+  .pl-star{ position:absolute; top:-6px; right:-4px; font-size:13px; line-height:1; }
+  .rec-linea{ background:#FFF8E1; border:1.5px solid #E0A800; border-radius:10px; padding:8px 10px; margin:0 0 8px; font-size:13px; text-align:center; }
+  .rec-linea b{ font-size:16px; } .rec-linea span{ display:block; color:var(--ink-soft); } .rec-linea.sin{ background:#F3F5F8; border-color:#C9D0DA; color:var(--ink-soft); }
   .pl-c.actual{ outline:3px solid var(--ink); outline-offset:-1px; }
   .pl-leg{ display:flex; flex-wrap:wrap; gap:4px 10px; justify-content:center; font-size:11px; color:var(--ink-soft); margin:10px 0; }
   .pl-leg s{ display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; text-decoration:none; border:1.5px solid #D3D9E1; }
@@ -489,7 +493,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1800</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1815</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12777,38 +12781,49 @@ function estadoHuecos(excluirId){
   });
   return m;
 }
-// Sitio recomendado para las cajas: junto al proyecto, donde quepan todas, sin mezclar con otros proyectos y sin mover nada.
+// Orden de los huecos: estantería 1 (A→F), luego la 2 (A→F), etc. Los proyectos van ordenados por nombre
+// (como en la lista de pendientes) a lo largo de ese recorrido.
+const ORDEN_HUECOS = [].concat(...HUECO_ESTANTERIAS.map(e=> HUECO_ALTURAS.map(a=> codigoHueco(e,a))));
+function cmpProyectos(a, b){ return String(a||'').localeCompare(String(b||''), 'es', {numeric:true, sensitivity:'base'}); }
+// Sitio que conviene para las cajas: respetando el orden de proyectos, donde quepan todas, sin mezclar proyectos y sin mover nada.
 function recomendarHueco(cfg, est){
   if(cfg.item!=='Cajas') return null;
   const n = Math.max(1, Number(cfg.cajas)||1);
   const k = claveProyecto(cfg.proyecto);
+  const nombre = cfg.proyecto || '';
+  const pos = c => ORDEN_HUECOS.indexOf(c);
+  const lista = ORDEN_HUECOS.map(c=>({ codigo:c, ...est[c] })).filter(h=> h.codigo!==cfg.actual);
   const quepa = h => h.max - h.cajas >= n;
-  const sinMezcla = h => Object.keys(h.porProy).every(x=> x===k);   // vacío o solo de este proyecto
-  const lista = Object.entries(est).map(([codigo,h])=>({codigo,...h})).filter(h=> h.codigo!==cfg.actual);
+  const sinMezcla = h => Object.keys(h.porProy).every(x=> x===k);
   const nProy = h => (h.porProy[k] ? h.porProy[k].n : 0);
-  const delProy = k ? lista.filter(h=> nProy(h)>0) : [];
-  const nombreProy = cfg.proyecto || '';
+  const delProy = k ? ORDEN_HUECOS.map(c=>est[c]&&{ codigo:c, ...est[c] }).filter(h=> h && nProy(h)>0) : [];
   // 1) donde ya está el proyecto y caben todas (el que más OF del proyecto tenga; a igualdad, el más justo)
-  const a1 = delProy.filter(quepa).sort((x,y)=> nProy(y)-nProy(x) || (x.max-x.cajas-n)-(y.max-y.cajas-n))[0];
-  if(a1) return { codigo:a1.codigo, motivo:'Aquí ya está el proyecto ' + nombreProy, paso:1 };
-  // 2) pegado a un hueco del proyecto (misma estantería, altura de al lado)
-  for(const base of delProy.sort((x,y)=>nProy(y)-nProy(x))){
-    const idx = HUECO_ALTURAS.indexOf(base.a);
-    for(const d of [1,-1]){
-      const a = HUECO_ALTURAS[idx+d]; if(!a) continue;
-      const h = lista.find(x=> x.e===base.e && x.a===a);
-      if(h && quepa(h) && sinMezcla(h)) return { codigo:h.codigo, motivo:'Pegado a donde ya está el proyecto ' + nombreProy + ' (' + base.codigo + ')', paso:2 };
-    }
+  const a1 = delProy.filter(h=> h.codigo!==cfg.actual && quepa(h)).sort((x,y)=> nProy(y)-nProy(x) || (x.max-x.cajas-n)-(y.max-y.cajas-n))[0];
+  if(a1) return { codigo:a1.codigo, motivo:'Aquí ya está el proyecto ' + nombre };
+  // 2) a continuación de donde está el proyecto (el siguiente hueco libre del recorrido), o justo antes
+  if(delProy.length){
+    const ult = Math.max(...delProy.map(h=>pos(h.codigo))), pri = Math.min(...delProy.map(h=>pos(h.codigo)));
+    const sig = lista.find(h=> pos(h.codigo)>ult && quepa(h) && sinMezcla(h));
+    if(sig) return { codigo:sig.codigo, motivo:'A continuación del proyecto ' + nombre + ' (que acaba en ' + ORDEN_HUECOS[ult] + ')' };
+    const ant = lista.slice().reverse().find(h=> pos(h.codigo)<pri && quepa(h) && sinMezcla(h));
+    if(ant) return { codigo:ant.codigo, motivo:'Justo antes del proyecto ' + nombre };
   }
-  // 3) otra balda de una estantería donde ya está el proyecto
-  const ests = Array.from(new Set(delProy.map(h=>h.e)));
-  const a3 = lista.filter(h=> ests.includes(h.e) && quepa(h) && sinMezcla(h)).sort((x,y)=> y.cajas-x.cajas)[0];
-  if(a3) return { codigo:a3.codigo, motivo:'En la estantería ' + a3.e + ', donde ya está el proyecto ' + nombreProy, paso:3 };
-  // 4) hueco vacío en la estantería con menos cajas de otros proyectos
-  const carga = {}; lista.forEach(h=>{ carga[h.e] = (carga[h.e]||0) + h.cajas; });
-  const vacios = lista.filter(h=> h.cajas===0 && quepa(h));
-  vacios.sort((x,y)=> carga[x.e]-carga[y.e] || ALTURAS_ORDEN_PREF.indexOf(x.a)-ALTURAS_ORDEN_PREF.indexOf(y.a) || x.e-y.e);
-  if(vacios[0]) return { codigo:vacios[0].codigo, motivo:'Hueco vacío en la estantería ' + vacios[0].e, paso:4 };
+  // 3) proyecto nuevo: en su sitio según el orden de proyectos (después de los "menores", antes de los "mayores")
+  let ultMenor = -1, primMayor = ORDEN_HUECOS.length, nombreMenor = '';
+  ORDEN_HUECOS.forEach((c,idx)=>{
+    Object.entries(est[c].porProy).forEach(([kk,v])=>{
+      if(kk===k) return;
+      const cmp = cmpProyectos(v.nombre, nombre);
+      if(cmp<0 && idx>ultMenor){ ultMenor = idx; nombreMenor = v.nombre; }
+      if(cmp>0 && idx<primMayor) primMayor = idx;
+    });
+  });
+  const libres = lista.filter(h=> quepa(h) && sinMezcla(h) && h.cajas===0);
+  const enSitio = libres.find(h=> pos(h.codigo)>ultMenor && pos(h.codigo)<primMayor);
+  if(enSitio) return { codigo:enSitio.codigo, motivo: ultMenor>=0 ? 'Por orden de proyectos: después de ' + nombreMenor + ' (' + ORDEN_HUECOS[ultMenor] + ')' : 'Por orden de proyectos: el primer hueco libre' };
+  const despues = libres.find(h=> pos(h.codigo)>ultMenor);
+  if(despues) return { codigo:despues.codigo, motivo: ultMenor>=0 ? 'Primer hueco libre después de ' + nombreMenor + ' (' + ORDEN_HUECOS[ultMenor] + ')' : 'Primer hueco libre' };
+  if(libres[0]) return { codigo:libres[0].codigo, motivo:'Primer hueco libre' };
   return null;
 }
 function miniEstanterias(est, rec, k){
@@ -12827,27 +12842,8 @@ function abrirSelectorUbicacion(cfg){
   cfg.candidatas = UBICACIONES_FIJAS.concat(otras);
   const kProy = claveProyecto(cfg.proyecto);
   const est = estadoHuecos(cfg.excluirId);
-  // Pantalla 1 (la de siempre): una recomendación y un botón grande. Solo para cajas.
-  if(cfg.item==='Cajas' && !cfg.verPlano){
-    const rec = recomendarHueco(cfg, est);
-    if(rec){
-      const h = est[rec.codigo];
-      cfg.recomendado = rec.codigo;
-      mostrarSheet(`
-        <h3>Ubicación — ${escapeHtml(cfg.titulo || cfg.item)}</h3>
-        <div class="rec-card">
-          <div class="rec-k">⭐ RECOMENDADO</div>
-          <div class="rec-cod">${rec.codigo}</div>
-          <div class="rec-why">Estantería ${h.e} · ${NOMBRE_ALTURA[h.a]}<br>${escapeHtml(rec.motivo)}</div>
-          ${miniEstanterias(est, rec.codigo, kProy)}
-        </div>
-        <button type="button" class="btn btn-primary rec-btn" onclick="elegirUbicacionSelector('${rec.codigo}')">Poner aquí</button>
-        <button type="button" class="btn btn-outline" onclick="mostrarPlanoSelector()">Elegir otro sitio</button>
-        <button type="button" class="btn btn-outline" style="margin-top:6px; border:none; color:var(--ink-soft);" onclick="cancelarSelectorUbicacion()">Cancelar</button>
-      `);
-      return;
-    }
-  }
+  const rec = recomendarHueco(cfg, est);
+  cfg.recomendado = rec ? rec.codigo : '';
   const sugs = cfg.item==='Cajas' ? [] : sugerenciasUbicacionProyecto(cfg.proyecto, cfg.item, cfg.excluirId);
   const nuevas = cfg.item==='Cajas' ? (Number(cfg.cajas)||0) : 0;
   const racks = HUECO_ESTANTERIAS.map(e=>`<div class="pl-col"><div class="pl-n">${e}<small>${HUECO_PREFIJO}-0${e}</small></div><div class="pl-rack">` + HUECO_ALTURAS.map(a=>{
@@ -12855,14 +12851,14 @@ function abrirSelectorUbicacion(cfg){
     const lleno = h.cajas >= h.max, noCaben = !lleno && nuevas>0 && h.cajas + nuevas > h.max;
     const nivel = h.cajas===0 ? 'v0' : (lleno ? 'v3' : (h.cajas/h.max>=0.6 || noCaben ? 'v2' : 'v1'));
     const cls = ['pl-c', nivel]; if(kProy && h.porProy[kProy]) cls.push('proyecto'); if(cfg.actual===c) cls.push('actual'); if(cfg.recomendado===c) cls.push('rec');
-    return `<div class="pl-lv"><button type="button" class="${cls.join(' ')}" onclick="elegirUbicacionSelector('${c}')"><span class="pl-nom">${c}</span><span class="pl-num">${h.cajas}/${h.max}</span></button></div>`;
+    return `<div class="pl-lv"><button type="button" class="${cls.join(' ')}" onclick="elegirUbicacionSelector('${c}')"><span class="pl-nom">${c}</span><span class="pl-num">${h.cajas}/${h.max}</span>${cfg.recomendado===c ? '<span class="pl-star">⭐</span>' : ''}</button></div>`;
   }).join('') + '</div></div>').join('');
   const letras = '<div class="pl-letras">' + HUECO_ALTURAS.map(a=>`<div>${a}</div>`).join('') + '</div>';
   mostrarSheet(`
     <h3>Ubicación — ${escapeHtml(cfg.titulo || cfg.item)}</h3>
     ${sugs.length ? `<div class="hint" style="margin:0 0 6px;"><b>Ya hay OF del proyecto ${escapeHtml(cfg.proyecto)} en:</b></div>
       <div style="margin-bottom:10px;">${sugs.map(x=>`<button type="button" class="btn btn-primary" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;" onclick="elegirUbicacionSelector('${escapeAtributo(x.valor)}')">${escapeHtml(x.valor)} · ${x.n} OF</button>`).join('')}</div>` : ''}
-    ${cfg.recomendado ? `<button type="button" class="btn btn-outline" style="margin:0 0 8px;" onclick="aplicarRecomendadoSelector()">⭐ Volver a la recomendación (${cfg.recomendado})</button>` : ''}
+    ${rec ? `<div class="rec-linea">⭐ <b>Te conviene ${rec.codigo}</b><span>${escapeHtml(rec.motivo)}</span></div>` : (cfg.item==='Cajas' ? `<div class="rec-linea sin">No hay un sitio claro para ${Number(cfg.cajas)||1} caja${(Number(cfg.cajas)||1)===1?'':'s'} juntas: elige tú.</div>` : '')}
     <div style="display:flex; gap:8px; align-items:stretch; margin-bottom:6px;">
       <input type="text" id="atajoHueco" placeholder="Escribe ej. 2c" autocomplete="off" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarAtajoHueco(); event.preventDefault(); }">
       <button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:0 16px;" onclick="aplicarAtajoHueco()">Poner</button>
@@ -12884,8 +12880,6 @@ function abrirSelectorUbicacion(cfg){
     <button type="button" class="btn btn-outline" style="margin-top:14px;" onclick="cancelarSelectorUbicacion()">Cancelar</button>
   `);
 }
-function mostrarPlanoSelector(){ const cfg = selUbic; if(!cfg) return; cfg.verPlano = true; abrirSelectorUbicacion(cfg); }
-function aplicarRecomendadoSelector(){ const cfg = selUbic; if(!cfg) return; cfg.verPlano = false; abrirSelectorUbicacion(cfg); }
 function mostrarOtraUbicacion(){
   const b = document.getElementById('bloqueOtraUbic'); if(b) b.style.display = '';
   const c = document.getElementById('otraUbic'); if(c) c.focus();
