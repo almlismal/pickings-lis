@@ -294,6 +294,8 @@
   .pl-c{ position:relative; }
   .pl-c.rec{ box-shadow:0 0 0 3px #E0A800; }
   .pl-star{ position:absolute; top:-6px; right:-4px; font-size:13px; line-height:1; }
+  .rec-boton{ display:block; width:100%; cursor:pointer; font-family:inherit; color:var(--ink); }
+  .rec-boton em{ display:block; font-style:normal; font-weight:800; font-size:14px; color:#fff; background:#1B7F3B; border-radius:8px; padding:8px; margin-top:8px; }
   .rec-linea{ background:#FFF8E1; border:1.5px solid #E0A800; border-radius:10px; padding:8px 10px; margin:0 0 8px; font-size:13px; text-align:center; }
   .rec-linea b{ font-size:16px; } .rec-linea span{ display:block; color:var(--ink-soft); } .rec-linea.sin{ background:#F3F5F8; border-color:#C9D0DA; color:var(--ink-soft); }
   .pl-c.actual{ outline:3px solid var(--ink); outline-offset:-1px; }
@@ -493,7 +495,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1900</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1930</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12859,7 +12861,7 @@ function abrirSelectorUbicacion(cfg){
     <h3>Ubicación — ${escapeHtml(cfg.titulo || cfg.item)}</h3>
     ${sugs.length ? `<div class="hint" style="margin:0 0 6px;"><b>Ya hay OF del proyecto ${escapeHtml(cfg.proyecto)} en:</b></div>
       <div style="margin-bottom:10px;">${sugs.map(x=>`<button type="button" class="btn btn-primary" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;" onclick="elegirUbicacionSelector('${escapeAtributo(x.valor)}')">${escapeHtml(x.valor)} · ${x.n} OF</button>`).join('')}</div>` : ''}
-    ${rec ? `<div class="rec-linea">⭐ <b>Sugerido: ${rec.codigo}</b><span>${escapeHtml(rec.motivo)}</span></div>` : (cfg.item==='Cajas' ? `<div class="rec-linea sin">No hay un sitio claro para ${Number(cfg.cajas)||1} caja${(Number(cfg.cajas)||1)===1?'':'s'} juntas: elige tú.</div>` : '')}
+    ${rec ? `<button type="button" class="rec-linea rec-boton" onclick="elegirUbicacionSelector('${rec.codigo}')">⭐ <b>Sugerido: ${rec.codigo}</b><span>${escapeHtml(rec.motivo)}</span><em>Toca para poner aquí</em></button>` : (cfg.item==='Cajas' ? `<div class="rec-linea sin">No hay un sitio claro para ${Number(cfg.cajas)||1} caja${(Number(cfg.cajas)||1)===1?'':'s'} juntas: elige tú.</div>` : '')}
     <div style="display:flex; gap:8px; align-items:stretch; margin-bottom:6px;">
       <input type="text" id="atajoHueco" placeholder="Escribe ej. 2c" autocomplete="off" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarAtajoHueco(); event.preventDefault(); }">
       <button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:0 16px;" onclick="aplicarAtajoHueco()">Poner</button>
@@ -13169,6 +13171,8 @@ function calcularUbicacionesPendientes(){
   const mapa = {};
   DB.filter(p=>p.estado!=='completado').forEach(p=>{
     const estados = estadosItemsFuera(p);
+    // Las cajas de picking también tienen ubicación (huecos Z-00…): cuentan como un ítem más mientras no se hayan entregado.
+    if(p.cajas>0 && !('Cajas' in estados)) estados['Cajas'] = null;
     Object.keys(estados).forEach(item=>{
       if(estados[item]==='completado') return;
       const ubic = (p.ubicaciones && String(p.ubicaciones[item]||'').trim()) || '';
@@ -13191,7 +13195,9 @@ function renderUbicaciones(){
   if(!contChips || !contLista) return;
 
   const mapa = calcularUbicacionesPendientes();
-  const claves = Object.keys(mapa).sort((a,b)=> mapa[b].length - mapa[a].length);
+  // Orden: primero los huecos Z-00 en su orden (1A, 1B… 4F), luego el resto por nº de pendientes, y al final "Sin ubicación".
+  const rangoUbic = c => c==='Sin ubicación anotada' ? 2 : (esHueco(c) ? 0 : 1);
+  const claves = Object.keys(mapa).sort((a,b)=> rangoUbic(a)-rangoUbic(b) || (esHueco(a) && esHueco(b) ? ORDEN_HUECOS.indexOf(a)-ORDEN_HUECOS.indexOf(b) : mapa[b].length - mapa[a].length));
 
   if(!claves.length){
     contChips.innerHTML = '';
