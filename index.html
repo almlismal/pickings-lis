@@ -501,7 +501,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-2000</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-2015</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12724,7 +12724,7 @@ function cajasMaxHueco(a){ return a==='A' ? HUECO_CAJAS_MAX_A : HUECO_CAJAS_MAX;
 const UBICACIONES_FIJAS = ['Estantería de perfiles','Estantería de plantillas','Picking urgentes'];
 // De momento "Otra ubicación…" y los "otros sitios ya usados" solo los ven los administradores.
 // Para liberarlo a todo el equipo basta poner false.
-const UBICACION_LIBRE_SOLO_ADMIN = true;
+const UBICACION_LIBRE_SOLO_ADMIN = false;
 function ubicacionLibreDisponible(){ return !UBICACION_LIBRE_SOLO_ADMIN || esAdminSheet(usuarioActual); }
 function codigoHueco(e, a){ return HUECO_PREFIJO + '-0' + e + '-' + a; }
 function esHueco(v){ return /^Z-00-0[1-4]-[A-F]$/.test(String(v||'').trim()); }
