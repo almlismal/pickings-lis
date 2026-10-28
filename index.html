@@ -493,7 +493,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1815</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1830</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12785,7 +12785,8 @@ function estadoHuecos(excluirId){
 // (como en la lista de pendientes) a lo largo de ese recorrido.
 const ORDEN_HUECOS = [].concat(...HUECO_ESTANTERIAS.map(e=> HUECO_ALTURAS.map(a=> codigoHueco(e,a))));
 function cmpProyectos(a, b){ return String(a||'').localeCompare(String(b||''), 'es', {numeric:true, sensitivity:'base'}); }
-// Sitio que conviene para las cajas: respetando el orden de proyectos, donde quepan todas, sin mezclar proyectos y sin mover nada.
+// Sitio sugerido para las cajas: respetando el orden de proyectos, en el primer hueco donde quepan todas
+// (aunque ya tenga cajas de otro proyecto), sin mover nada de lo que ya está puesto.
 function recomendarHueco(cfg, est){
   if(cfg.item!=='Cajas') return null;
   const n = Math.max(1, Number(cfg.cajas)||1);
@@ -12794,21 +12795,22 @@ function recomendarHueco(cfg, est){
   const pos = c => ORDEN_HUECOS.indexOf(c);
   const lista = ORDEN_HUECOS.map(c=>({ codigo:c, ...est[c] })).filter(h=> h.codigo!==cfg.actual);
   const quepa = h => h.max - h.cajas >= n;
-  const sinMezcla = h => Object.keys(h.porProy).every(x=> x===k);
   const nProy = h => (h.porProy[k] ? h.porProy[k].n : 0);
-  const delProy = k ? ORDEN_HUECOS.map(c=>est[c]&&{ codigo:c, ...est[c] }).filter(h=> h && nProy(h)>0) : [];
+  const delProy = k ? ORDEN_HUECOS.map(c=>({ codigo:c, ...est[c] })).filter(h=> nProy(h)>0) : [];
   // 1) donde ya está el proyecto y caben todas (el que más OF del proyecto tenga; a igualdad, el más justo)
   const a1 = delProy.filter(h=> h.codigo!==cfg.actual && quepa(h)).sort((x,y)=> nProy(y)-nProy(x) || (x.max-x.cajas-n)-(y.max-y.cajas-n))[0];
   if(a1) return { codigo:a1.codigo, motivo:'Aquí ya está el proyecto ' + nombre };
-  // 2) a continuación de donde está el proyecto (el siguiente hueco libre del recorrido), o justo antes
+  // 2) a continuación de donde está el proyecto, o justo antes
   if(delProy.length){
     const ult = Math.max(...delProy.map(h=>pos(h.codigo))), pri = Math.min(...delProy.map(h=>pos(h.codigo)));
-    const sig = lista.find(h=> pos(h.codigo)>ult && quepa(h) && sinMezcla(h));
-    if(sig) return { codigo:sig.codigo, motivo:'A continuación del proyecto ' + nombre + ' (que acaba en ' + ORDEN_HUECOS[ult] + ')' };
-    const ant = lista.slice().reverse().find(h=> pos(h.codigo)<pri && quepa(h) && sinMezcla(h));
+    const sig = lista.find(h=> pos(h.codigo)>ult && quepa(h));
+    if(sig) return { codigo:sig.codigo, motivo:'A continuación del proyecto ' + nombre + ' (acaba en ' + ORDEN_HUECOS[ult] + ')' };
+    const ant = lista.slice().reverse().find(h=> pos(h.codigo)<pri && quepa(h));
     if(ant) return { codigo:ant.codigo, motivo:'Justo antes del proyecto ' + nombre };
   }
-  // 3) proyecto nuevo: en su sitio según el orden de proyectos (después de los "menores", antes de los "mayores")
+  // 3) sin proyecto (o proyecto mezclado): el primer hueco donde quepan
+  if(!k){ const p = lista.find(quepa); return p ? { codigo:p.codigo, motivo:'Primer hueco con sitio' } : null; }
+  // 4) proyecto nuevo: en su sitio según el orden de proyectos (desde el último "menor" y antes del primer "mayor")
   let ultMenor = -1, primMayor = ORDEN_HUECOS.length, nombreMenor = '';
   ORDEN_HUECOS.forEach((c,idx)=>{
     Object.entries(est[c].porProy).forEach(([kk,v])=>{
@@ -12818,13 +12820,12 @@ function recomendarHueco(cfg, est){
       if(cmp>0 && idx<primMayor) primMayor = idx;
     });
   });
-  const libres = lista.filter(h=> quepa(h) && sinMezcla(h) && h.cajas===0);
-  const enSitio = libres.find(h=> pos(h.codigo)>ultMenor && pos(h.codigo)<primMayor);
-  if(enSitio) return { codigo:enSitio.codigo, motivo: ultMenor>=0 ? 'Por orden de proyectos: después de ' + nombreMenor + ' (' + ORDEN_HUECOS[ultMenor] + ')' : 'Por orden de proyectos: el primer hueco libre' };
-  const despues = libres.find(h=> pos(h.codigo)>ultMenor);
-  if(despues) return { codigo:despues.codigo, motivo: ultMenor>=0 ? 'Primer hueco libre después de ' + nombreMenor + ' (' + ORDEN_HUECOS[ultMenor] + ')' : 'Primer hueco libre' };
-  if(libres[0]) return { codigo:libres[0].codigo, motivo:'Primer hueco libre' };
-  return null;
+  const desde = Math.max(ultMenor, 0);
+  const enSitio = lista.find(h=> quepa(h) && pos(h.codigo)>=desde && pos(h.codigo)<=primMayor);
+  const despues = enSitio || lista.find(h=> quepa(h) && pos(h.codigo)>=desde);
+  const h = despues || lista.find(quepa);
+  if(!h) return null;
+  return { codigo:h.codigo, motivo: ultMenor>=0 && h.codigo===ORDEN_HUECOS[ultMenor] ? 'Junto al proyecto ' + nombreMenor + ', por orden de proyectos' : ultMenor>=0 ? 'Por orden de proyectos, después de ' + nombreMenor + ' (' + ORDEN_HUECOS[ultMenor] + ')' : 'Primer hueco con sitio, por orden de proyectos' };
 }
 function miniEstanterias(est, rec, k){
   return '<div class="mini-est">' + HUECO_ESTANTERIAS.map(e=>'<div class="mini-rack">' + HUECO_ALTURAS.map(a=>{
@@ -12858,7 +12859,7 @@ function abrirSelectorUbicacion(cfg){
     <h3>Ubicación — ${escapeHtml(cfg.titulo || cfg.item)}</h3>
     ${sugs.length ? `<div class="hint" style="margin:0 0 6px;"><b>Ya hay OF del proyecto ${escapeHtml(cfg.proyecto)} en:</b></div>
       <div style="margin-bottom:10px;">${sugs.map(x=>`<button type="button" class="btn btn-primary" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;" onclick="elegirUbicacionSelector('${escapeAtributo(x.valor)}')">${escapeHtml(x.valor)} · ${x.n} OF</button>`).join('')}</div>` : ''}
-    ${rec ? `<div class="rec-linea">⭐ <b>Te conviene ${rec.codigo}</b><span>${escapeHtml(rec.motivo)}</span></div>` : (cfg.item==='Cajas' ? `<div class="rec-linea sin">No hay un sitio claro para ${Number(cfg.cajas)||1} caja${(Number(cfg.cajas)||1)===1?'':'s'} juntas: elige tú.</div>` : '')}
+    ${rec ? `<div class="rec-linea">⭐ <b>Sugerido: ${rec.codigo}</b><span>${escapeHtml(rec.motivo)}</span></div>` : (cfg.item==='Cajas' ? `<div class="rec-linea sin">No hay un sitio claro para ${Number(cfg.cajas)||1} caja${(Number(cfg.cajas)||1)===1?'':'s'} juntas: elige tú.</div>` : '')}
     <div style="display:flex; gap:8px; align-items:stretch; margin-bottom:6px;">
       <input type="text" id="atajoHueco" placeholder="Escribe ej. 2c" autocomplete="off" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarAtajoHueco(); event.preventDefault(); }">
       <button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:0 16px;" onclick="aplicarAtajoHueco()">Poner</button>
