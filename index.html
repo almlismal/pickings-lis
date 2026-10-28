@@ -493,7 +493,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1830</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1900</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12983,6 +12983,7 @@ function pintarReubicar(){
   mostrarSheet(`
     <h3>Reubicar OF ${escapeHtml(p.of)}</h3>
     <div class="hint" style="margin:0 0 6px;">${escapeHtml(p.proyecto || '—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}. Las cajas de una OF van juntas.</div>
+    ${fueraActivas(p).length ? `<div style="background:#FFF4D6; border:1.5px solid #E0B64A; border-radius:10px; padding:8px 10px; margin:8px 0; font-size:13px;"><b>⚠ Tiene fuera de la caja:</b> ${fueraActivas(p).map(k=>escapeHtml(k.toLowerCase())).join(', ')}. Mira si también hay que moverlo.</div>` : ''}
     ${filas}
     ${items.length > 1 ? `<button type="button" class="btn btn-outline" style="margin-top:10px;" onclick="elegirUbicacionReubicar('*')">Mover todo al mismo sitio</button>` : ''}
     <button type="button" class="btn btn-primary" style="margin-top:12px; ${hayCambio ? '' : 'opacity:0.5;'}" onclick="confirmarReubicar()">Guardar nueva ubicación</button>
@@ -13010,6 +13011,7 @@ function confirmarReubicar(){
   itemsParaUbicarDe(p).forEach(it=>{ if(r.nuevas[it]) ubicacionesFinal[it] = r.nuevas[it]; });
   const cambios = diffCambios(p, { of: p.of, proyecto: p.proyecto||'', subproyecto: p.subproyecto||'', cajas: p.cajas, obs: p.observaciones||'', fuera: p.fuera, ubicaciones: ubicacionesFinal });
   if(!cambios.length){ toast('No has cambiado ninguna ubicación'); return; }
+  const fueraSinMover = fueraActivas(p).filter(it=> !cambios.some(c=> String(c).indexOf('Ubicación '+it+':')===0));
   const motivo = 'Reubicado';
   const datosEnvio = {
     id: p.id, of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto, cajas: p.cajas,
@@ -13021,7 +13023,7 @@ function confirmarReubicar(){
   p.ediciones.push({ editadoPor: usuarioActual, fecha: new Date().toISOString(), motivo, cambios });
   guardarDBLocal();
   reub = null; cerrarSheet();
-  toast('Reubicada: ' + cambios.map(c=>c.replace(/^Ubicación /,'')).join(' · '));
+  toast('Reubicada: ' + cambios.map(c=>c.replace(/^Ubicación /,'')).join(' · ') + (fueraSinMover.length ? ' · ⚠ ' + fueraSinMover.map(k=>k.toLowerCase()).join(', ') + ' sin mover' : ''));
   abrirDetalle(p.id);
   encolarOperacion('editarPicking', datosEnvio, p.id, 'Reubicar OF ' + p.of);
 }
@@ -16699,16 +16701,25 @@ function pintarReubicarLote(){
   const filas = ps.map(p=>{
     const its = itemsMoverLote(p);
     const ubic = its.length ? its.map(it=> (p.ubicaciones||{})[it] || 'sin ubicación').filter((v,i,a)=>a.indexOf(v)===i).join(' / ') : '<i>nada que mover</i>';
-    return `<div style="display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px solid var(--line,#eee); font-size:14px;"><b>${escapeHtml(p.of)}</b><span style="text-align:right;">${its.length ? escapeHtml(ubic) : ubic}</span></div>`;
+    const fu = fueraActivas(p);
+    const fuLinea = fu.length ? `<div style="font-size:12.5px; color:#8A5A00; padding:0 0 5px;">⚠ Tiene fuera de la caja: ${fu.map(k=> escapeHtml(k.toLowerCase()) + ' (' + escapeHtml((p.ubicaciones||{})[k] || 'sin ubicación') + ')').join(', ')} · <span class="link-action" onclick="reubicarUnaDesdeLote('${p.id}')">Reubicar solo esta</span></div>` : '';
+    return `<div style="border-bottom:1px solid var(--line,#eee);"><div style="display:flex; justify-content:space-between; gap:8px; padding:5px 0; font-size:14px;"><b>${escapeHtml(p.of)}</b><span style="text-align:right;">${its.length ? escapeHtml(ubic) : ubic}</span></div>${fuLinea}</div>`;
   }).join('');
+  const nFuera = ps.filter(p=> fueraActivas(p).length).length;
+  const avisoFuera = hayFuera ? `<div style="background:#FFF4D6; border:1.5px solid #E0B64A; border-radius:10px; padding:8px 10px; margin:0 0 10px; font-size:13px;"><b>⚠ ${nFuera} de estas OF ${nFuera===1?'tiene':'tienen'} componentes fuera de la caja</b> (cables, plantillas…). ${r.conFuera ? 'Se moverán también al mismo sitio.' : 'Si solo mueves las cajas, eso se queda donde está.'}</div>` : '';
   mostrarSheet(`
     <h3>Reubicar ${ps.length} OF</h3>
+    ${avisoFuera}
     <div class="hint" style="margin:0 0 8px;">Se mueven las cajas de todas las OF marcadas al mismo sitio.${r.omitidas ? ' ('+r.omitidas+' no se incluyen porque aún se están sincronizando.)' : ''}</div>
     <div style="max-height:34vh; overflow:auto; margin-bottom:10px;">${filas}</div>
     ${hayFuera ? `<label style="display:flex; gap:8px; align-items:center; margin:6px 0 10px;"><input type="checkbox" ${r.conFuera?'checked':''} onchange="reubLote.conFuera=this.checked; pintarReubicarLote();" style="width:auto; margin:0;"> Mover también los componentes que están fuera de la caja</label>` : ''}
     <button type="button" class="btn btn-primary" ${afectadas.length ? '' : 'disabled'} onclick="elegirUbicacionReubicarLote()">Elegir nueva ubicación</button>
     <button type="button" class="btn btn-outline" onclick="reubLote=null; cerrarSheet();">Cancelar</button>
   `);
+}
+function reubicarUnaDesdeLote(id){
+  reubLote = null; cerrarSheet();
+  abrirReubicar(id);
 }
 function elegirUbicacionReubicarLote(){
   const r = reubLote; if(!r) return;
@@ -16751,7 +16762,8 @@ function confirmarReubicarLote(destino){
   loteSeleccion.clear();
   refrescarVistaLote();
   actualizarBarraLote();
-  toast(movidas ? `${movidas} OF reubicada${movidas===1?'':'s'} en ${destino}` + (igual ? ` (${igual} ya estaban ahí)` : '') : 'Ya estaban todas en ese sitio');
+  const sinMover = (r.conFuera ? [] : ps.filter(p=> fueraActivas(p).length)).length;
+  toast((movidas ? `${movidas} OF reubicada${movidas===1?'':'s'} en ${destino}` + (igual ? ` (${igual} ya estaban ahí)` : '') : 'Ya estaban todas en ese sitio') + (sinMover ? ` · ⚠ ${sinMover} tienen componentes fuera de la caja sin mover` : ''));
 }
 function idsLoteVigentes(){
   return Array.from(loteSeleccion).filter(id=>{ const p = DB.find(x=>x.id===id); return p && p.estado!=='completado'; });
@@ -16788,6 +16800,7 @@ function entregarLote(manteniendoEstado){
   }).join('');
   mostrarSheet(`
     <h3>Entregar ${ids.length} picking${ids.length===1?'':'s'}</h3>
+    ${(()=>{ const con = ids.map(id=>DB.find(x=>x.id===id)).filter(q=>q && fueraActivas(q).length); return con.length ? `<div style="background:#FFF4D6; border:1.5px solid #E0B64A; border-radius:10px; padding:9px 11px; margin:0 0 12px; font-size:14px;"><b>⚠ ${con.length===1?'Una OF lleva':con.length+' OF llevan'} cosas fuera de la caja:</b><br>${con.map(q=> '• <b>OF '+escapeHtml(q.of)+'</b>: ' + fueraActivas(q).map(k=> escapeHtml(k.toLowerCase()) + ' (' + escapeHtml((q.ubicaciones||{})[k] || 'sin ubicación') + ')').join(', ')).join('<br>')}<div style="font-size:12.5px; margin-top:4px;">Comprueba que se entrega todo junto.</div></div>` : ''; })()}
     ${adminHojas ? `<div class="hint" style="margin:0 0 6px;">Opcional: escanea la hoja firmada de cada OF (una o varias hojas por OF).</div>` : ''}
     <div style="max-height:40vh; overflow:auto; margin-bottom:12px;">${filas}</div>
     <label>¿Quién entrega?</label>
@@ -16906,6 +16919,7 @@ function entregar(tipo, manteniendoEstado){
 
   let html = `
     <h3>${tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</h3>
+    ${(tipo==='completa' && p && fueraActivas(p).length) ? `<div style="background:#FFF4D6; border:1.5px solid #E0B64A; border-radius:10px; padding:9px 11px; margin:0 0 12px; font-size:14px;"><b>⚠ Ojo: además de la caja, lleva fuera:</b><br>${fueraActivas(p).map(k=> '• ' + escapeHtml(k) + ' — ' + escapeHtml((p.ubicaciones||{})[k] || 'sin ubicación')).join('<br>')}<div style="font-size:12.5px; margin-top:4px;">Comprueba que se entrega todo junto.</div></div>` : ''}
     <label>¿Quién entrega?</label>
     <div class="hint" style="margin:0 0 4px;">La entrega queda registrada a nombre de: <b>${quienEntrega}</b>${entregaPorActivo ? ' (verificado con su PIN)' : ''}</div>
     <div class="hint" style="margin:0 0 14px;"><span class="link-action" onclick="abrirCambioEntregaPor('${tipo}')">¿Entrega otra persona? Cambiar</span></div>
