@@ -466,7 +466,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1720</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-1735</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12684,6 +12684,8 @@ const HUECO_PREFIJO = 'Z-00';
 const HUECO_ESTANTERIAS = [1,2,3,4];
 const HUECO_ALTURAS = ['A','B','C','D','E','F'];
 const HUECO_CAJAS_MAX = 8; // cajas que entran en cada hueco (balda)
+const HUECO_CAJAS_MAX_A = 12; // la altura A (la más alta) admite más
+function cajasMaxHueco(a){ return a==='A' ? HUECO_CAJAS_MAX_A : HUECO_CAJAS_MAX; }
 const UBICACIONES_FIJAS = ['Estantería de perfiles','Estantería de plantillas','Picking urgentes'];
 // De momento "Otra ubicación…" y los "otros sitios ya usados" solo los ven los administradores.
 // Para liberarlo a todo el equipo basta poner false.
@@ -12794,11 +12796,12 @@ function elegirEstanteriaSelector(e){
     let cajasHueco = 0;
     (DB||[]).forEach(p=>{ if(p && p.estado!=='completado' && p.id!==cfg.excluirId && String((p.ubicaciones||{}).Cajas||'').trim()===c) cajasHueco += (Number(p.cajas)||0); });
     const nuevas = cfg.item==='Cajas' ? (Number(cfg.cajas)||0) : 0;
-    const lleno = cajasHueco >= HUECO_CAJAS_MAX, noCaben = !lleno && nuevas>0 && cajasHueco + nuevas > HUECO_CAJAS_MAX;
+    const maxH = cajasMaxHueco(a);
+    const lleno = cajasHueco >= maxH, noCaben = !lleno && nuevas>0 && cajasHueco + nuevas > maxH;
     const mismo = kProy && hay.includes(kProy);
     const txt = hay.map(k=> escapeHtml(porProy[k].nombre) + ' · ' + porProy[k].n + ' OF').join(' · ');
     const cls = ['alt-fila']; if(mismo) cls.push('proyecto'); if(cfg.actual===c) cls.push('actual'); if(lleno||noCaben) cls.push('justo');
-    const cuenta = cfg.item==='Cajas' ? `<span class="alt-cajas${lleno?' lleno':(noCaben?' justo':'')}">${cajasHueco}/${HUECO_CAJAS_MAX}${lleno?' · lleno':(noCaben?' · no caben '+nuevas:'')}</span>` : '';
+    const cuenta = cfg.item==='Cajas' ? `<span class="alt-cajas${lleno?' lleno':(noCaben?' justo':'')}">${cajasHueco}/${maxH}${lleno?' · lleno':(noCaben?' · no caben '+nuevas:'')}</span>` : '';
     return `<button type="button" class="${cls.join(' ')}" onclick="elegirUbicacionSelector('${c}')"><span class="alt-letra">${a}</span><span class="alt-txt"><b>${c}</b>${txt ? '<small>'+txt+'</small>' : ''}</span>${cuenta}</button>`;
   }).join('');
   cont.innerHTML = `<div class="hint" style="margin:10px 0 4px; text-align:left;"><b>2 · Altura</b> en la estantería ${e} · ${HUECO_PREFIJO}-0${e}-? (A = arriba, F = abajo)</div>${filas}`;
