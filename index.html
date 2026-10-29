@@ -501,7 +501,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v28oct-2015</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v29oct-0120</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13832,6 +13832,7 @@ function calcularDuplicadas(){
   const lista = [];
   grupos.forEach(regs=>{
     if(regs.length < 2) return;
+    if(regs.every(r=>r.entregado)) return;   // todas ya entregadas: no hace falta revisarlas
     regs.sort((a,b)=> msFechaDup(a.fecha) - msFechaDup(b.fecha));
     let rojo = 0;
     regs.forEach((r,i)=>{
