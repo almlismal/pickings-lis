@@ -501,7 +501,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v29oct-0120</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v29oct-1130</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -16102,7 +16102,7 @@ async function abrirEscanerHoja(id, volverAEntrega){
   let p = DB.find(x=>x.id===id);
   if(!p) p = await asegurarPickingEnDB(id);
   if(!p){ toast('No se pudo cargar esa OF. Comprueba la conexión e inténtalo de nuevo.'); return; }
-  if(!esAdminSheet(usuarioActual)){ toast('Solo para administradores'); return; }
+  if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
   // Se guardan los datos de la OF dentro del propio escáner, para no depender de que siga en DB.
   hojaEsc = { id, of: p.of, proyecto: p.proyecto, paginas: [], pdf: null, subiendo: false, opId: '', volverA: volverAEntrega || '' };
   pintarEscanerHoja();
@@ -16262,7 +16262,6 @@ async function verHojasFirmadas(id){
   const hojas = p && p.hojasEscaneadas ? p.hojasEscaneadas : [];
   if(!p || !hojas.length){ toast('Esta OF no tiene hoja escaneada'); return; }
   const admin = esAdminSheet(usuarioActual);
-  if(hojas.length === 1 && !admin){ window.open(hojas[0].url, '_blank'); return; }
   const filas = hojas.map((a,i)=>`<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
       <a class="btn btn-primary" href="${escapeAtributo(a.url)}" target="_blank" style="flex:1; margin:0; text-align:center; text-decoration:none;" onclick="setTimeout(cerrarSheet,200)">Abrir #${i+1} (${a.paginas ? a.paginas+' pág., ' : ''}${fechaCorta(a.fecha)}${a.subidoPor ? ', '+escapeHtml(a.subidoPor) : ''})</a>
       ${admin ? `<button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:10px 12px; color:#B33A3A; border-color:#B33A3A;" onclick="borrarHojaEscaneada('${p.id}', ${i})">Eliminar</button>` : ''}
@@ -16270,7 +16269,7 @@ async function verHojasFirmadas(id){
   mostrarSheet(`
     <h3>Hoja de picking firmada — OF ${escapeHtml(p.of)}</h3>
     ${filas}
-    ${admin ? `<button type="button" class="btn btn-outline" onclick="cerrarSheet(); abrirEscanerHoja('${p.id}')">Escanear otra hoja</button>` : ''}
+    ${usuarioActual ? `<button type="button" class="btn btn-outline" onclick="cerrarSheet(); abrirEscanerHoja('${p.id}')">Escanear otra hoja</button>` : ''}
     <button type="button" class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>
   `);
 }
@@ -16810,7 +16809,7 @@ function entregarLote(manteniendoEstado){
     entregaDraft = { a:'', nota:'' };
   }
   const quienEntrega = entregaPorActivo || usuarioActual;
-  const adminHojas = esAdminSheet(usuarioActual);
+  const adminHojas = !!usuarioActual;   // el escáner de hojas firmadas es para todos
   const todasConHoja = adminHojas && ids.every(id=>{ const q = DB.find(x=>x.id===id); return q && q.hojasEscaneadas && q.hojasEscaneadas.length; });
   const filas = ids.map(id=>{
     const p = DB.find(x=>x.id===id);
@@ -16965,7 +16964,7 @@ function entregar(tipo, manteniendoEstado){
     <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar">${escapeHtml(entregaDraft.nota)}</textarea>` : `<label>Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional — si queda algo sin entregar, anótalo aquí)</span></label>
     <textarea id="entregaNota" placeholder="Ej. Lo firma Pedro pero lo retira Luis · Falta por entregar el perfil X">${escapeHtml(entregaDraft.nota)}</textarea>`}
 
-    ${(tipo==='completa' && p && esAdminSheet(usuarioActual) && String(p.id).indexOf('tmp_')!==0) ? `<div class="obs-box" style="margin:12px 0;">
+    ${(tipo==='completa' && p && usuarioActual && String(p.id).indexOf('tmp_')!==0) ? `<div class="obs-box" style="margin:12px 0;">
       <b>Hoja firmada</b>
       ${entregaFirmadaSubida ? `<div style="margin:6px 0; color:#1B7F3B;"><b>Hoja firmada adjuntada ✓</b></div>` : `<div class="hint" style="margin:4px 0 8px;">Opcional: haz foto de la hoja con la firma de DHV y queda guardada con la OF.</div>`}
       <button type="button" class="btn btn-outline" style="margin:0;" onclick="escanearHojaFirmadaDesdeEntrega('${tipo}')">${entregaFirmadaSubida ? 'Escanear otra hoja' : 'Escanear hoja firmada'}</button>
