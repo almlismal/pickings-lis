@@ -501,7 +501,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v30oct-1700</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v30oct-1745</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -14152,9 +14152,16 @@ function renderResumen(){
   // "1 a 7", uno de 15 cae en "11 a 15", no se cuenta dos veces en ningún
   // lado. Se guarda todo (no solo el seleccionado) para que "Descargar PDF"
   // pueda sacar las 4 franjas juntas.
+  const antiguasRes = pendientesAntiguas();                       // mismos criterios que la pantalla "OF antiguas"
+  const idsDosMeses = new Set(antiguasRes.dosMeses.map(p=>p.id)), idsMas45 = new Set(antiguasRes.dias45.map(p=>p.id));
   const franjasAntiguedad = BUCKETS_ANTIGUEDAD.map(b=>({
     ...b,
-    pickings: pendientes.filter(p=>{ const d = diasPendiente(p); return d>=b.min && d<=b.max; }).sort((a,b2)=> diasPendiente(b2)-diasPendiente(a))
+    pickings: pendientes.filter(p=>{
+      if(b.id==='b2m') return idsDosMeses.has(p.id);
+      if(b.id==='b45_2m') return idsMas45.has(p.id);
+      if(idsDosMeses.has(p.id) || idsMas45.has(p.id)) return false;   // ya cuentan en las franjas de más de 45 días
+      const d = diasPendiente(p); return d>=b.min && d<=b.max;
+    }).sort((a,b2)=> diasPendiente(b2)-diasPendiente(a))
   })).filter(f=>f.pickings.length>0); // las franjas sin ninguna OF no se muestran (ni en pantalla ni en los PDF)
   if(bucketAntiguedadSeleccionado && !franjasAntiguedad.some(f=>f.id===bucketAntiguedadSeleccionado && f.pickings.length)){
     // si la franja que tenía abierta se quedó sin pickings, se cierra sola
@@ -14225,7 +14232,9 @@ const BUCKETS_ANTIGUEDAD = [
   { id: 'b6_10', label: 'De 6 a 10 días',  min: 6,  max: 10 },
   { id: 'b11_15',label: 'De 11 a 15 días', min: 11, max: 15 },
   { id: 'b16_30',label: 'De 16 a 30 días', min: 16, max: 30 },
-  { id: 'b30',   label: 'Más de 1 mes',    min: 31, max: Infinity }
+  { id: 'b31_45',label: 'De 31 a 45 días', min: 31, max: DIAS_OF_ANTIGUA },
+  { id: 'b45_2m',label: 'Más de 45 días (menos de 2 meses)', min: DIAS_OF_ANTIGUA + 1, max: Infinity },
+  { id: 'b2m',   label: 'Más de 2 meses',  min: 0, max: Infinity }
 ];
 let bucketAntiguedadSeleccionado = null;
 function seleccionarFranjaAntiguedad(id){
