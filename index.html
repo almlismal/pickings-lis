@@ -501,7 +501,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v29oct-1130</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v30oct-1700</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13790,6 +13790,53 @@ const LS_DUP_REVISADOS = 'pickings_lis_dup_revisados_v1';
 const LS_DUP_REV_PEND = 'pickings_lis_dup_revisados_pend_v1';
 function leerListaLS(k){ try{ const a = JSON.parse(localStorage.getItem(k)); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
 function escribirListaLS(k, a){ try{ localStorage.setItem(k, JSON.stringify(a)); }catch(e){} }
+/* ---------- Consultas: quién abre qué OF (para verlo en la pestaña "Consultas" del Excel) ----------
+   Se apunta cada vez que alguien abre una OF desde el escáner o una lista (no al teclear en el buscador).
+   La misma persona abriendo la misma OF otra vez en menos de 10 minutos cuenta como una sola.
+   Se guarda en el móvil y se envía en segundo plano; sin cobertura espera a tenerla. Nunca frena ni
+   estropea lo que se está haciendo. */
+const LS_CONSULTAS = 'pickings_lis_consultas_v1';
+const CONSULTAS_MS_REPETIDA = 10*60*1000;
+const consultasUltimas = {};
+let consultasEnviando = false, consultasTimer = null;
+function nombreOrigenConsulta(o){
+  const m = { escanear:'Escáner de etiqueta', buscar:'Búsqueda', pendientes:'Lista de pendientes', entregados:'Lista de entregados', ubicaciones:'Por ubicación', duplicadas:'Duplicadas', inventario:'Inventario', antiguas:'OF antiguas' };
+  return m[o] || o || '';
+}
+function registrarConsultaOF(p, desde){
+  try{
+    if(!p || !usuarioActual || String(p.id).indexOf('tmp_')===0) return;
+    const k = claveNombre(usuarioActual) + '|' + p.id, t = Date.now();
+    if(consultasUltimas[k] && t - consultasUltimas[k] < CONSULTAS_MS_REPETIDA) return;
+    consultasUltimas[k] = t;
+    const cola = leerListaLS(LS_CONSULTAS);
+    cola.push({ fecha: new Date().toISOString(), quien: usuarioActual, of: p.of, proyecto: p.proyecto || '', desde: desde || '', estado: p.estado==='completado' ? 'Entregada' : 'Pendiente', id: p.id });
+    escribirListaLS(LS_CONSULTAS, cola.slice(-500));
+    programarEnvioConsultas(8000);
+  }catch(e){}
+}
+function programarEnvioConsultas(ms){
+  if(consultasTimer) return;
+  consultasTimer = setTimeout(()=>{ consultasTimer = null; enviarConsultas(); }, ms);
+}
+async function enviarConsultas(){
+  if(consultasEnviando) return;
+  const cola = leerListaLS(LS_CONSULTAS);
+  if(!cola.length || navigator.onLine === false) return;
+  consultasEnviando = true;
+  let reintento = 0;
+  try{
+    const lote = cola.slice(0, 100);
+    const res = await llamarBackend('registrarConsultas', { consultas: lote }, 'cons_' + Date.now() + '_' + Math.random().toString(36).slice(2,8), 20000);
+    if(res && res.ok){
+      const resto = leerListaLS(LS_CONSULTAS).slice(lote.length);
+      escribirListaLS(LS_CONSULTAS, resto);
+      if(resto.length) reintento = 2000;
+    } else reintento = 10*60*1000;   // p. ej. el script aún no está actualizado: no insistir
+  }catch(e){ reintento = 60*1000; }
+  finally{ consultasEnviando = false; }
+  if(reintento) programarEnvioConsultas(reintento);
+}
 let dupRevisados = new Set(leerListaLS(LS_DUP_REVISADOS));
 function msFechaDup(v){ const t = new Date(v).getTime(); return isNaN(t) ? 0 : t; }
 function motivoDeRepetida(obs){
@@ -15148,16 +15195,20 @@ function abrirDetalle(id){
   // de lista que hubiera, en vez de apuntar a una pantalla "rara" a la que
   // no tendría sentido volver con "←".
   const actual = document.querySelector('.screen.active');
+  let desdeConsulta = '';
   if(actual && actual.id==='screen-escanear'){
     pantallaOrigenDetalle = 'escanear'; // "←" vuelve a escanear (cámara encendida) para poder seguir con otra etiqueta
     scrollDetalleOrigen = 0;
+    desdeConsulta = nombreOrigenConsulta('escanear');
   } else if(actual && PANTALLAS_LISTA_ORIGEN.includes(actual.id)){
     pantallaOrigenDetalle = actual.id.replace('screen-','');
     scrollDetalleOrigen = window.scrollY || document.documentElement.scrollTop || 0;
+    desdeConsulta = nombreOrigenConsulta(pantallaOrigenDetalle);
   }
   ofEnDetalle = id;
   const p = DB.find(x=>x.id===id);
   if(!p) return;
+  if(desdeConsulta) registrarConsultaOF(p, desdeConsulta);
   ir('detalle');
   document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
 }
@@ -17347,11 +17398,13 @@ async function iniciar(){
     }
   });
   window.addEventListener('online', ()=>{
+    programarEnvioConsultas(3000);
     if(colaSync.length) procesarColaSync().catch(()=>{});
     programarSincPausados(1500);
   });
 }
 iniciar();
+programarEnvioConsultas(6000);
 </script>
 </body>
 </html>
