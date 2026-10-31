@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1035</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1110</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11280,6 +11280,7 @@ async function cargarEntregadosYActualizar(){
 }
 
 function procesarDatos(datos){
+  if(Array.isArray(datos.ubicacionesLibres)) guardarUbicLibres(datos.ubicacionesLibres);
   usuariosRemotos = limpiarUsuarios(datos.usuarios);
   guardarCacheUsuarios(usuariosRemotos);
   actualizarVisibilidadAdmin();
@@ -11326,7 +11327,9 @@ async function sincronizar(){
 const LS_EXTRAS = 'pickings_lis_extras_fuera';
 const FUERA_BASE = ['Plantillas','Perfiles','Cables'];
 const LS_EXTRAS_UBIC = 'pickings_lis_extras_ubicacion';
-const UBICACION_BASE = ['Carpa','Almacén','Estantería de picking urgentes','Sala limpia'];
+// Antiguos predefinidos genéricos: ya no se ofrecen (solo se usan las ubicaciones X, Y, Z y los huecos Z-00).
+const UBICACION_BASE = [];
+const UBICACIONES_OCULTAS = ['Carpa','Almacén','Pallet en carpa','estantería urgentes'];
 
 // Compara nombres ignorando may\u00fasculas/min\u00fasculas Y tildes, para que d\u00e9
 // igual c\u00f3mo lo escriba cada uno ("Mar\u00eda", "maria", "MARIA" son la misma persona).
@@ -13228,11 +13231,54 @@ const UBICACIONES_PREDEFINIDAS = [
   'Z0503F', 'Z0601A', 'Z0601B', 'Z0601C', 'Z0601D', 'Z0601E', 'Z0601F', 'Z0602A', 'Z0602B', 'Z0602C', 'Z0602D',
   'Z0602E', 'Z0602F', 'Z0603A', 'Z0603B', 'Z0603C', 'Z0603D', 'Z0603E', 'Z0603F',
 ];
+// Sitios nuevos que el equipo ha escrito a mano: se guardan en la hoja y sirven de predefinidos a todos.
+// Se guardan también en el móvil, por si no hay conexión en ese momento.
+const LS_UBIC_LIBRES = 'pickings_lis_ubic_libres';
+function leerUbicLibresLS(){ try{ const a = JSON.parse(localStorage.getItem(LS_UBIC_LIBRES)); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+let ubicLibres = leerUbicLibresLS();
+// Lo que llega del servidor más lo que este móvil haya escrito y aún no esté en la hoja (sin perder nada).
+function guardarUbicLibres(lista){
+  const todas = [];
+  (lista || []).concat(ubicLibres || []).forEach(n=>{ n = String(n||'').trim(); if(n && !todas.some(x=>claveUbic(x)===claveUbic(n))) todas.push(n); });
+  ubicLibres = todas;
+  try{ localStorage.setItem(LS_UBIC_LIBRES, JSON.stringify(todas)); }catch(e){}
+}
+function claveUbic(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toLowerCase(); }
+function ubicSinOcultas(n){ return !UBICACIONES_OCULTAS.some(o=>claveUbic(o)===claveUbic(n)) && !UBICACIONES_FIJAS.includes(n); }
+// Todos los sitios que se pueden ofrecer: predefinidos X/Y/Z, los nuevos guardados y los que ya usa alguna OF pendiente.
+function ubicacionesPool(){
+  const out = [];
+  const add = n => { n = String(n||'').trim(); if(n && ubicSinOcultas(n) && !esHueco(n) && !out.some(x=>claveUbic(x)===claveUbic(n))) out.push(n); };
+  UBICACIONES_PREDEFINIDAS.forEach(add);
+  ubicLibres.forEach(add);
+  (DB||[]).forEach(p=>{ if(p && p.estado!=='completado') Object.values(p.ubicaciones||{}).forEach(add); });
+  return out;
+}
 // Mientras se escribe en "Otra ubicación…" salen las que empiezan igual (sin espacios ni guiones, da igual mayúsculas).
 function sugerenciasPredefinidas(txt){
   const t = String(txt||'').toUpperCase().replace(/[\s-]+/g,'');
   if(!t) return [];
-  return UBICACIONES_PREDEFINIDAS.filter(c=> c.replace(/-/g,'').indexOf(t) === 0).slice(0,12);
+  return ubicacionesPool().filter(c=> c.toUpperCase().replace(/[\s-]+/g,'').indexOf(t) === 0).slice(0,12);
+}
+// Si escribes algo que ya existe con otro nombre (por ejemplo "Sala" y ya hay "Sala limpia"), se usa el existente.
+// Solo se une cuando lo escrito está completo dentro de un sitio que ya existe y es el único que encaja.
+function unificarUbicacion(v){
+  const k = claveUbic(v);
+  const pool = ubicacionesPool();
+  const igual = pool.find(c=> claveUbic(c) === k);
+  if(igual) return { tipo:'igual', valor: igual };
+  if(k.length < 4) return null;
+  const cont = pool.filter(c=>{ const kc = claveUbic(c); return kc.length >= 4 && kc.includes(k); });
+  if(cont.length === 1) return { tipo:'unico', valor: cont[0] };
+  if(cont.length > 1) return { tipo:'varios', lista: cont.slice(0,4) };
+  return null;
+}
+function guardarUbicacionNueva(v){
+  if(!ubicSinOcultas(v) || esHueco(v) || ubicacionesPool().some(c=>claveUbic(c)===claveUbic(v))) return;
+  guardarUbicLibres([v]);
+  llamarBackend('guardarUbicacionLibre', { nombre: v, por: usuarioActual || '' }, '', 20000)
+    .then(r=>{ if(r && r.ok !== false && Array.isArray(r.ubicacionesLibres)) guardarUbicLibres(r.ubicacionesLibres); })
+    .catch(()=>{});
 }
 function pintarSugerenciasOtra(){
   const cont = document.getElementById('sugOtraUbic');
@@ -13367,7 +13413,7 @@ function abrirSelectorUbicacion(cfg){
   const ocup = ocupacionUbicaciones(cfg.excluirId);
   // Otros sitios que ya se están usando en OF pendientes (se ofrecen a todos; se van solos al dejar de usarse)
   const libre = ubicacionLibreDisponible();
-  const otras = libre ? Object.keys(ocup).filter(k=> !esHueco(k) && !UBICACIONES_FIJAS.includes(k)).sort((a,b)=>ocup[b].n-ocup[a].n).slice(0,8) : [];
+  const otras = libre ? Object.keys(ocup).filter(k=> !esHueco(k) && !UBICACIONES_FIJAS.includes(k) && !UBICACIONES_OCULTAS.some(o=>claveNombre(o)===claveNombre(k))).sort((a,b)=>ocup[b].n-ocup[a].n).slice(0,8) : [];
   cfg.candidatas = UBICACIONES_FIJAS.concat(otras);
   const kProy = claveProyecto(cfg.proyecto);
   const est = estadoHuecos(cfg.excluirId);
@@ -13397,7 +13443,6 @@ function abrirSelectorUbicacion(cfg){
     <div class="pl-est">${letras}${racks}</div>
     <div class="pl-leg"><span><s class="v0"></s>vacío</span><span><s class="v1"></s>con sitio</span><span><s class="v2"></s>casi lleno</span><span><s class="v3"></s>lleno</span><span><s class="pl-verde"></s>hay ${cfg.proyecto ? escapeHtml(cfg.proyecto) : 'el proyecto'}</span></div>
     ${UBICACIONES_FIJAS.map(u=>`<button type="button" class="btn btn-outline" style="margin-top:6px;${cfg.actual===u ? ' border-color:var(--ink); border-width:2px;' : ''}" onclick="elegirUbicacionSelector('${escapeAtributo(u)}')">${escapeHtml(u)}</button>`).join('')}
-    ${otras.length ? `<div class="hint" style="margin:12px 0 4px;"><b>Otros sitios ya usados:</b></div><div>${otras.map(u=>`<button type="button" class="btn btn-outline" style="margin:0 6px 6px 0; width:auto; padding:9px 14px;${cfg.actual===u ? ' border-color:var(--ink); border-width:2px;' : ''}" onclick="elegirUbicacionSelector('${escapeAtributo(u)}')">${escapeHtml(u)} · ${ocup[u].n}</button>`).join('')}</div>` : ''}
     ${libre ? `<button type="button" class="btn btn-outline" style="margin-top:10px;" onclick="mostrarOtraUbicacion()">Otra ubicación…</button>` : ''}
     ${libre ? `<div id="bloqueOtraUbic" style="display:none; margin-top:8px;">
       <div style="display:flex; gap:8px; align-items:stretch;">
@@ -13453,12 +13498,20 @@ function aplicarOtraUbicacion(){
   if(igual){ elegirUbicacionSelector(igual); return; }
   const predef = UBICACIONES_PREDEFINIDAS.find(c=>claveNombre(c)===k);
   if(predef){ elegirUbicacionSelector(predef); return; }
+  const un = unificarUbicacion(v);
+  if(un && (un.tipo==='igual' || un.tipo==='unico')){ elegirUbicacionSelector(un.valor); return; }
+  if(un && un.tipo==='varios' && !cfg.confirmadaOtra){
+    cfg.confirmadaOtra = v;
+    avisoOtraUbicacion('<b>¿Cuál es?</b><div style="margin-top:6px;">' + un.lista.map(c=>`<button type="button" class="btn btn-outline" style="margin:0 6px 6px 0; width:auto; padding:8px 12px;" onclick="elegirUbicacionSelector('${escapeAtributo(c)}')">${escapeHtml(c)}</button>`).join('') + '</div>');
+    return;
+  }
   const parecidas = (cfg.candidatas || []).filter(c=>{ const kc = claveNombre(c); return distanciaNombres(kc, k) <= 2 || (k.length>=4 && (kc.includes(k) || k.includes(kc))); }).slice(0,3);
   if(parecidas.length && !cfg.confirmadaOtra){
     cfg.confirmadaOtra = v;
     avisoOtraUbicacion('<b>¿Quisiste decir…?</b><div style="margin-top:6px;">' + parecidas.map(c=>`<button type="button" class="btn btn-outline" style="margin:0 6px 6px 0; width:auto; padding:8px 12px;" onclick="elegirUbicacionSelector('${escapeAtributo(c)}')">${escapeHtml(c)}</button>`).join('') + `<button type="button" class="btn btn-primary" style="margin:0 0 6px 0; width:auto; padding:8px 12px;" onclick="elegirUbicacionSelector('${escapeAtributo(v)}')">No, usar «${escapeHtml(v)}»</button></div>`);
     return;
   }
+  guardarUbicacionNueva(v);
   elegirUbicacionSelector(v);
 }
 function aplicarAtajoHueco(){
