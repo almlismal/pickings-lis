@@ -45,6 +45,22 @@
   .okmark{ width:46px; height:46px; line-height:46px; margin:0 auto; border-radius:50%; background:var(--ok); color:#fff; font-size:24px; font-weight:700; text-align:center; }
 
   /* ---- OF duplicadas ---- */
+  .adm-sec{ font-size:12px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); margin:22px 0 2px; }
+  .adm-sec:first-child{ margin-top:4px; }
+  .reg-fila{ background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:10px 12px; margin-bottom:8px; font-size:14px; }
+  .reg-fila.clic{ cursor:pointer; }
+  .mapa{ display:flex; gap:8px; }
+  .mapa-col{ flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .mapa-cab{ text-align:center; font-size:12px; font-weight:800; color:var(--ink-soft); }
+  .mapa-hueco{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px 2px; border-radius:6px; border:1.5px solid transparent; font:inherit; cursor:pointer; }
+  .mapa-hueco .l{ font-size:11px; font-weight:800; opacity:.7; }
+  .mapa-hueco .n{ font-size:15px; font-weight:800; }
+  .mapa-hueco.libre, .mapa-leyenda .libre{ background:#E8F5E9; border-color:#A5D6A7; color:#1B5E20; }
+  .mapa-hueco.parcial, .mapa-leyenda .parcial{ background:#FFF3E0; border-color:#FFCC80; color:#8A4B00; }
+  .mapa-hueco.lleno, .mapa-leyenda .lleno{ background:#FFEBEE; border-color:#EF9A9A; color:#B71C1C; }
+  .mapa-hueco.sobre, .mapa-leyenda .sobre{ background:#C62828; border-color:#C62828; color:#fff; }
+  .mapa-leyenda{ display:flex; gap:6px; margin-top:12px; font-size:12px; font-weight:700; }
+  .mapa-leyenda span{ flex:1; text-align:center; padding:5px 2px; border-radius:6px; border:1.5px solid transparent; }
   .badge-ambar{ display:inline-block; min-width:20px; height:20px; line-height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#E08A00; color:#fff; font-size:12px; font-weight:800; text-align:center; vertical-align:middle; }
   .badge-rojo{ display:inline-block; min-width:20px; height:20px; line-height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#C62828; color:#fff; font-size:12px; font-weight:800; text-align:center; vertical-align:middle; }
   .dup-grupo{ background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:12px 14px; margin-bottom:12px; }
@@ -501,7 +517,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v30oct-1745</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-0900</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -588,10 +604,6 @@
     <button class="btn btn-outline" onclick="ir('pendientes')" style="margin-top:28px;">Ver pendientes de entrega</button>
     <button class="btn btn-outline" onclick="ir('ubicaciones')" style="margin-top:10px;">Ver por ubicación</button>
     <button class="btn btn-outline" onclick="ir('entregados')" style="margin-top:10px;">Ver entregados</button>
-    <button class="btn btn-outline" id="btnVerResumen" onclick="ir('resumen')" style="margin-top:10px; display:none;">Ver resumen</button>
-    <button class="btn btn-outline" id="btnVerDuplicadas" onclick="ir('duplicadas')" style="margin-top:10px; display:none;">OF duplicadas<span id="badgeDuplicadas" class="badge-rojo" style="display:none;"></span></button>
-    <button class="btn btn-outline" id="btnVerAntiguas" onclick="ir('antiguas')" style="margin-top:10px; display:none;">OF antiguas<span id="badgeAntiguas2m" class="badge-rojo" style="display:none;"></span><span id="badgeAntiguas45" class="badge-ambar" style="display:none;"></span></button>
-    <button class="btn btn-outline" id="btnVerInventario" onclick="ir('inventario')" style="margin-top:10px; display:none;">Inventario de cajas</button>
   </section>
 
   <!-- ============ PENDIENTES ============ -->
@@ -639,7 +651,7 @@
   <!-- ============ RESUMEN (solo administradores) ============ -->
   <section class="screen" id="screen-resumen">
     <div class="screen-title">
-      <button class="back" onclick="ir('buscar')">←</button>
+      <button class="back" onclick="ir('admin')">←</button>
       <h2>Resumen</h2>
     </div>
     <button class="btn btn-outline" onclick="actualizarResumen()" id="btnActualizarResumen">Actualizar</button>
@@ -649,7 +661,7 @@
   <!-- ============ INVENTARIO DE CAJAS (solo administradores) ============ -->
   <section class="screen" id="screen-inventario">
     <div class="screen-title">
-      <button class="back" onclick="ir('buscar')">←</button>
+      <button class="back" onclick="ir('admin')">←</button>
       <h2>Inventario de cajas</h2>
       <button type="button" class="btn btn-outline" style="margin:0 0 0 auto; width:auto; padding:6px 12px; font-size:14px;" onclick="abrirHistorialInventarios()">Historial</button>
     </div>
@@ -672,7 +684,7 @@
   <!-- ============ OF ANTIGUAS (solo administradores) ============ -->
   <section class="screen" id="screen-antiguas">
     <div class="screen-title">
-      <button class="back" onclick="ir('buscar')">←</button>
+      <button class="back" onclick="ir('admin')">←</button>
       <h2>OF antiguas pendientes</h2>
     </div>
     <div id="antiguasContenido"></div>
@@ -680,11 +692,33 @@
 
   <section class="screen" id="screen-duplicadas">
     <div class="screen-title">
-      <button class="back" onclick="ir('buscar')">←</button>
+      <button class="back" onclick="ir('admin')">←</button>
       <h2>OF duplicadas</h2>
     </div>
     <button class="btn btn-outline" onclick="actualizarDuplicadas()" id="btnActualizarDuplicadas">Actualizar</button>
     <div id="duplicadasContenido" style="margin-top:16px;"></div>
+  </section>
+
+  <!-- ============ ADMINISTRADOR (solo administradores) ============ -->
+  <section class="screen" id="screen-admin">
+    <div class="screen-title"><button class="back" onclick="ir('buscar')">←</button><h2>Administrador</h2></div>
+    <div id="adminContenido"></div>
+  </section>
+  <section class="screen" id="screen-admin-registro">
+    <div class="screen-title"><button class="back" onclick="ir('admin')">←</button><h2 id="adminRegistroTitulo">Registro</h2></div>
+    <div id="adminRegistroContenido"></div>
+  </section>
+  <section class="screen" id="screen-admin-usuarios">
+    <div class="screen-title"><button class="back" onclick="ir('admin')">←</button><h2>Usuarios</h2></div>
+    <div id="adminUsuariosContenido"></div>
+  </section>
+  <section class="screen" id="screen-admin-mapa">
+    <div class="screen-title"><button class="back" onclick="ir('admin')">←</button><h2>Mapa Z-00</h2></div>
+    <div id="adminMapaContenido"></div>
+  </section>
+  <section class="screen" id="screen-admin-sinubicar">
+    <div class="screen-title"><button class="back" onclick="ir('admin')">←</button><h2>OF sin ubicar</h2></div>
+    <div id="adminSinUbicarContenido"></div>
   </section>
 
   <!-- ============ COMPROBAR OF (QR) ============ -->
@@ -11245,8 +11279,9 @@ function procesarDatos(datos){
   actualizarVisibilidadAdmin();
   DB = construirDB(datos);
   guardarDBLocal();
+  try{ actualizarBadgesAdministrador(); }catch(e){}
 
-  if(usuarioActual && !usuariosRemotos.some(u=>normalizarNombre(u['Nombre'])===normalizarNombre(usuarioActual))){
+  if(usuarioActual && !usuariosRemotos.some(u=>normalizarNombre(u['Nombre'])===normalizarNombre(usuarioActual) && !String(u['Baja']||'').trim())){
     usuarioActual = '';
     localStorage.removeItem(LS_USER);
     adminUnlocked = false;
@@ -12391,7 +12426,7 @@ function guardarExtrasUbicacion(lista){
 }
 
 function cargarNombres(){
-  return usuariosRemotos.map(u=>String(u['Nombre']===undefined||u['Nombre']===null?'':u['Nombre'])).filter(Boolean);
+  return usuariosRemotos.filter(u=>!String(u['Baja']||'').trim()).map(u=>String(u['Nombre']===undefined||u['Nombre']===null?'':u['Nombre'])).filter(Boolean);
 }
 
 /* ---------- navegación ---------- */
@@ -12405,6 +12440,7 @@ function ir(pantalla, esVolver){
   // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
   // mismos resultados de búsqueda) y solo se restaura el scroll.
   if(pantalla==='pendientes' || pantalla==='buscar' || pantalla==='ubicaciones') actualizarBarraLote(); else ocultarBarraLote();
+  if(pantalla.indexOf('admin')===0 && !esAdminSheet(usuarioActual)){ ir('buscar'); return; }
   if(esVolver){ if(pantalla==='inventario') renderInventario(); if(pantalla==='antiguas') renderAntiguas(); return; }
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
@@ -12414,6 +12450,11 @@ function ir(pantalla, esVolver){
   if(pantalla==='duplicadas') entrarADuplicadas();
   if(pantalla==='inventario') entrarAInventario();
   if(pantalla==='antiguas') entrarAAntiguas();
+  if(pantalla==='admin') entrarAAdmin();
+  if(pantalla==='admin-registro') entrarAAdminRegistro();
+  if(pantalla==='admin-usuarios') entrarAAdminUsuarios();
+  if(pantalla==='admin-mapa') entrarAAdminMapa();
+  if(pantalla==='admin-sinubicar') entrarAAdminSinUbicar();
   if(pantalla==='escanear') iniciarEscaner();
   if(pantalla==='realizar-bip') iniciarBipCamara();
 }
@@ -12432,6 +12473,379 @@ function actualizarVisibilidadAdmin(){
   if(btnAnt) btnAnt.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
   try{ actualizarBadgeAntiguas(); }catch(e){}
   try{ actualizarBadgeDuplicadas(); }catch(e){}
+  try{ actualizarBotonAdministrador(); }catch(e){}
+}
+
+
+/* =====================================================================
+   ADMINISTRADOR
+   Pantalla solo para administradores (columna "Admin" de la hoja Usuarios). El botón ni siquiera se crea
+   para los demás, y el script comprueba nombre + PIN en cada acción delicada. El PIN ya se pidió al entrar
+   en la app, así que aquí no se vuelve a pedir (solo se confirma lo delicado).
+   ===================================================================== */
+function adminLlamar(accion, extra, ms){
+  if(!esAdminSheet(usuarioActual)) return Promise.reject(new Error('Solo para administradores'));
+  const datos = Object.assign({ nombre: usuarioActual, pin: pinDeUsuario(usuarioActual) }, extra || {});
+  return llamarBackend(accion, datos, '', ms || 30000).then(r=>{
+    if(!r || r.ok === false) throw new Error(String((r && r.error) || 'No se pudo').replace(/^Error:\s*/,''));
+    return r;
+  }).catch(err=>{
+    if(err && /Failed to fetch|NetworkError|Load failed|abort|timeout|tiempo/i.test(String(err.message||err))) throw new Error('Sin conexión ahora mismo. Inténtalo de nuevo.');
+    throw err;
+  });
+}
+function descargarCSVGenerico(cabeceras, filas, nombreArchivo){
+  const csv = '﻿' + [cabeceras.map(csvEscape).join(';')].concat(filas.map(f=> f.map(csvEscape).join(';'))).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nombreArchivo;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  toast('Lista descargada');
+}
+function fechaTxtES(s){
+  const m = String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if(!m) return String(s||'');
+  return m[3] + '/' + m[2] + '/' + m[1] + (m[4] ? ' ' + m[4] + ':' + m[5] : '');
+}
+
+/* ---------- botón (solo si es admin) y pantalla principal ---------- */
+function actualizarBotonAdministrador(){
+  const esAdm = esAdminSheet(usuarioActual);
+  let b = document.getElementById('btnAdministrador');
+  if(!esAdm){ if(b) b.remove(); return; }
+  if(!b){
+    const sec = document.getElementById('screen-buscar');
+    if(!sec) return;
+    b = document.createElement('button');
+    b.className = 'btn btn-outline'; b.id = 'btnAdministrador'; b.style.marginTop = '10px';
+    b.setAttribute('onclick', "ir('admin')");
+    b.innerHTML = 'Administrador<span id="badgeAdminRojo" class="badge-rojo" style="display:none;"></span><span id="badgeAdminAmbar" class="badge-ambar" style="display:none;"></span>';
+    sec.appendChild(b);
+  }
+  actualizarBadgesAdministrador();
+}
+function actualizarBadgesAdministrador(){
+  const r = document.getElementById('badgeAdminRojo'), a = document.getElementById('badgeAdminAmbar');
+  if(!r || !a) return;
+  let rojo = 0, ambar = 0;
+  if(esAdminSheet(usuarioActual)){
+    try{ rojo += calcularDuplicadas().reduce((t,g)=>t+g.rojo,0); }catch(e){}
+    try{ const x = pendientesAntiguas(); rojo += x.dosMeses.length; ambar += x.dias45.length; }catch(e){}
+  }
+  r.textContent = rojo; r.style.display = rojo ? '' : 'none';
+  a.textContent = ambar; a.style.display = ambar ? '' : 'none';
+}
+function adminBoton(id, texto, destino, extraHtml){
+  return `<button class="btn btn-outline" ${id ? 'id="'+id+'" ' : ''}onclick="${destino}" style="margin-top:8px;">${texto}${extraHtml||''}</button>`;
+}
+function entrarAAdmin(){
+  const c = document.getElementById('adminContenido');
+  if(!c) return;
+  if(!esAdminSheet(usuarioActual)){ c.innerHTML = ''; return; }
+  const sec = t => `<div class="adm-sec">${t}</div>`;
+  c.innerHTML =
+    sec('Avisos') +
+    adminBoton('btnVerAntiguas', 'OF antiguas', "ir('antiguas')", '<span id="badgeAntiguas2m" class="badge-rojo" style="display:none;"></span><span id="badgeAntiguas45" class="badge-ambar" style="display:none;"></span>') +
+    adminBoton('btnVerDuplicadas', 'OF duplicadas', "ir('duplicadas')", '<span id="badgeDuplicadas" class="badge-rojo" style="display:none;"></span>') +
+    sec('Informes') +
+    adminBoton('btnVerResumen', 'Ver resumen', "ir('resumen')") +
+    adminBoton('btnVerInventario', 'Inventario de cajas', "ir('inventario')") +
+    sec('Almacén') +
+    adminBoton('', 'Mapa de ocupación Z-00', "ir('admin-mapa')") +
+    adminBoton('', 'OF sin ubicar', "ir('admin-sinubicar')") +
+    sec('Registros') +
+    adminBoton('', 'Consultas (quién mira qué)', "abrirRegistroAdmin('Consultas')") +
+    adminBoton('', 'Historial de cambios', "abrirRegistroAdmin('Historial')") +
+    adminBoton('', 'Eliminados', "abrirRegistroAdmin('Eliminados')") +
+    adminBoton('', 'Acciones de administradores', "abrirRegistroAdmin('Registro admin')") +
+    sec('Personas y seguridad') +
+    adminBoton('', 'Usuarios', "ir('admin-usuarios')") +
+    adminBoton('', 'Copia de seguridad', "confirmarCopiaSeguridad()");
+  try{ actualizarBadgeAntiguas(); }catch(e){}
+  try{ actualizarBadgeDuplicadas(); }catch(e){}
+}
+
+/* ---------- registros (hojas del Excel en formato app) ---------- */
+const REG_INFO = {
+  'Consultas':      { titulo:'Consultas', ayuda:'Quién ha abierto qué OF (se guardan 6 meses).', persona:'Usuario' },
+  'Historial':      { titulo:'Historial de cambios', ayuda:'Cambios hechos en los pickings.', persona:'Autor' },
+  'Eliminados':     { titulo:'Eliminados', ayuda:'Pickings borrados y el motivo.', persona:'Eliminado por' },
+  'Registro admin': { titulo:'Acciones de administradores', ayuda:'Cambios hechos desde Administrador.', persona:'Administrador' }
+};
+let reg = { hoja:'Consultas', q:'', persona:'', of:'', dia:'', filas:[], total:0, hayMas:false, cargando:false, personas:[], seq:0, error:'' };
+let regTimer = null;
+function abrirRegistroAdmin(hoja){
+  reg = { hoja, q:'', persona:'', of:'', dia:'', filas:[], total:0, hayMas:false, cargando:false, personas:[], seq:0, error:'' };
+  ir('admin-registro');
+}
+function entrarAAdminRegistro(){
+  const info = REG_INFO[reg.hoja];
+  const c = document.getElementById('adminRegistroContenido');
+  document.getElementById('adminRegistroTitulo').textContent = info.titulo;
+  c.innerHTML = `
+    <div class="hint" style="margin:0 0 8px;">${escapeHtml(info.ayuda)} Lo más reciente arriba.</div>
+    <input type="text" id="regQ" placeholder="Buscar (nombre, OF, proyecto…)" oninput="regCambio()" autocomplete="off" style="margin:0 0 8px;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+      <select id="regPersona" onchange="regCambio(true)" style="flex:1 1 140px; min-width:0;"><option value="">Todas las personas</option></select>
+      <input type="text" id="regOf" class="mono" placeholder="OF" inputmode="numeric" oninput="regCambio()" style="flex:1 1 90px; min-width:0; margin:0;">
+      <input type="date" id="regDia" onchange="regCambio(true)" style="flex:1 1 140px; min-width:0; margin:0;">
+    </div>
+    <div style="display:flex; gap:8px; margin-bottom:6px;">
+      <button class="btn btn-outline" style="margin:0; flex:1;" onclick="regLimpiar()">Quitar filtros</button>
+      <button class="btn btn-outline" style="margin:0; flex:1;" onclick="regExportar()">Exportar lista</button>
+    </div>
+    <div id="regResumen" class="hint" style="margin:8px 0;"></div>
+    <div id="regLista"></div>
+    <button class="btn btn-outline" id="regMas" style="display:none;" onclick="regCargar(true)">Ver más</button>`;
+  regCargar(false);
+}
+function regCambio(inmediato){
+  clearTimeout(regTimer);
+  regTimer = setTimeout(()=>{
+    reg.q = document.getElementById('regQ').value.trim();
+    reg.persona = document.getElementById('regPersona').value;
+    reg.of = document.getElementById('regOf').value.trim();
+    reg.dia = document.getElementById('regDia').value;
+    regCargar(false);
+  }, inmediato ? 0 : 400);
+}
+function regLimpiar(){
+  ['regQ','regOf','regDia'].forEach(i=>{ const e = document.getElementById(i); if(e) e.value = ''; });
+  const p = document.getElementById('regPersona'); if(p) p.value = '';
+  regCambio(true);
+}
+function regFiltros(){ return { hoja: reg.hoja, q: reg.q, persona: reg.persona, of: reg.of, dia: reg.dia }; }
+async function regCargar(mas){
+  const seq = ++reg.seq;
+  reg.cargando = true; reg.error = '';
+  if(!mas){ reg.filas = []; }
+  pintarRegistro();
+  try{
+    const r = await adminLlamar('adminListar', Object.assign(regFiltros(), { desde: mas ? reg.filas.length : 0, limite: 50 }));
+    if(seq !== reg.seq) return;
+    reg.filas = mas ? reg.filas.concat(r.filas || []) : (r.filas || []);
+    reg.total = r.total || 0; reg.hayMas = !!r.hayMas;
+    if(!mas && r.personas && r.personas.length) reg.personas = r.personas;
+  }catch(err){
+    if(seq !== reg.seq) return;
+    reg.error = err.message || 'No se pudo cargar';
+  }
+  reg.cargando = false;
+  pintarRegistro();
+}
+function regFilaHtml(f, i){
+  const t = s => escapeHtml(String(s===undefined||s===null ? '' : s));
+  const fecha = fechaTxtES(f.__fecha);
+  let l1, l2, l3 = '', clic = false;
+  if(reg.hoja === 'Consultas'){
+    l1 = `<b>${t(f['Usuario'])}</b> · ${fecha}`;
+    l2 = `OF <b class="mono">${t(f['OF'])}</b> · ${t(f['Proyecto'])}`;
+    l3 = [f['Desde'], f['Estado de la OF']].filter(Boolean).map(t).join(' · ');
+    clic = true;
+  } else if(reg.hoja === 'Historial'){
+    l1 = `<b>${t(f['Autor'])}</b> · ${fecha}`;
+    l2 = `${t(f['Tipo'])} · OF <b class="mono">${t(f['OF'])}</b>`;
+    l3 = [f['Motivo'], f['Detalle']].filter(Boolean).map(t).join(' — ');
+    clic = true;
+  } else if(reg.hoja === 'Eliminados'){
+    l1 = `<b>${t(f['Eliminado por'])}</b> · ${fecha}`;
+    l2 = `OF <b class="mono">${t(f['OF'])}</b> · ${t(f['Proyecto'])}`;
+    l3 = t(f['Motivo de eliminación']);
+  } else {
+    l1 = `<b>${t(f['Administrador'])}</b> · ${fecha}`;
+    l2 = `${t(f['Acción'])}${f['Usuario afectado'] ? ' · ' + t(f['Usuario afectado']) : ''}`;
+    l3 = t(f['Detalle']);
+  }
+  return `<div class="reg-fila ${clic ? 'clic' : ''}" ${clic ? `onclick="regAbrirFila(${i})"` : ''}>
+    <div>${l1}</div><div>${l2}</div>${l3 ? `<div class="hint" style="margin:2px 0 0;">${l3}</div>` : ''}</div>`;
+}
+function pintarRegistro(){
+  const lista = document.getElementById('regLista');
+  if(!lista) return;
+  const sel = document.getElementById('regPersona');
+  if(sel && sel.options.length <= 1 && reg.personas.length){
+    reg.personas.forEach(p=>{ const o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o); });
+    sel.value = reg.persona;
+  }
+  document.getElementById('regResumen').textContent = reg.cargando && !reg.filas.length ? 'Cargando…' : (reg.error ? '' : `${reg.total} resultado${reg.total===1?'':'s'}`);
+  lista.innerHTML = reg.error ? `<div class="empty">${escapeHtml(reg.error)}</div>`
+    : (!reg.cargando && !reg.filas.length ? '<div class="empty">No hay nada con esos filtros.</div>' : reg.filas.map(regFilaHtml).join(''));
+  const mas = document.getElementById('regMas');
+  mas.style.display = reg.hayMas ? '' : 'none';
+  mas.disabled = reg.cargando; mas.textContent = reg.cargando && reg.filas.length ? 'Cargando…' : 'Ver más';
+}
+function regAbrirFila(i){
+  const f = reg.filas[i]; if(!f) return;
+  const id = String(f['ID del picking'] || f['ID'] || '');
+  if(id && DB.some(p=>p.id===id)){ abrirDetalle(id); return; }
+  if(id){ verPickingEntregado(id); return; }
+  const of = String(f['OF'] || '');
+  const p = DB.find(x=>String(x.of)===of);
+  if(p) abrirDetalle(p.id); else toast('Esa OF ya no está en la lista');
+}
+async function regExportar(){
+  toast('Preparando lista…');
+  try{
+    let todas = [], desde = 0, cab = null;
+    for(let k = 0; k < 40; k++){
+      const r = await adminLlamar('adminListar', Object.assign(regFiltros(), { desde, limite: 200 }), 40000);
+      (r.filas || []).forEach(f=>{ if(!cab) cab = Object.keys(f).filter(x=>x!=='__fecha'); todas.push(f); });
+      if(!r.hayMas) break;
+      desde += 200;
+    }
+    if(!todas.length){ toast('No hay nada que exportar'); return; }
+    descargarCSVGenerico(cab, todas.map(f=> cab.map(c=>f[c])), reg.hoja.replace(/\s+/g,'_').toLowerCase() + '_' + new Date().toISOString().slice(0,10) + '.csv');
+  }catch(err){ toast(err.message || 'No se pudo exportar'); }
+}
+
+/* ---------- usuarios ---------- */
+let admUsuarios = [], admUsuariosError = '', admUsuariosCargando = false;
+async function entrarAAdminUsuarios(){
+  admUsuariosCargando = true; admUsuariosError = ''; pintarAdminUsuarios();
+  try{ const r = await adminLlamar('adminUsuarios'); admUsuarios = r.usuarios || []; }
+  catch(err){ admUsuariosError = err.message || 'No se pudo cargar'; }
+  admUsuariosCargando = false; pintarAdminUsuarios();
+}
+function pintarAdminUsuarios(){
+  const c = document.getElementById('adminUsuariosContenido');
+  if(!c) return;
+  if(admUsuariosError){ c.innerHTML = `<div class="empty">${escapeHtml(admUsuariosError)}</div>`; return; }
+  if(admUsuariosCargando && !admUsuarios.length){ c.innerHTML = '<div class="empty">Cargando…</div>'; return; }
+  const ord = admUsuarios.map((u,i)=>({u,i})).sort((a,b)=> (!!a.u.Baja - !!b.u.Baja) || a.u.Nombre.localeCompare(b.u.Nombre,'es'));
+  c.innerHTML = `<div class="hint" style="margin:0 0 8px;">${admUsuarios.length} usuarios. Los PIN no se muestran nunca. Toca uno para ver las acciones.</div>` +
+    ord.map(({u,i})=>`
+      <div class="reg-fila clic" onclick="adminUsuarioMenu(${i})" style="${u.Baja ? 'opacity:.55;' : ''}">
+        <div><b>${escapeHtml(u.Nombre)}</b>
+          ${u.Admin ? '<span class="chip">Administrador</span>' : ''}
+          ${u.Baja ? '<span class="chip attn">De baja</span>' : ''}
+          ${!u.tienePin && !u.Baja ? '<span class="chip attn">Sin PIN</span>' : ''}</div>
+        <div class="hint" style="margin:2px 0 0;">Alta: ${escapeHtml(fechaTxtES(u['Fecha de alta']) || '—')}${u['Añadido por'] ? ' · por ' + escapeHtml(u['Añadido por']) : ''}</div>
+      </div>`).join('');
+}
+function adminUsuarioMenu(i){
+  const u = admUsuarios[i]; if(!u) return;
+  const yo = claveNombre(u.Nombre) === claveNombre(usuarioActual);
+  const b = (que, txt, off) => `<button class="btn btn-outline" ${off ? 'disabled style="opacity:.45;"' : ''} onclick="adminUsuarioConfirmar(${i},'${que}')">${txt}</button>`;
+  mostrarSheet(`
+    <h3>${escapeHtml(u.Nombre)}</h3>
+    ${u.Baja ? b('alta','Reactivar usuario') :
+      (u.Admin ? b('quitaradmin','Quitar administrador', yo) : b('daradmin','Dar administrador')) +
+      b('resetpin','Reiniciar PIN') + b('renombrar','Corregir nombre') + b('baja','Dar de baja', yo || !!u.Admin)}
+    ${yo ? '<div class="hint">No puedes quitarte el permiso ni darte de baja a ti mismo.</div>' : (u.Admin && !u.Baja ? '<div class="hint">Para dar de baja a un administrador, primero quítale el permiso.</div>' : '')}
+    <button class="btn btn-ghost" onclick="cerrarSheet()">Cerrar</button>`);
+}
+function adminUsuarioConfirmar(i, que){
+  const u = admUsuarios[i]; if(!u) return;
+  const n = escapeHtml(u.Nombre);
+  const t = {
+    daradmin:'<b>' + n + '</b> podrá ver y cambiar todo lo de Administrador.',
+    quitaradmin:'<b>' + n + '</b> dejará de ver Administrador.',
+    resetpin:'Se borra el PIN de <b>' + n + '</b>; tendrá que crear uno nuevo al entrar.',
+    baja:'<b>' + n + '</b> ya no aparecerá al entrar. Su historial se conserva.',
+    alta:'<b>' + n + '</b> volverá a poder entrar.'
+  };
+  if(que === 'renombrar'){
+    mostrarSheet(`<h3>Corregir nombre</h3>
+      <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Solo cambia el nombre en la lista de usuarios. Lo que ya registró conserva el nombre antiguo.</p>
+      <input type="text" id="admNuevoNombre" value="${escapeAtributo(u.Nombre)}" maxlength="40" autocomplete="off">
+      <button class="btn btn-primary" onclick="adminUsuarioEjecutar(${i},'renombrar')">Guardar nombre</button>
+      <button class="btn btn-ghost" onclick="adminUsuarioMenu(${i})">Atrás</button>`);
+    return;
+  }
+  mostrarSheet(`<h3>¿Seguro?</h3>
+    <p style="font-size:14px; margin:0 0 12px;">${t[que] || ''}</p>
+    <button class="btn btn-primary" id="admConfirmar" onclick="adminUsuarioEjecutar(${i},'${que}')">Sí, confirmar</button>
+    <button class="btn btn-ghost" onclick="adminUsuarioMenu(${i})">Atrás</button>`);
+}
+async function adminUsuarioEjecutar(i, que){
+  const u = admUsuarios[i]; if(!u) return;
+  const extra = { que, objetivo: u.Nombre };
+  if(que === 'renombrar'){
+    extra.nuevoNombre = (document.getElementById('admNuevoNombre')||{}).value || '';
+    if(!extra.nuevoNombre.trim()){ toast('Escribe el nombre'); return; }
+  }
+  const btn = document.getElementById('admConfirmar'); if(btn){ btn.disabled = true; btn.textContent = 'Guardando…'; }
+  try{
+    const r = await adminLlamar('adminUsuarioAccion', extra);
+    admUsuarios = r.usuarios || admUsuarios;
+    cerrarSheet(); pintarAdminUsuarios(); toast('Hecho');
+    try{ const d = await cargarDesdeSheet(); if(d && d.ok !== false) procesarDatos(d); }catch(e){}
+  }catch(err){
+    if(btn){ btn.disabled = false; btn.textContent = 'Sí, confirmar'; }
+    toast(err.message || 'No se pudo');
+  }
+}
+
+/* ---------- copia de seguridad ---------- */
+function confirmarCopiaSeguridad(){
+  mostrarSheet(`<h3>Copia de seguridad</h3>
+    <p style="font-size:14px; margin:0 0 12px;">Se guarda una copia completa del Excel en la carpeta “Copias de seguridad” de Drive, con la fecha y hora en el nombre. Solo la ve el propietario del Excel.</p>
+    <button class="btn btn-primary" id="admCopiaBtn" onclick="hacerCopiaSeguridad()">Hacer copia ahora</button>
+    <button class="btn btn-ghost" onclick="cerrarSheet()">Cancelar</button>`);
+}
+async function hacerCopiaSeguridad(){
+  const b = document.getElementById('admCopiaBtn'); if(b){ b.disabled = true; b.textContent = 'Copiando…'; }
+  try{
+    const r = await adminLlamar('adminCopia', {}, 90000);
+    mostrarSheet(`<h3>Copia hecha</h3><p style="font-size:14px; margin:0 0 12px;">${escapeHtml(r.nombre || '')}<br><span class="hint">Carpeta “Copias de seguridad” en Drive.</span></p><button class="btn btn-primary" onclick="cerrarSheet()">Cerrar</button>`);
+  }catch(err){
+    mostrarSheet(`<h3>No se pudo</h3><p style="font-size:14px; margin:0 0 12px;">${escapeHtml(err.message || 'Error')}</p><button class="btn btn-primary" onclick="cerrarSheet()">Cerrar</button>`);
+  }
+}
+
+/* ---------- mapa de ocupación Z-00 ---------- */
+function entrarAAdminMapa(){
+  const c = document.getElementById('adminMapaContenido');
+  if(!c || !esAdminSheet(usuarioActual)) return;
+  const est = estadoHuecos();
+  let libres = 0, cajasTot = 0, llenos = 0;
+  ORDEN_HUECOS.forEach(k=>{ const h = est[k]; cajasTot += h.cajas; if(h.cajas === 0 && !Object.keys(h.porProy).length) libres++; if(h.cajas >= h.max) llenos++; });
+  const col = e => `<div class="mapa-col"><div class="mapa-cab">Est. ${e}</div>` +
+    HUECO_ALTURAS.map(a=>{
+      const k = codigoHueco(e, a), h = est[k];
+      const nProy = Object.keys(h.porProy).length;
+      const cls = h.cajas > h.max ? 'sobre' : (h.cajas >= h.max ? 'lleno' : (h.cajas > 0 ? 'parcial' : (nProy ? 'parcial' : 'libre')));
+      return `<button type="button" class="mapa-hueco ${cls}" onclick="adminMapaHueco('${k}')"><span class="l">${a}</span><span class="n">${h.cajas}/${h.max}</span></button>`;
+    }).join('') + '</div>';
+  c.innerHTML = `
+    <div class="hint" style="margin:0 0 8px;">${libres} huecos vacíos de ${ORDEN_HUECOS.length} · ${llenos} llenos · ${cajasTot} cajas guardadas. Toca un hueco para ver qué hay.</div>
+    <div class="mapa">${HUECO_ESTANTERIAS.map(col).join('')}</div>
+    <div class="mapa-leyenda"><span class="libre">Vacío</span><span class="parcial">Con sitio</span><span class="lleno">Lleno</span><span class="sobre">Pasado</span></div>`;
+}
+function adminMapaHueco(codigo){
+  const h = estadoHuecos()[codigo];
+  const ofs = (DB||[]).filter(p=> p && p.estado!=='completado' && Object.values(p.ubicaciones||{}).some(v=> String(v||'').trim()===codigo))
+    .sort((a,b)=> cmpProyectos(a.proyecto, b.proyecto) || String(a.of).localeCompare(String(b.of)));
+  mostrarSheet(`<h3>${codigo}</h3>
+    <div class="hint" style="margin:0 0 8px;">${h.cajas} de ${h.max} cajas</div>
+    ${ofs.length ? ofs.map(p=>{
+      const its = Object.entries(p.ubicaciones||{}).filter(([k,v])=>String(v||'').trim()===codigo).map(([k])=>k).join(', ');
+      return `<div class="reg-fila clic" onclick="cerrarSheet(); abrirDetalle('${escapeAtributo(p.id)}')"><div>OF <b class="mono">${escapeHtml(String(p.of))}</b> · ${escapeHtml(p.proyecto||'')}</div><div class="hint" style="margin:2px 0 0;">${escapeHtml(its)}${Number(p.cajas) ? ' · ' + Number(p.cajas) + ' cajas' : ''}</div></div>`;
+    }).join('') : '<div class="empty">Vacío</div>'}
+    <button class="btn btn-ghost" onclick="cerrarSheet()">Cerrar</button>`);
+}
+
+/* ---------- OF sin ubicar ---------- */
+function listaSinUbicar(){
+  return (DB||[]).filter(p=> p && p.estado!=='completado' && String(p.id).indexOf('tmp_')!==0 && !Object.values(p.ubicaciones||{}).some(v=> String(v||'').trim()))
+    .sort((a,b)=> (new Date(a.fecha||0)) - (new Date(b.fecha||0)));
+}
+function entrarAAdminSinUbicar(){
+  const c = document.getElementById('adminSinUbicarContenido');
+  if(!c || !esAdminSheet(usuarioActual)) return;
+  const l = listaSinUbicar();
+  if(!l.length){ c.innerHTML = '<div class="empty">Todas las OF pendientes tienen ubicación.</div>'; return; }
+  c.innerHTML = `<div class="hint" style="margin:0 0 8px;">${l.length} pendiente${l.length===1?'':'s'} sin ubicación (la más antigua primero).</div>
+    <button class="btn btn-outline" style="margin:0 0 10px;" onclick="exportarSinUbicar()">Exportar lista</button>` +
+    l.map(p=>{
+      const d = p.fecha && !isNaN(new Date(p.fecha).getTime()) ? Math.floor((Date.now() - new Date(p.fecha).getTime())/86400000) : null;
+      return `<div class="reg-fila clic" onclick="abrirDetalle('${escapeAtributo(p.id)}')"><div>OF <b class="mono">${escapeHtml(String(p.of))}</b> · ${escapeHtml(p.proyecto||'')}</div><div class="hint" style="margin:2px 0 0;">${d===null ? '' : d + ' días'}${Number(p.cajas) ? ' · ' + Number(p.cajas) + ' cajas' : ''}${p.registradoPor ? ' · ' + escapeHtml(p.registradoPor) : ''}</div></div>`;
+    }).join('');
+}
+function exportarSinUbicar(){
+  descargarCSVGenerico(['OF','Proyecto','Fecha','Cajas','Registrado por'], listaSinUbicar().map(p=>[p.of, p.proyecto||'', p.fecha ? String(p.fecha).slice(0,10) : '', p.cajas||'', p.registradoPor||'']), 'of_sin_ubicar_' + new Date().toISOString().slice(0,10) + '.csv');
 }
 
 function toast(msg){
@@ -12518,6 +12932,7 @@ function validarPinLogin(n){
   }
 }
 async function entrarComoUsuario(n){
+  { const ub = usuariosRemotos.find(x=>claveNombre(x['Nombre'])===claveNombre(n)); if(ub && String(ub['Baja']||'').trim()){ toast('Ese usuario está de baja'); return; } }
   usuarioActual = n;
   localStorage.setItem(LS_USER, n);
   if(tieneSesionPorTurno(n)) localStorage.setItem(LS_PERIODO_SESION, periodoSesionActual());
@@ -13800,7 +14215,7 @@ const CONSULTAS_MS_REPETIDA = 10*60*1000;
 const consultasUltimas = {};
 let consultasEnviando = false, consultasTimer = null;
 function nombreOrigenConsulta(o){
-  const m = { escanear:'Escáner de etiqueta', buscar:'Búsqueda', pendientes:'Lista de pendientes', entregados:'Lista de entregados', ubicaciones:'Por ubicación', duplicadas:'Duplicadas', inventario:'Inventario', antiguas:'OF antiguas' };
+  const m = { escanear:'Escáner de etiqueta', buscar:'Búsqueda', pendientes:'Lista de pendientes', entregados:'Lista de entregados', ubicaciones:'Por ubicación', duplicadas:'Duplicadas', inventario:'Inventario', antiguas:'OF antiguas', 'admin-registro':'Administrador', 'admin-mapa':'Administrador', 'admin-sinubicar':'Administrador' };
   return m[o] || o || '';
 }
 function registrarConsultaOF(p, desde){
@@ -14022,7 +14437,15 @@ function renderAntiguas(){
   const a = pendientesAntiguas();
   actualizarBadgeAntiguas();
   if(!a.dosMeses.length && !a.dias45.length){
-    cont.innerHTML = '<div class="empty">No hay OF pendientes de más de 45 días.</div>';
+    // Para que se vea que la pantalla funciona: cuál es la más antigua y cuándo cumplirá los 45 días
+    const pend = (DB||[]).filter(p=> p && p.estado!=='completado' && String(p.id).indexOf('tmp_')!==0 && p.fecha && !isNaN(new Date(p.fecha).getTime())).sort((x,y)=> new Date(x.fecha) - new Date(y.fecha));
+    let extra = '';
+    if(pend.length){
+      const p0 = pend[0], d = Math.floor((Date.now() - new Date(p0.fecha).getTime())/86400000);
+      const faltan = Math.max(1, DIAS_OF_ANTIGUA + 1 - d);
+      extra = `<div class="hint" style="margin-top:10px;">La más antigua es la OF <b>${escapeHtml(p0.of)}</b> (${escapeHtml(p0.proyecto||'—')}): lleva ${d} día${d===1?'':'s'} pendiente. Saldrá aquí en ${faltan} día${faltan===1?'':'s'}.</div>${ticketHtml(p0)}`;
+    }
+    cont.innerHTML = '<div class="empty">No hay OF pendientes de más de 45 días.</div>' + extra;
     return;
   }
   const bloque = (titulo, lista, clase, nota)=> `<div class="inv-sec ${clase}">${titulo}<span class="n">${lista.length}</span></div>
@@ -15196,7 +15619,7 @@ function renderResultadosBuscar(){
 // "Buscar" — y sin recargar ni vaciar nada (ir(x, true) se salta eso).
 let pantallaOrigenDetalle = 'buscar';
 let scrollDetalleOrigen = 0;
-const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas','screen-inventario','screen-antiguas'];
+const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas','screen-inventario','screen-antiguas','screen-admin-registro','screen-admin-mapa','screen-admin-sinubicar'];
 function abrirDetalle(id){
   // Solo se recuerda el origen cuando se viene de verdad de una de las 3
   // listas — si se llega aquí desde otro paso intermedio (p.ej. al volver
@@ -15217,7 +15640,7 @@ function abrirDetalle(id){
   ofEnDetalle = id;
   const p = DB.find(x=>x.id===id);
   if(!p) return;
-  if(desdeConsulta) registrarConsultaOF(p, desdeConsulta);
+  if(desdeConsulta && desdeConsulta!=='Administrador') registrarConsultaOF(p, desdeConsulta);
   ir('detalle');
   document.getElementById('detalleContenido').innerHTML = detalleHtml(p);
 }
