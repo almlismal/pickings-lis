@@ -45,6 +45,7 @@
   .okmark{ width:46px; height:46px; line-height:46px; margin:0 auto; border-radius:50%; background:var(--ok); color:#fff; font-size:24px; font-weight:700; text-align:center; }
 
   /* ---- OF duplicadas ---- */
+  .btn-admin{ background:#E7EEF5; color:var(--accent); border:1px solid #B7C8DA; border-left:4px solid var(--accent); font-weight:700; margin-top:28px !important; }
   .adm-sec{ font-size:12px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); margin:22px 0 2px; }
   .adm-sec:first-child{ margin-top:4px; }
   .reg-fila{ background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:10px 12px; margin-bottom:8px; font-size:14px; }
@@ -517,7 +518,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-0915</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-0925</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12521,7 +12522,7 @@ function actualizarBotonAdministrador(){
     const sec = document.getElementById('screen-buscar');
     if(!sec) return;
     b = document.createElement('button');
-    b.className = 'btn btn-outline'; b.id = 'btnAdministrador'; b.style.marginTop = '10px';
+    b.className = 'btn btn-admin'; b.id = 'btnAdministrador';
     b.setAttribute('onclick', "ir('admin')");
     b.innerHTML = 'Administrador<span id="badgeAdminRojo" class="badge-rojo" style="display:none;"></span><span id="badgeAdminAmbar" class="badge-ambar" style="display:none;"></span>';
     sec.appendChild(b);
