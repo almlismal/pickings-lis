@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1110</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1120</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13446,7 +13446,7 @@ function abrirSelectorUbicacion(cfg){
     ${libre ? `<button type="button" class="btn btn-outline" style="margin-top:10px;" onclick="mostrarOtraUbicacion()">Otra ubicación…</button>` : ''}
     ${libre ? `<div id="bloqueOtraUbic" style="display:none; margin-top:8px;">
       <div style="display:flex; gap:8px; align-items:stretch;">
-        <input type="text" id="otraUbic" placeholder="Ej. Esclusa" autocomplete="off" maxlength="40" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarOtraUbicacion(); event.preventDefault(); }" oninput="avisoOtraUbicacion(''); pintarSugerenciasOtra();">
+        <input type="text" id="otraUbic" placeholder="Ej. Z0102A" autocomplete="off" maxlength="40" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarOtraUbicacion(); event.preventDefault(); }" oninput="avisoOtraUbicacion(''); pintarSugerenciasOtra();">
         <button type="button" class="btn btn-primary" style="margin:0; width:auto; padding:0 16px;" onclick="aplicarOtraUbicacion()">Poner</button>
       </div>
       <div id="sugOtraUbic" style="margin-top:2px;"></div>
@@ -13655,7 +13655,7 @@ function abrirAnadirUbicacion(item){
   itemPendienteUbicacion = item;
   mostrarSheet(`<h3>Añadir ubicación para "${item}"</h3>
     <label>Nombre</label>
-    <input type="text" id="nuevaUbicacion" placeholder="Ej. Sala limpia — zona 2">
+    <input type="text" id="nuevaUbicacion" placeholder="Ej. Z0102A">
     <button class="btn btn-primary" onclick="confirmarAnadirUbicacion()">Añadir y elegir</button>`);
 }
 function confirmarAnadirUbicacion(){
