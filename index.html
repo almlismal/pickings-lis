@@ -518,7 +518,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-0925</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-0945</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -716,6 +716,10 @@
   <section class="screen" id="screen-admin-mapa">
     <div class="screen-title"><button class="back" onclick="ir('admin')">←</button><h2>Mapa Z-00</h2></div>
     <div id="adminMapaContenido"></div>
+  </section>
+  <section class="screen" id="screen-admin-ubicaciones">
+    <div class="screen-title"><button class="back" onclick="ir('admin')">←</button><h2>Ubicaciones a revisar</h2></div>
+    <div id="adminUbicacionesContenido"></div>
   </section>
   <section class="screen" id="screen-admin-sinubicar">
     <div class="screen-title"><button class="back" onclick="ir('admin')">←</button><h2>OF sin ubicar</h2></div>
@@ -12458,6 +12462,7 @@ function ir(pantalla, esVolver){
   if(pantalla==='admin-usuarios') entrarAAdminUsuarios();
   if(pantalla==='admin-mapa') entrarAAdminMapa();
   if(pantalla==='admin-sinubicar') entrarAAdminSinUbicar();
+  if(pantalla==='admin-ubicaciones') entrarAAdminUbicaciones();
   if(pantalla==='escanear') iniciarEscaner();
   if(pantalla==='realizar-bip') iniciarBipCamara();
 }
@@ -12514,6 +12519,68 @@ function fechaTxtES(s){
 }
 
 /* ---------- botón (solo si es admin) y pantalla principal ---------- */
+/* ---------- avisos "vistos" ----------
+   Las burbujas de OF antiguas y de Ubicaciones a revisar cuentan solo lo que todavía no has mirado: al entrar en
+   esa pantalla se dan por vistas y la burbuja desaparece; solo vuelve si entra algo nuevo. Se guarda en este móvil.
+   Las de OF duplicadas no funcionan así: siguen hasta que se resuelven. */
+const LS_AVISOS_VISTOS = 'pickings_lis_avisos_vistos_v1';
+function leerAvisosVistos(){ try{ const o = JSON.parse(localStorage.getItem(LS_AVISOS_VISTOS)); return (o && typeof o==='object') ? o : {}; }catch(e){ return {}; } }
+function marcarAvisosVistos(claves){
+  try{
+    const o = {}; claves.forEach(k=> o[k] = 1);   // solo se recuerdan los actuales: lo que ya no aplica se olvida
+    localStorage.setItem(LS_AVISOS_VISTOS, JSON.stringify(Object.assign({}, leerAvisosVistos(), o)));
+  }catch(e){}
+}
+function clavesAntiguas(a){ return a.dosMeses.map(p=>'2m|'+p.id).concat(a.dias45.map(p=>'45|'+p.id)); }
+function antiguasSinVer(){
+  const v = leerAvisosVistos(), a = pendientesAntiguas();
+  return { dosMeses: a.dosMeses.filter(p=>!v['2m|'+p.id]), dias45: a.dias45.filter(p=>!v['45|'+p.id]) };
+}
+
+const DIAS_SIN_UBICAR_AVISO = 2;
+const CAJAS_DE_MAS_TOLERADAS = 0;   // avisa desde la primera caja de más; luego se mira si fue un error o una caja pequeña puesta a propósito
+// Lo que conviene revisar de las ubicaciones: OF que llevan días sin ubicar, huecos con más cajas de las que caben,
+// y cajas con una ubicación que no es un hueco Z-00 válido.
+function ubicacionesARevisar(){
+  const out = { sin: [], sobre: [], rara: [] };
+  const pend = (DB||[]).filter(p=> p && p.estado!=='completado' && String(p.id).indexOf('tmp_')!==0);
+  pend.forEach(p=>{
+    const vals = Object.entries(p.ubicaciones||{}).filter(([k,v])=> String(v||'').trim());
+    const d = p.fecha && !isNaN(new Date(p.fecha).getTime()) ? (Date.now() - new Date(p.fecha).getTime())/86400000 : 0;
+    if(!vals.length && d > DIAS_SIN_UBICAR_AVISO) out.sin.push({ p, dias: Math.floor(d), clave: 'sin|'+p.id });
+    const c = String((p.ubicaciones||{})['Cajas']||'').trim();
+    if(c && !/^Z-00-0[1-4]-[A-F]$/.test(c)) out.rara.push({ p, valor: c, clave: 'rara|'+p.id+'|'+c });
+  });
+  const est = estadoHuecos();
+  ORDEN_HUECOS.forEach(k=>{ const h = est[k]; if(h && h.cajas > h.max + CAJAS_DE_MAS_TOLERADAS) out.sobre.push({ codigo:k, cajas:h.cajas, max:h.max, clave:'sobre|'+k+'|'+h.cajas }); });
+  out.sin.sort((a,b)=> b.dias - a.dias);
+  return out;
+}
+function clavesUbicaciones(u){ return u.sin.concat(u.sobre, u.rara).map(x=>x.clave); }
+function ubicacionesSinVer(){
+  const v = leerAvisosVistos(), u = ubicacionesARevisar();
+  return { sin: u.sin.filter(x=>!v[x.clave]), sobre: u.sobre.filter(x=>!v[x.clave]), rara: u.rara.filter(x=>!v[x.clave]) };
+}
+function entrarAAdminUbicaciones(){
+  const c = document.getElementById('adminUbicacionesContenido');
+  if(!c || !esAdminSheet(usuarioActual)) return;
+  const u = ubicacionesARevisar();
+  const v = leerAvisosVistos();
+  const nuevo = x => v[x.clave] ? '' : '<span class="chip attn">Nuevo</span> ';
+  const sec = (t, n) => `<div class="adm-sec">${t} <span style="font-weight:600;">(${n})</span></div>`;
+  const fila = (clic, l1, l2) => `<div class="reg-fila clic" onclick="${clic}"><div>${l1}</div><div class="hint" style="margin:2px 0 0;">${l2}</div></div>`;
+  let h = '';
+  if(!u.sin.length && !u.sobre.length && !u.rara.length){
+    c.innerHTML = '<div class="empty">Todo en orden: no hay ubicaciones que revisar.</div>'; marcarAvisosVistos([]); actualizarBadgesAdministrador(); return;
+  }
+  h += sec('Huecos con más cajas de las normales', u.sobre.length) + (u.sobre.length ? u.sobre.map(x=>fila(`adminMapaHueco('${x.codigo}')`, nuevo(x)+'<b>'+x.codigo+'</b>', `${x.cajas} cajas y lo normal son ${x.max}. Mira qué OF hay: puede ser un error o una caja pequeña puesta a propósito.`)).join('') : '<div class="hint">Ninguno.</div>');
+  h += sec('OF sin ubicar (más de ' + DIAS_SIN_UBICAR_AVISO + ' días)', u.sin.length) + (u.sin.length ? u.sin.map(x=>fila(`abrirDetalle('${escapeAtributo(x.p.id)}')`, nuevo(x)+'OF <b class="mono">'+escapeHtml(String(x.p.of))+'</b> · '+escapeHtml(x.p.proyecto||''), `${x.dias} días sin ubicación`)).join('') : '<div class="hint">Ninguna.</div>');
+  h += sec('Ubicación que no es un hueco válido', u.rara.length) + (u.rara.length ? u.rara.map(x=>fila(`abrirDetalle('${escapeAtributo(x.p.id)}')`, nuevo(x)+'OF <b class="mono">'+escapeHtml(String(x.p.of))+'</b> · '+escapeHtml(x.p.proyecto||''), `Cajas en: ${escapeHtml(x.valor)}`)).join('') : '<div class="hint">Ninguna.</div>');
+  c.innerHTML = h;
+  marcarAvisosVistos(clavesUbicaciones(u));   // al entrar se dan por vistas: la burbuja desaparece
+  actualizarBadgesAdministrador();
+}
+
 function actualizarBotonAdministrador(){
   const esAdm = esAdminSheet(usuarioActual);
   let b = document.getElementById('btnAdministrador');
@@ -12531,14 +12598,15 @@ function actualizarBotonAdministrador(){
 }
 function actualizarBadgesAdministrador(){
   const r = document.getElementById('badgeAdminRojo'), a = document.getElementById('badgeAdminAmbar');
-  if(!r || !a) return;
   let rojo = 0, ambar = 0;
   if(esAdminSheet(usuarioActual)){
     try{ rojo += calcularDuplicadas().reduce((t,g)=>t+g.rojo,0); }catch(e){}
-    try{ const x = pendientesAntiguas(); rojo += x.dosMeses.length; ambar += x.dias45.length; }catch(e){}
+    try{ const x = antiguasSinVer(); rojo += x.dosMeses.length; ambar += x.dias45.length; }catch(e){}
+    try{ const u = ubicacionesSinVer(); ambar += u.sin.length + u.sobre.length + u.rara.length; }catch(e){}
   }
-  r.textContent = rojo; r.style.display = rojo ? '' : 'none';
-  a.textContent = ambar; a.style.display = ambar ? '' : 'none';
+  if(r){ r.textContent = rojo; r.style.display = rojo ? '' : 'none'; }
+  if(a){ a.textContent = ambar; a.style.display = ambar ? '' : 'none'; }
+  try{ const b = document.getElementById('badgeAdminUbic'); if(b){ const u = ubicacionesSinVer(), n = u.sin.length + u.sobre.length + u.rara.length; b.textContent = n; b.style.display = n ? '' : 'none'; } }catch(e){}
 }
 function adminBoton(id, texto, destino, extraHtml){
   return `<button class="btn btn-outline" ${id ? 'id="'+id+'" ' : ''}onclick="${destino}" style="margin-top:8px;">${texto}${extraHtml||''}</button>`;
@@ -12552,6 +12620,7 @@ function entrarAAdmin(){
     sec('Avisos') +
     adminBoton('btnVerAntiguas', 'OF antiguas', "ir('antiguas')", '<span id="badgeAntiguas2m" class="badge-rojo" style="display:none;"></span><span id="badgeAntiguas45" class="badge-ambar" style="display:none;"></span>') +
     adminBoton('btnVerDuplicadas', 'OF duplicadas', "ir('duplicadas')", '<span id="badgeDuplicadas" class="badge-rojo" style="display:none;"></span>') +
+    adminBoton('btnVerUbicaciones', 'Ubicaciones a revisar', "ir('admin-ubicaciones')", '<span id="badgeAdminUbic" class="badge-ambar" style="display:none;"></span>') +
     sec('Informes') +
     adminBoton('btnVerResumen', 'Ver resumen', "ir('resumen')") +
     adminBoton('btnVerInventario', 'Inventario de cajas', "ir('inventario')") +
@@ -12568,6 +12637,7 @@ function entrarAAdmin(){
     adminBoton('', 'Copia de seguridad', "confirmarCopiaSeguridad()");
   try{ actualizarBadgeAntiguas(); }catch(e){}
   try{ actualizarBadgeDuplicadas(); }catch(e){}
+  try{ actualizarBadgesAdministrador(); }catch(e){}
 }
 
 /* ---------- registros (hojas del Excel en formato app) ---------- */
@@ -14218,7 +14288,7 @@ const CONSULTAS_MS_REPETIDA = 10*60*1000;
 const consultasUltimas = {};
 let consultasEnviando = false, consultasTimer = null;
 function nombreOrigenConsulta(o){
-  const m = { escanear:'Escáner de etiqueta', buscar:'Búsqueda', pendientes:'Lista de pendientes', entregados:'Lista de entregados', ubicaciones:'Por ubicación', duplicadas:'Duplicadas', inventario:'Inventario', antiguas:'OF antiguas', 'admin-registro':'Administrador', 'admin-mapa':'Administrador', 'admin-sinubicar':'Administrador' };
+  const m = { escanear:'Escáner de etiqueta', buscar:'Búsqueda', pendientes:'Lista de pendientes', entregados:'Lista de entregados', ubicaciones:'Por ubicación', duplicadas:'Duplicadas', inventario:'Inventario', antiguas:'OF antiguas', 'admin-registro':'Administrador', 'admin-mapa':'Administrador', 'admin-sinubicar':'Administrador', 'admin-ubicaciones':'Administrador' };
   return m[o] || o || '';
 }
 function registrarConsultaOF(p, desde){
@@ -14429,7 +14499,7 @@ function pendientesAntiguas(){
 function actualizarBadgeAntiguas(){
   const b2 = document.getElementById('badgeAntiguas2m'), b45 = document.getElementById('badgeAntiguas45');
   if(!b2 || !b45) return;
-  const a = esAdminSheet(usuarioActual) ? pendientesAntiguas() : { dosMeses: [], dias45: [] };
+  const a = esAdminSheet(usuarioActual) ? antiguasSinVer() : { dosMeses: [], dias45: [] };
   b2.textContent = a.dosMeses.length; b2.style.display = a.dosMeses.length ? '' : 'none';
   b45.textContent = a.dias45.length; b45.style.display = a.dias45.length ? '' : 'none';
 }
@@ -14438,7 +14508,9 @@ function renderAntiguas(){
   if(!cont) return;
   if(!esAdminSheet(usuarioActual)){ cont.innerHTML = '<div class="empty">Solo para administradores.</div>'; return; }
   const a = pendientesAntiguas();
+  marcarAvisosVistos(clavesAntiguas(a));   // al entrar se dan por vistas: la burbuja desaparece
   actualizarBadgeAntiguas();
+  try{ actualizarBadgesAdministrador(); }catch(e){}
   if(!a.dosMeses.length && !a.dias45.length){
     // Para que se vea que la pantalla funciona: cuál es la más antigua y cuándo cumplirá los 45 días
     const pend = (DB||[]).filter(p=> p && p.estado!=='completado' && String(p.id).indexOf('tmp_')!==0 && p.fecha && !isNaN(new Date(p.fecha).getTime())).sort((x,y)=> new Date(x.fecha) - new Date(y.fecha));
@@ -15622,7 +15694,7 @@ function renderResultadosBuscar(){
 // "Buscar" — y sin recargar ni vaciar nada (ir(x, true) se salta eso).
 let pantallaOrigenDetalle = 'buscar';
 let scrollDetalleOrigen = 0;
-const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas','screen-inventario','screen-antiguas','screen-admin-registro','screen-admin-mapa','screen-admin-sinubicar'];
+const PANTALLAS_LISTA_ORIGEN = ['screen-buscar','screen-pendientes','screen-entregados','screen-ubicaciones','screen-duplicadas','screen-inventario','screen-antiguas','screen-admin-registro','screen-admin-mapa','screen-admin-sinubicar','screen-admin-ubicaciones'];
 function abrirDetalle(id){
   // Solo se recuerda el origen cuando se viene de verdad de una de las 3
   // listas — si se llega aquí desde otro paso intermedio (p.ej. al volver
