@@ -517,7 +517,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-0900</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-0915</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11366,6 +11366,8 @@ let pendienteAmpliacion = null;
 let ubicacionesSeleccion = {};
 let itemPendienteUbicacion = null;
 let adminUnlocked = false;
+// Un administrador ya puso su PIN al entrar a la app: no se le vuelve a pedir para ver el historial.
+function adminDesbloqueado(){ return adminUnlocked || esAdminSheet(usuarioActual); }
 let colaSync = [];
 let erroresOperaciones = {}; // { opId: 'mensaje de error' } — para poder ver por qué falla algo aunque el picking ya no esté visible (p.ej. se borró en local)
 let mapaIdsReales = {};
@@ -15502,8 +15504,8 @@ function ticketHtml(p){
     const etiqueta = k==='Cajas' ? `Cajas de picking (${p.cajas})` : k;
     chips.push(`<span class="chip">${etiqueta}: ${v}</span>`);
   });
-  if(adminUnlocked && p.ediciones && p.ediciones.length) chips.push(`<span class="chip">Editado</span>`);
-  if(adminUnlocked && p.deshechas && p.deshechas.length) chips.push(`<span class="chip attn">Entrega deshecha</span>`);
+  if(adminDesbloqueado() && p.ediciones && p.ediciones.length) chips.push(`<span class="chip">Editado</span>`);
+  if(adminDesbloqueado() && p.deshechas && p.deshechas.length) chips.push(`<span class="chip attn">Entrega deshecha</span>`);
   if(p.ampliaciones && p.ampliaciones.length){
     const ultimaAmpliacion = p.ampliaciones[p.ampliaciones.length-1];
     chips.push(ultimaAmpliacion.cajaExtra
@@ -15809,7 +15811,7 @@ function historialAdminHtml(p){
   if(!esAdminSheet(usuarioActual)) return '';
   const hay = (p.ediciones && p.ediciones.length) || (p.deshechas && p.deshechas.length);
   if(!hay) return '';
-  if(!adminUnlocked){
+  if(!adminDesbloqueado()){
     return `<button class="btn btn-outline" onclick="pedirPinAdmin('${p.id}')" style="margin-top:14px;">Ver historial de cambios</button>`;
   }
   return edicionesHtmlOf(p) + deshechasHtmlOf(p);
