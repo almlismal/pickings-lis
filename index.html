@@ -52,15 +52,15 @@
   .reg-fila.clic{ cursor:pointer; }
   .mapa{ display:flex; gap:8px; }
   .mapa-col{ flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
-  .mapa-cab{ text-align:center; font-size:12px; font-weight:800; color:var(--ink-soft); }
+  .mapa-cab{ text-align:center; font-size:16px; font-weight:800; color:var(--ink); margin-bottom:2px; }
   .mapa-hueco{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px 2px; border-radius:6px; border:1.5px solid transparent; font:inherit; cursor:pointer; }
-  .mapa-hueco .l{ font-size:11px; font-weight:800; opacity:.7; }
-  .mapa-hueco .n{ font-size:15px; font-weight:800; }
+  .mapa-hueco .l{ font-size:14px; font-weight:800; opacity:.85; }
+  .mapa-hueco .n{ font-size:19px; font-weight:900; }
   .mapa-hueco.libre, .mapa-leyenda .libre{ background:#E8F5E9; border-color:#A5D6A7; color:#1B5E20; }
   .mapa-hueco.parcial, .mapa-leyenda .parcial{ background:#FFF3E0; border-color:#FFCC80; color:#8A4B00; }
   .mapa-hueco.lleno, .mapa-leyenda .lleno{ background:#FFEBEE; border-color:#EF9A9A; color:#B71C1C; }
   .mapa-hueco.sobre, .mapa-leyenda .sobre{ background:#C62828; border-color:#C62828; color:#fff; }
-  .mapa-leyenda{ display:flex; gap:6px; margin-top:12px; font-size:12px; font-weight:700; }
+  .mapa-leyenda{ display:flex; gap:6px; margin-top:12px; font-size:14px; font-weight:800; }
   .mapa-leyenda span{ flex:1; text-align:center; padding:5px 2px; border-radius:6px; border:1.5px solid transparent; }
   .badge-ambar{ display:inline-block; min-width:20px; height:20px; line-height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#E08A00; color:#fff; font-size:12px; font-weight:800; text-align:center; vertical-align:middle; }
   .badge-rojo{ display:inline-block; min-width:20px; height:20px; line-height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#C62828; color:#fff; font-size:12px; font-weight:800; text-align:center; vertical-align:middle; }
@@ -175,6 +175,7 @@
   .chip.on{ border-color:var(--accent); color:var(--accent); font-weight:600; }
   .chip.attn{ background:var(--warn-bg); border-color:var(--warn-edge); color:var(--warn-ink); font-weight:600; }
   .chip.done{ background:var(--ok); border-color:var(--ok); color:#fff; font-weight:600; }
+  .chip.hoja-esc{ color:var(--ink-soft); background:#F4F6F8; border-color:#E1E6EC; padding:3px 6px; display:inline-flex; align-items:center; }
   .chip.err{ background:#F7E4E0; border-color:#D9856F; color:#8A3319; font-weight:600; cursor:pointer; }
 
   .pending-banner{
@@ -518,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-0945</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1005</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12875,7 +12876,7 @@ function entrarAAdminMapa(){
   const est = estadoHuecos();
   let libres = 0, cajasTot = 0, llenos = 0;
   ORDEN_HUECOS.forEach(k=>{ const h = est[k]; cajasTot += h.cajas; if(h.cajas === 0 && !Object.keys(h.porProy).length) libres++; if(h.cajas >= h.max) llenos++; });
-  const col = e => `<div class="mapa-col"><div class="mapa-cab">Est. ${e}</div>` +
+  const col = e => `<div class="mapa-col"><div class="mapa-cab">0${e}</div>` +
     HUECO_ALTURAS.map(a=>{
       const k = codigoHueco(e, a), h = est[k];
       const nProy = Object.keys(h.porProy).length;
@@ -13816,6 +13817,15 @@ async function actualizarEntregados(){
   if(btn){ btn.disabled = false; btn.textContent = 'Actualizar'; }
 }
 
+// Marca sutil: el picking entregado tiene la hoja firmada escaneada (mira la hoja y lo que ya tiene el móvil).
+function entregadoTieneHoja(r){
+  let l = [];
+  try{ l = JSON.parse(r['Hojas escaneadas JSON'] || '[]') || []; }catch(e){ l = []; }
+  if(Array.isArray(l) && l.length) return true;
+  const id = String(r['ID'] || '');
+  const p = (DB||[]).find(x=>x && String(x.id)===id);
+  return !!(p && p.hojasEscaneadas && p.hojasEscaneadas.length);
+}
 function renderEntregados(){
   const cont = document.getElementById('entregadosList');
   if(!cont) return;
@@ -13848,7 +13858,7 @@ function renderEntregados(){
         <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
       </div>
       <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
-      <div class="ticket-meta"><span class="chip done">Entregado</span></div>
+      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? '<span class="chip hoja-esc" title="Tiene la hoja firmada escaneada" aria-label="Hoja escaneada"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>' : ''}</div>
       <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
     </div>
   `;}).join('');
