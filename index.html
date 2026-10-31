@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1005</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1035</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11326,7 +11326,7 @@ async function sincronizar(){
 const LS_EXTRAS = 'pickings_lis_extras_fuera';
 const FUERA_BASE = ['Plantillas','Perfiles','Cables'];
 const LS_EXTRAS_UBIC = 'pickings_lis_extras_ubicacion';
-const UBICACION_BASE = ['Carpa','Almacén','Estantería de perfiles','Estantería de plantillas','Sala limpia'];
+const UBICACION_BASE = ['Carpa','Almacén','Estantería de picking urgentes','Sala limpia'];
 
 // Compara nombres ignorando may\u00fasculas/min\u00fasculas Y tildes, para que d\u00e9
 // igual c\u00f3mo lo escriba cada uno ("Mar\u00eda", "maria", "MARIA" son la misma persona).
@@ -13210,7 +13210,38 @@ const HUECO_ALTURAS = ['A','B','C','D','E','F'];
 const HUECO_CAJAS_MAX = 8; // cajas que entran en cada hueco (balda)
 const HUECO_CAJAS_MAX_A = 12; // la altura A (la más alta) admite más
 function cajasMaxHueco(a){ return a==='A' ? HUECO_CAJAS_MAX_A : HUECO_CAJAS_MAX; }
-const UBICACIONES_FIJAS = ['Estantería de perfiles','Estantería de plantillas','Picking urgentes'];
+const UBICACIONES_PREDEFINIDAS = [
+  'X0101A', 'X0101B', 'X0101C', 'X0102A', 'X0102B', 'X0102C', 'X0103A', 'X0103B', 'X0103C', 'X0104A', 'X0104B',
+  'X0104C', 'X0201A', 'X0201B', 'X0201C', 'X0202A', 'X0202B', 'X0202C', 'X0203A', 'X0203B', 'X0203C', 'X0301A',
+  'X0301B', 'X0301C', 'X0302A', 'X0302B', 'X0302C', 'X0303A', 'X0303B', 'X0303C', 'X0401A', 'X0401B', 'X0401C',
+  'X0402A', 'X0402B', 'X0402C', 'X0403A', 'X0403B', 'X0403C', 'X0501A', 'X0501B', 'X0501C', 'X0502A', 'X0502B',
+  'X0502C', 'X0503A', 'X0503B', 'X0503C', 'X0601A', 'X0601B', 'X0601C', 'X0602A', 'X0602B', 'X0602C', 'X0603A',
+  'X0603B', 'X0603C', 'Y0101A', 'Y0101B', 'Y0102A', 'Y0102B', 'Y0103A', 'Y0103B', 'Y0104A', 'Y0104B', 'Y0201A',
+  'Y0201B', 'Y0202A', 'Y0202B', 'Y0203A', 'Y0203B', 'Z0101A', 'Z0101B', 'Z0101C', 'Z0101D', 'Z0102A', 'Z0102B',
+  'Z0102C', 'Z0102D', 'Z0103A', 'Z0103B', 'Z0103C', 'Z0103D', 'Z0201A', 'Z0201B', 'Z0201C', 'Z0201D', 'Z0201E',
+  'Z0201F', 'Z0202A', 'Z0202B', 'Z0202C', 'Z0202D', 'Z0202E', 'Z0202F', 'Z0203A', 'Z0203B', 'Z0203C', 'Z0203D',
+  'Z0203E', 'Z0203F', 'Z0301A', 'Z0301B', 'Z0301C', 'Z0301D', 'Z0301E', 'Z0301F', 'Z0302A', 'Z0302B', 'Z0302C',
+  'Z0302D', 'Z0302E', 'Z0302F', 'Z0303A', 'Z0303B', 'Z0303C', 'Z0303D', 'Z0303E', 'Z0303F', 'Z0401A', 'Z0401B',
+  'Z0401C', 'Z0401D', 'Z0401E', 'Z0401F', 'Z0402A', 'Z0402B', 'Z0402C', 'Z0402D', 'Z0402E', 'Z0402F', 'Z0403A',
+  'Z0403B', 'Z0403C', 'Z0403D', 'Z0403E', 'Z0403F', 'Z0501A', 'Z0501B', 'Z0501C', 'Z0501D', 'Z0501E', 'Z0501F',
+  'Z0502A', 'Z0502B', 'Z0502C', 'Z0502D', 'Z0502E', 'Z0502F', 'Z0503A', 'Z0503B', 'Z0503C', 'Z0503D', 'Z0503E',
+  'Z0503F', 'Z0601A', 'Z0601B', 'Z0601C', 'Z0601D', 'Z0601E', 'Z0601F', 'Z0602A', 'Z0602B', 'Z0602C', 'Z0602D',
+  'Z0602E', 'Z0602F', 'Z0603A', 'Z0603B', 'Z0603C', 'Z0603D', 'Z0603E', 'Z0603F',
+];
+// Mientras se escribe en "Otra ubicación…" salen las que empiezan igual (sin espacios ni guiones, da igual mayúsculas).
+function sugerenciasPredefinidas(txt){
+  const t = String(txt||'').toUpperCase().replace(/[\s-]+/g,'');
+  if(!t) return [];
+  return UBICACIONES_PREDEFINIDAS.filter(c=> c.replace(/-/g,'').indexOf(t) === 0).slice(0,12);
+}
+function pintarSugerenciasOtra(){
+  const cont = document.getElementById('sugOtraUbic');
+  const campo = document.getElementById('otraUbic');
+  if(!cont || !campo) return;
+  const lista = sugerenciasPredefinidas(campo.value);
+  cont.innerHTML = lista.map(c=>`<button type="button" class="btn btn-outline" style="margin:6px 6px 0 0; width:auto; padding:8px 12px;" onclick="elegirUbicacionSelector('${c}')">${c}</button>`).join('');
+}
+const UBICACIONES_FIJAS = ['Estantería de picking urgentes'];
 // De momento "Otra ubicación…" y los "otros sitios ya usados" solo los ven los administradores.
 // Para liberarlo a todo el equipo basta poner false.
 const UBICACION_LIBRE_SOLO_ADMIN = false;
@@ -13370,9 +13401,10 @@ function abrirSelectorUbicacion(cfg){
     ${libre ? `<button type="button" class="btn btn-outline" style="margin-top:10px;" onclick="mostrarOtraUbicacion()">Otra ubicación…</button>` : ''}
     ${libre ? `<div id="bloqueOtraUbic" style="display:none; margin-top:8px;">
       <div style="display:flex; gap:8px; align-items:stretch;">
-        <input type="text" id="otraUbic" placeholder="Ej. Esclusa" autocomplete="off" maxlength="40" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarOtraUbicacion(); event.preventDefault(); }" oninput="avisoOtraUbicacion('')">
+        <input type="text" id="otraUbic" placeholder="Ej. Esclusa" autocomplete="off" maxlength="40" style="flex:1; min-width:0; margin:0;" onkeydown="if(event.key==='Enter'){ aplicarOtraUbicacion(); event.preventDefault(); }" oninput="avisoOtraUbicacion(''); pintarSugerenciasOtra();">
         <button type="button" class="btn btn-primary" style="margin:0; width:auto; padding:0 16px;" onclick="aplicarOtraUbicacion()">Poner</button>
       </div>
+      <div id="sugOtraUbic" style="margin-top:2px;"></div>
       <div id="avisoOtraUbic" class="hint" style="margin:6px 0 0;"></div>
     </div>` : ''}
     <button type="button" class="btn btn-outline" style="margin-top:14px;" onclick="cancelarSelectorUbicacion()">Cancelar</button>
@@ -13419,6 +13451,8 @@ function aplicarOtraUbicacion(){
   const k = claveNombre(v);
   const igual = (cfg.candidatas || []).find(c=>claveNombre(c)===k);
   if(igual){ elegirUbicacionSelector(igual); return; }
+  const predef = UBICACIONES_PREDEFINIDAS.find(c=>claveNombre(c)===k);
+  if(predef){ elegirUbicacionSelector(predef); return; }
   const parecidas = (cfg.candidatas || []).filter(c=>{ const kc = claveNombre(c); return distanciaNombres(kc, k) <= 2 || (k.length>=4 && (kc.includes(k) || k.includes(kc))); }).slice(0,3);
   if(parecidas.length && !cfg.confirmadaOtra){
     cfg.confirmadaOtra = v;
