@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1165</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1170</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12795,7 +12795,8 @@ function pintarAdminUsuarios(){
   if(admUsuariosError){ c.innerHTML = `<div class="empty">${escapeHtml(admUsuariosError)}</div>`; return; }
   if(admUsuariosCargando && !admUsuarios.length){ c.innerHTML = '<div class="empty">Cargando…</div>'; return; }
   const ord = admUsuarios.map((u,i)=>({u,i})).sort((a,b)=> (!!a.u.Baja - !!b.u.Baja) || a.u.Nombre.localeCompare(b.u.Nombre,'es'));
-  c.innerHTML = `<div class="hint" style="margin:0 0 8px;">${admUsuarios.length} usuarios. Los PIN no se muestran nunca. Toca uno para ver las acciones.</div>` +
+  c.innerHTML = `<button class="btn btn-primary" style="margin:0 0 10px;" onclick="adminUsuarioNuevoAbrir()">+ Agregar usuario</button>` +
+    `<div class="hint" style="margin:0 0 8px;">${admUsuarios.length} usuarios. Los PIN no se muestran nunca. Toca uno para ver las acciones.</div>` +
     ord.map(({u,i})=>`
       <div class="reg-fila clic" onclick="adminUsuarioMenu(${i})" style="${u.Baja ? 'opacity:.55;' : ''}">
         <div><b>${escapeHtml(u.Nombre)}</b>
@@ -12808,18 +12809,31 @@ function pintarAdminUsuarios(){
 function adminUsuarioMenu(i){
   const u = admUsuarios[i]; if(!u) return;
   const yo = claveNombre(u.Nombre) === claveNombre(usuarioActual);
-  const b = (que, txt, off) => `<button class="btn btn-outline" ${off ? 'disabled style="opacity:.45;"' : ''} onclick="adminUsuarioConfirmar(${i},'${que}')">${txt}</button>`;
+  const b = (que, txt, off, peligro) => `<button class="btn btn-outline" ${off ? 'disabled style="opacity:.45;"' : (peligro ? 'style="color:#b42318;border-color:#b42318;"' : '')} onclick="adminUsuarioConfirmar(${i},'${que}')">${txt}</button>`;
+  const adminActivo = !!u.Admin && !u.Baja;
   mostrarSheet(`
     <h3>${escapeHtml(u.Nombre)}</h3>
     ${u.Baja ? b('alta','Reactivar usuario') :
       (u.Admin ? b('quitaradmin','Quitar administrador', yo) : b('daradmin','Dar administrador')) +
       b('resetpin','Reiniciar PIN') + b('renombrar','Corregir nombre') + b('baja','Dar de baja', yo || !!u.Admin)}
-    ${yo ? '<div class="hint">No puedes quitarte el permiso ni darte de baja a ti mismo.</div>' : (u.Admin && !u.Baja ? '<div class="hint">Para dar de baja a un administrador, primero quítale el permiso.</div>' : '')}
+    <button class="btn btn-outline" onclick="adminVerActividad(${i},'Historial')">Ver cambios que ha hecho</button>
+    <button class="btn btn-outline" onclick="adminVerActividad(${i},'Consultas')">Ver OF que ha consultado</button>
+    ${b('borrar','Borrar usuario', yo || adminActivo, true)}
+    ${yo ? '<div class="hint">No puedes quitarte el permiso, darte de baja ni borrarte a ti mismo.</div>' : (adminActivo ? '<div class="hint">Para dar de baja o borrar a un administrador, primero quítale el permiso.</div>' : '')}
     <button class="btn btn-ghost" onclick="cerrarSheet()">Cerrar</button>`);
 }
 function adminUsuarioConfirmar(i, que){
   const u = admUsuarios[i]; if(!u) return;
   const n = escapeHtml(u.Nombre);
+  if(que === 'borrar'){
+    mostrarSheet(`<h3>Borrar usuario</h3>
+      <p style="font-size:14px; margin:0 0 10px;"><b>${n}</b> se quita de la lista y ya no podrá entrar. Su historial y sus consultas se conservan con su nombre. <b>No se puede deshacer.</b></p>
+      <p style="font-size:13px; color:var(--ink-soft); margin:0 0 6px;">Para confirmar, escribe su nombre tal cual:</p>
+      <input type="text" id="admConfirmarNombre" autocomplete="off">
+      <button class="btn btn-primary" id="admConfirmar" style="background:#b42318; border-color:#b42318;" onclick="adminUsuarioEjecutar(${i},'borrar')">Borrar definitivamente</button>
+      <button class="btn btn-ghost" onclick="adminUsuarioMenu(${i})">Atrás</button>`);
+    return;
+  }
   const t = {
     daradmin:'<b>' + n + '</b> podrá ver y cambiar todo lo de Administrador.',
     quitaradmin:'<b>' + n + '</b> dejará de ver Administrador.',
@@ -12847,6 +12861,10 @@ async function adminUsuarioEjecutar(i, que){
     extra.nuevoNombre = (document.getElementById('admNuevoNombre')||{}).value || '';
     if(!extra.nuevoNombre.trim()){ toast('Escribe el nombre'); return; }
   }
+  if(que === 'borrar'){
+    extra.confirmar = (document.getElementById('admConfirmarNombre')||{}).value || '';
+    if(claveNombre(extra.confirmar) !== claveNombre(u.Nombre)){ toast('Escribe el nombre tal cual para confirmar'); return; }
+  }
   const btn = document.getElementById('admConfirmar'); if(btn){ btn.disabled = true; btn.textContent = 'Guardando…'; }
   try{
     const r = await adminLlamar('adminUsuarioAccion', extra);
@@ -12857,6 +12875,36 @@ async function adminUsuarioEjecutar(i, que){
     if(btn){ btn.disabled = false; btn.textContent = 'Sí, confirmar'; }
     toast(err.message || 'No se pudo');
   }
+}
+
+function adminUsuarioNuevoAbrir(){
+  mostrarSheet(`<h3>Agregar usuario</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Solo el nombre. La persona pone su PIN la primera vez que entra.</p>
+    <input type="text" id="admNuevoUsuario" maxlength="40" autocomplete="off" placeholder="Nombre">
+    <button class="btn btn-primary" id="admConfirmar" onclick="adminUsuarioNuevoGuardar()">Agregar</button>
+    <button class="btn btn-ghost" onclick="cerrarSheet()">Cancelar</button>`);
+}
+async function adminUsuarioNuevoGuardar(){
+  const nombre = ((document.getElementById('admNuevoUsuario')||{}).value || '').replace(/\s+/g,' ').trim();
+  if(!nombre){ toast('Escribe el nombre'); return; }
+  const btn = document.getElementById('admConfirmar'); if(btn){ btn.disabled = true; btn.textContent = 'Guardando…'; }
+  try{
+    const r = await adminLlamar('adminUsuarioNuevo', { objetivo: nombre });
+    admUsuarios = r.usuarios || admUsuarios;
+    cerrarSheet(); pintarAdminUsuarios(); toast('Usuario agregado');
+    try{ const d = await cargarDesdeSheet(); if(d && d.ok !== false) procesarDatos(d); }catch(e){}
+  }catch(err){
+    if(btn){ btn.disabled = false; btn.textContent = 'Agregar'; }
+    toast(err.message || 'No se pudo');
+  }
+}
+// Abre el registro (Historial o Consultas) ya filtrado por esa persona.
+function adminVerActividad(i, hojaReg){
+  const u = admUsuarios[i]; if(!u) return;
+  const nombre = u.Nombre;
+  cerrarSheet();
+  abrirRegistroAdmin(hojaReg);
+  reg.persona = nombre;
 }
 
 /* ---------- copia de seguridad ---------- */
