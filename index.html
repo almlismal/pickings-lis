@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1130</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1135</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13949,7 +13949,7 @@ function renderEntregados(){
         <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
       </div>
       <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
-      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''} : ''}</div>
+      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}</div>
       <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
     </div>
   `;}).join('');
