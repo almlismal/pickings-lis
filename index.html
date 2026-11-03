@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1150</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1155</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -15932,11 +15932,11 @@ function detalleHtml(p){
       ${p.observaciones ? `<div class="obs-box">${p.observaciones}</div>` : ''}
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
-      ${(p.anexosPicking && p.anexosPicking.length) ? p.anexosPicking.map((a,i)=>`<a class="btn btn-outline" href="${escapeAtributo(a.url)}" target="_blank" style="text-decoration:none; text-align:center;">Hoja anexa #${i+1} (${a.lineas} líneas)</a>`).join('') : ''}
+      ${(p.anexosPicking && p.anexosPicking.length) ? p.anexosPicking.map((a,i)=>`<a class="btn btn-outline" href="${escapeAtributo(a.url)}" target="_blank" style="display:block; width:100%; box-sizing:border-box; margin-top:8px; text-decoration:none; text-align:center;">Hoja anexa #${i+1} (${a.lineas} líneas)</a>`).join('') : ''}
       ${(!entregado && usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirReubicar('${p.id}')" style="margin-top:8px;">Reubicar</button>` : ''}
       ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : ''}
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
-      ${(p.hojasEscaneadas && p.hojasEscaneadas.length === 1) ? `<a class="btn btn-outline" href="${escapeAtributo(p.hojasEscaneadas[0].url)}" target="_blank" style="text-decoration:none; text-align:center;">Ver hoja firmada</a>` : ''}
+      ${(p.hojasEscaneadas && p.hojasEscaneadas.length === 1) ? `<a class="btn btn-outline" href="${escapeAtributo(p.hojasEscaneadas[0].url)}" target="_blank" style="display:block; width:100%; box-sizing:border-box; margin-top:8px; text-decoration:none; text-align:center;">Ver hoja firmada</a>` : ''}
       ${(p.hojasEscaneadas && p.hojasEscaneadas.length > 1) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')">Ver hojas firmadas (${p.hojasEscaneadas.length})</button>` : ''}
       ${(usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0 && p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear nueva hoja firmada</button>` : ((usuarioActual && entregado && esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear hoja firmada</button>` : '')}
       ${gestionBtns}
