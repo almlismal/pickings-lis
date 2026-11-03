@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1120</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1130</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13904,6 +13904,10 @@ async function actualizarEntregados(){
   if(btn){ btn.disabled = false; btn.textContent = 'Actualizar'; }
 }
 
+// Icono de hoja escaneada (mismo en todas las pantallas).
+function iconoHojaHtml(){
+  return '<span class="chip hoja-esc" title="Tiene la hoja firmada escaneada" aria-label="Hoja escaneada"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>';
+}
 // Marca sutil: el picking entregado tiene la hoja firmada escaneada (mira la hoja y lo que ya tiene el móvil).
 function entregadoTieneHoja(r){
   let l = [];
@@ -13945,7 +13949,7 @@ function renderEntregados(){
         <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
       </div>
       <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
-      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? '<span class="chip hoja-esc" title="Tiene la hoja firmada escaneada" aria-label="Hoja escaneada"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>' : ''}</div>
+      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''} : ''}</div>
       <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
     </div>
   `;}).join('');
@@ -15683,6 +15687,7 @@ function ticketHtml(p){
       : `<span class="chip attn">${escapeHtml(ultimaAmpliacion.agregadoPor)} metió algo más</span>`);
   }
   if(entregado) chips.push(`<span class="chip done">Entregado</span>`);
+  if(p.hojasEscaneadas && p.hojasEscaneadas.length) chips.push(iconoHojaHtml());
   else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega anotada</span>`);
   const syncChip = syncBadgeHtml(p);
   if(syncChip) chips.push(syncChip);
@@ -15745,7 +15750,7 @@ async function buscarOF(){
             </div>
             <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
             <div class="ticket-meta">
-              <span class="chip done">Entregado</span>
+              <span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}
             </div>
             <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
           </div>
