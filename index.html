@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1155</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1165</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11357,6 +11357,10 @@ function esAdminSheet(nombre){
 function puedeGestionar(p){
   return esAdminSheet(usuarioActual) || normalizarNombre(usuarioActual) === normalizarNombre(p.registradoPor);
 }
+// Deshacer una entrega: lo pueden hacer quien registró el picking, un administrador y quien hizo esa entrega.
+function puedeDeshacerEntrega(p, e){
+  return puedeGestionar(p) || (!!e && !!usuarioActual && normalizarNombre(usuarioActual) === normalizarNombre(e.entregadoPor));
+}
 function pinDeUsuario(nombre){
   const u = usuariosRemotos.find(x=>claveNombre(x['Nombre'])===claveNombre(nombre));
   return u ? String(u['PIN']||'') : '';
@@ -15901,7 +15905,7 @@ function detalleHtml(p){
         ${e.entregadoPor} entregó a ${e.entregadoA}
         ${items.length ? `<br>${chipsEstadoItems(items)}` : ''}
         ${notaLimpia ? '<br>'+notaLimpia : ''}
-        ${puedeGestionar(p) ? `<br><span class="undo" onclick="deshacerEntrega('${p.id}', ${i})">Deshacer esta entrega</span>` : ''}
+        ${puedeDeshacerEntrega(p, e) ? `<br><span class="undo" onclick="deshacerEntrega('${p.id}', ${i})">Deshacer esta entrega</span>` : ''}
       </div>`;}).join('')}
     </div>` : '';
 
@@ -15913,7 +15917,7 @@ function detalleHtml(p){
   const gestionBtns = puedeGestionar(p)
     ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">Editar datos del picking</button>
        <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">Eliminar este picking</button>`
-    : `<div class="hint" style="margin-top:14px;">Solo ${p.registradoPor} o un administrador pueden editar o eliminar este picking.</div>`;
+    : `<div class="hint" style="margin-top:14px;">Solo quien lo registró o un administrador pueden editar o eliminar este picking.</div>`;
 
   return `
     <div class="detail-block">
@@ -15938,7 +15942,7 @@ function detalleHtml(p){
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
       ${(p.hojasEscaneadas && p.hojasEscaneadas.length === 1) ? `<a class="btn btn-outline" href="${escapeAtributo(p.hojasEscaneadas[0].url)}" target="_blank" style="display:block; width:100%; box-sizing:border-box; margin-top:8px; text-decoration:none; text-align:center;">Ver hoja firmada</a>` : ''}
       ${(p.hojasEscaneadas && p.hojasEscaneadas.length > 1) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')">Ver hojas firmadas (${p.hojasEscaneadas.length})</button>` : ''}
-      ${(usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0 && p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear nueva hoja firmada</button>` : ((usuarioActual && entregado && esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear hoja firmada</button>` : '')}
+      ${(usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0 && p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear nueva hoja firmada</button>` : ((usuarioActual && entregado && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear hoja firmada</button>` : '')}
       ${gestionBtns}
     </div>
     ${doneBanner}
@@ -17798,7 +17802,7 @@ async function confirmarEntrega(tipo){
 function deshacerEntrega(pid, idx){
   const p = DB.find(x=>x.id===pid);
   if(!p){ toast('Se actualizó la lista justo ahora — vuelve a abrir este picking e inténtalo otra vez'); return; }
-  if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden deshacer su entrega'); return; }
+  if(!puedeDeshacerEntrega(p, p.entregas && p.entregas[idx])){ toast('Solo quien registró este picking, quien hizo esta entrega, o un administrador, pueden deshacerla'); return; }
   pendienteDeshacer = { pid, idx };
   mostrarSheet(`
     <h3>¿Deshacer esta entrega?</h3>
