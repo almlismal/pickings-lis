@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1135</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1140</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -15931,12 +15931,10 @@ function detalleHtml(p){
       </div>` : ''}
       ${p.observaciones ? `<div class="obs-box">${p.observaciones}</div>` : ''}
       <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
-      ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : ''}
-      ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? `<div class="hint" style="margin-top:8px;">Hojas anexas: ${p.anexosPicking.map((a,i)=>`<a href="${a.url}" target="_blank" onclick="event.stopPropagation();">#${i+1} (${a.lineas} líneas, ${fechaCorta(a.fecha)})</a>`).join(' · ')}</div>` : ''}
       ${(!entregado && usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirReubicar('${p.id}')" style="margin-top:8px;">Reubicar</button>` : ''}
-      ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')" style="margin-top:8px;">Ver hoja de picking firmada${p.hojasEscaneadas.length>1 ? ' ('+p.hojasEscaneadas.length+')' : ''}</button>` : ((entregado && esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirEscanerHoja('${p.id}')" style="margin-top:8px;">Escanear hoja de picking</button>` : '')}
+      ${(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length) || (p.hojasEscaneadas && p.hojasEscaneadas.length) || (entregado && esAdminSheet(usuarioActual) && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0)) ? `<button class="btn btn-outline" onclick="abrirHojasOF('${p.id}')" style="margin-top:8px;">Hojas de la OF</button>` : ''}
       ${gestionBtns}
     </div>
     ${doneBanner}
@@ -16916,6 +16914,44 @@ async function subirHojaEscaneadaApp(){
 }
 
 
+
+/* ---------- Hojas de la OF (un solo botón en el detalle) ----------
+   Reúne en una sola pantalla: la hoja de picking que genera la app (ver, actualizar, anexos),
+   las hojas firmadas escaneadas (abrir; borrar solo administradores) y escanear una nueva.
+   Los permisos no cambian: escanear sigue igual que antes. */
+function abrirHojasOF(id){
+  const p = DB.find(x=>x.id===id);
+  if(!p){ toast('No se encontró esa OF'); return; }
+  const entregado = p.estado==='completado';
+  const admin = esAdminSheet(usuarioActual);
+  const tmpOk = p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0;
+  const hojaApp = !!(p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length));
+  const puedeActualizar = !!p.hojaPickingUrl && !idsSinLineas().includes(p.id);
+  const hojasF = p.hojasEscaneadas || [];
+  const puedeEscanear = hojasF.length ? !!usuarioActual : (entregado && admin && tmpOk);
+  const titulo = t => `<div class="hint" style="margin:14px 0 6px;"><b>${t}</b></div>`;
+  let h = `<h3>Hojas de la OF ${escapeHtml(String(p.of))}</h3>`;
+  if(hojaApp){
+    h += titulo('Hoja de picking (la app)');
+    h += `<button type="button" class="btn btn-outline" onclick="cerrarSheet(); verHojaPickingDetalle('${escapeAtributo(p.id)}')">Ver hoja de picking</button>`;
+    if(puedeActualizar) h += `<button type="button" class="btn btn-outline" onclick="cerrarSheet(); actualizarHojaPicking('${escapeAtributo(p.id)}')">Actualizar hoja de picking</button>`;
+    if(p.anexosPicking && p.anexosPicking.length){
+      h += p.anexosPicking.map((a,i)=>`<a class="btn btn-outline" href="${escapeAtributo(a.url)}" target="_blank" style="text-decoration:none;" onclick="setTimeout(cerrarSheet,200)">Anexo #${i+1} · ${a.lineas} líneas</a>`).join('');
+    }
+  }
+  if(hojasF.length){
+    h += titulo('Hojas firmadas (escaneadas)');
+    h += hojasF.map((a,i)=>`<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+      <a class="btn btn-primary" href="${escapeAtributo(a.url)}" target="_blank" style="flex:1; margin:0; text-align:center; text-decoration:none;" onclick="setTimeout(cerrarSheet,200)">Abrir #${i+1}${a.paginas ? ' ('+a.paginas+' pág.)' : ''} · ${fechaCorta(a.fecha)}</a>
+      ${admin ? `<button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:10px 12px; color:#B33A3A; border-color:#B33A3A;" onclick="borrarHojaEscaneada('${escapeAtributo(p.id)}', ${i})">Eliminar</button>` : ''}
+    </div>`).join('');
+  }
+  if(puedeEscanear){
+    h += `<button type="button" class="btn btn-ok" style="margin-top:14px;" onclick="cerrarSheet(); abrirEscanerHoja('${escapeAtributo(p.id)}')">${hojasF.length ? 'Escanear nueva hoja firmada' : 'Escanear hoja firmada'}</button>`;
+  }
+  h += `<button type="button" class="btn btn-ghost" onclick="cerrarSheet()">Cerrar</button>`;
+  mostrarSheet(h);
+}
 
 async function verHojasFirmadas(id){
   const p = DB.find(x=>x.id===id) || await asegurarPickingEnDB(id);
