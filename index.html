@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1173</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1174</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -16507,7 +16507,7 @@ function continuarLineaBip(codigo){
     <label>Lote</label>
     ${campoLoteHtml('', codigo, 'Obligatorio — si se deja en blanco se guarda como N/A')}
     <label>Cantidad</label>
-    <input type="number" id="lineaCantidad" min="1" value="" placeholder="1" inputmode="numeric" onfocus="this.select()">
+    <input type="text" id="lineaCantidad" value="" placeholder="1" inputmode="decimal" autocomplete="off" onfocus="this.select()">
     <button class="btn btn-primary" onclick="confirmarLineaBip()">Añadir a la lista</button>
     <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Cancelar</button>
   `);
@@ -16518,10 +16518,17 @@ function campoLoteHtml(valor, codigoEsperado, placeholder){
   return `<input type="text" class="mono" id="lineaLote" value="${escapeAtributo(valor||'')}" placeholder="${escapeAtributo(placeholder||'')}" autocomplete="off">`;
 }
 
+// Cantidad con decimales: acepta coma o punto (1,8 o 1.8). Si no es un número positivo, cuenta 1.
+function leerCantidadLinea(){
+  const n = parseFloat(String(document.getElementById('lineaCantidad').value || '').trim().replace(',', '.'));
+  if(!isFinite(n) || n <= 0) return 1;
+  return Math.round(n * 1000) / 1000;
+}
+
 function confirmarLineaBip(){
   if(!rpLineaPendiente || !sesionPicking) return;
   const lote = document.getElementById('lineaLote').value.trim() || 'N/A';
-  const cantidad = parseInt(document.getElementById('lineaCantidad').value) || 1;
+  const cantidad = leerCantidadLinea();
   sesionPicking.componentes.push({ codigo: rpLineaPendiente.codigo, lote, cantidad });
   rpLineaPendiente = null;
   cerrarSheet();
@@ -16539,7 +16546,7 @@ function editarLineaBip(idx){
     <label>Lote</label>
     ${campoLoteHtml(c.lote, c.codigo, '')}
     <label>Cantidad</label>
-    <input type="number" id="lineaCantidad" min="1" value="${c.cantidad}" inputmode="numeric" onfocus="this.select()">
+    <input type="text" id="lineaCantidad" value="${escapeAtributo(String(c.cantidad).replace('.', ','))}" inputmode="decimal" autocomplete="off" onfocus="this.select()">
     <button class="btn btn-primary" onclick="guardarEdicionLineaBip(${idx})">Guardar</button>
     <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="borrarLineaBip(${idx})">Eliminar esta línea</button>
   `);
@@ -16548,7 +16555,7 @@ function guardarEdicionLineaBip(idx){
   const c = sesionPicking.componentes[idx];
   if(!c) return;
   c.lote = document.getElementById('lineaLote').value.trim() || 'N/A';
-  c.cantidad = parseInt(document.getElementById('lineaCantidad').value) || 1;
+  c.cantidad = leerCantidadLinea();
   cerrarSheet();
   refrescarBipUI();
 }
