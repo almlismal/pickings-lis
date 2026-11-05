@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1183</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1185</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -16016,7 +16016,7 @@ function detalleHtml(p){
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? p.anexosPicking.map((a,i)=>`<a class="btn btn-outline" href="${escapeAtributo(a.url)}" target="_blank" style="display:block; width:100%; box-sizing:border-box; margin-top:8px; text-decoration:none; text-align:center;">Hoja anexa #${i+1} (${a.lineas} líneas)</a>`).join('') : ''}
       ${(!entregado && usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirReubicar('${p.id}')" style="margin-top:8px;">Reubicar</button>` : ''}
-      ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')" style="border-width:2px; border-color:#0F5257;">Ver hoja firmada${p.hojasEscaneadas.length > 1 ? ' (' + p.hojasEscaneadas.length + ')' : ''}</button>`
+      ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')" style="border-width:2px; border-color:#0F5257;">Ver hoja firmada${firmadaPorHoja(p, p.hojasEscaneadas[p.hojasEscaneadas.length-1]) ? ' por: ' + escapeHtml(firmadaPorHoja(p, p.hojasEscaneadas[p.hojasEscaneadas.length-1])) : ''}${p.hojasEscaneadas.length > 1 ? ' (' + p.hojasEscaneadas.length + ')' : ''}</button>`
         : ((p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : '')}
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
       ${(usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0 && p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear nueva hoja firmada</button>` : ((usuarioActual && entregado && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear hoja firmada</button>` : '')}
@@ -17092,13 +17092,13 @@ async function verHojasFirmadas(id){
   const filas = hojas.map((a,i)=>{
     const firmo = firmadaPorHoja(p, a);
     return `<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-      <a class="btn btn-primary" href="${escapeAtributo(a.url)}" target="_blank" style="flex:1; margin:0; text-align:center; text-decoration:none;" onclick="setTimeout(cerrarSheet,200)">Abrir #${i+1}${firmo ? ' · Firmada por ' + escapeHtml(firmo) : ''}<br><span style="font-size:12px; font-weight:400;">${a.paginas ? a.paginas+' pág. · ' : ''}${fechaCorta(a.fecha)}${a.subidoPor ? ' · escaneada por ' + escapeHtml(a.subidoPor) : ''}</span></a>
+      <a class="btn btn-primary" href="${escapeAtributo(a.url)}" target="_blank" style="flex:1; margin:0; text-align:center; text-decoration:none;" onclick="setTimeout(cerrarSheet,200)">Abrir #${i+1}<br><span style="font-size:12px; font-weight:400;">${a.paginas ? a.paginas+' pág. · ' : ''}${fechaCorta(a.fecha)}</span></a>
       ${admin ? `<button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:10px 12px; color:#B33A3A; border-color:#B33A3A;" onclick="borrarHojaEscaneada('${p.id}', ${i})">Eliminar</button>` : ''}
     </div>`;
   }).join('');
   const digital = (p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length))
     ? `<div class="hint" style="margin:12px 0 6px;">Hoja de picking digital (sin firma)</div>
-       <button type="button" class="btn btn-outline" onclick="cerrarSheet(); verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : '';
+       <button type="button" class="btn btn-outline" onclick="cerrarSheet(); verHojaPickingDetalle('${p.id}')">Abrir hoja digital</button>` : '';
   mostrarSheet(`
     <h3>Hoja firmada — OF ${escapeHtml(p.of)}</h3>
     ${filas}
