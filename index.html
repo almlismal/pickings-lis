@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1176</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1181</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -752,6 +752,8 @@
     </div>
     <div id="rpPausados"></div>
     <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
+    <button class="btn btn-outline" onclick="escanearParaInicio()" style="margin:0 0 6px;">Escanear etiqueta para leer la OF</button>
+    <div class="hint" style="margin:0 0 12px;">Opcional. Si la etiqueta no se lee, escribe la OF a mano.</div>
     <label>OF</label>
     <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
     <div class="row2">
@@ -12449,7 +12451,7 @@ function cargarNombres(){
 /* ---------- navegación ---------- */
 function ir(pantalla, esVolver){
   const anterior = document.querySelector('.screen.active');
-  if(anterior && anterior.id==='screen-escanear' && pantalla!=='escanear') detenerEscaner();
+  if(anterior && anterior.id==='screen-escanear' && pantalla!=='escanear'){ detenerEscaner(); escanerParaInicio = false; }
   if(anterior && anterior.id==='screen-realizar-bip' && pantalla!=='realizar-bip') detenerBipCamara();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+pantalla).classList.add('active');
@@ -15245,7 +15247,28 @@ function restaurarPantallaComprobarOf(){
   if(hint) hint.textContent = 'Apunta la cámara al QR de la etiqueta de picking de la caja.';
   if(saltarBtn) saltarBtn.style.display = 'none';
 }
+// Escanear la etiqueta al empezar el picking: solo lee la OF; el resto se rellena a mano.
+let escanerParaInicio = false;
+function escanearParaInicio(){
+  escanerParaInicio = true;
+  verificacionOfPendiente = null;
+  alVerificarOfExito = null;
+  ir('escanear');
+  const titulo = document.getElementById('escanearTitulo');
+  const hint = document.getElementById('escanearHint');
+  const saltarBtn = document.getElementById('escanearSaltarBtn');
+  if(titulo) titulo.textContent = 'Leer la OF';
+  if(hint) hint.textContent = 'Apunta la cámara al QR de la etiqueta. Si no se lee, vuelve y escribe la OF a mano.';
+  if(saltarBtn) saltarBtn.style.display = 'none';
+}
+function salirEscanerInicio(){
+  escanerParaInicio = false;
+  detenerEscaner();
+  restaurarPantallaComprobarOf();
+  ir('realizar-inicio');
+}
 function cancelarComprobarOf(){
+  if(escanerParaInicio){ salirEscanerInicio(); return; }
   const cbPendiente = alVerificarOfExito;
   verificacionOfPendiente = null;
   alVerificarOfExito = null;
@@ -15970,8 +15993,7 @@ function detalleHtml(p){
   `;
 
   const gestionBtns = puedeGestionar(p)
-    ? `<button class="btn btn-outline" onclick="abrirCambiarSegundaPersona('${p.id}')" style="margin-top:14px;">Otra persona que lo hizo</button>
-       <button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:8px;">Editar datos del picking</button>
+    ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">Editar datos del picking</button>
        <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">Eliminar este picking</button>`
     : `<div class="hint" style="margin-top:14px;">Solo quien lo registró o un administrador pueden editar o eliminar este picking.</div>`;
 
@@ -16180,6 +16202,24 @@ function procesarTextoQR(texto){
   const estadoEl = document.getElementById('escanerEstado');
   const resultadoEl = document.getElementById('escanerResultado');
   if(estadoEl) estadoEl.textContent = '';
+
+  if(escanerParaInicio){
+    if(/^\d{8}$/.test(of)){
+      escanerParaInicio = false;
+      const campo = document.getElementById('rp_of');
+      if(campo) campo.value = of;
+      restaurarPantallaComprobarOf();
+      ir('realizar-inicio');
+      toast('OF leída: ' + of + '. Revisa los datos y pulsa Empezar');
+      return;
+    }
+    if(resultadoEl) resultadoEl.innerHTML = `
+      <div class="obs-box">No se reconoce la OF en esa etiqueta.</div>
+      <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:10px;">Volver a escanear</button>
+      <button class="btn btn-outline" onclick="salirEscanerInicio()" style="margin-top:8px;">Escribir la OF a mano</button>
+    `;
+    return;
+  }
 
   if(verificacionOfPendiente){
     mostrarResultadoVerificacionOf(of);
@@ -16537,13 +16577,14 @@ const PISTAS_LOTE_MAX = 6;
 function pistasLoteHtml(valor, lotes){
   const v = String(valor || '').toUpperCase();
   let h = '';
-  if(/^\d{4}$/.test(v)) h += `<button type="button" class="chip" onclick="ponerSufijoLote()" style="cursor:pointer;">+ -ESP-</button>`;
+  const estiloPista = 'cursor:pointer; font-size:16px; font-weight:700; padding:10px 14px; min-height:44px;';
+  if(/^\d{4}$/.test(v)) h += `<button type="button" class="chip" onclick="ponerSufijoLote()" style="${estiloPista}">+ -ESP-</button>`;
   const coinciden = (lotes || []).filter(l => l !== v && l.toUpperCase().indexOf(v) !== -1);
   coinciden.slice(0, PISTAS_LOTE_MAX).forEach(l => {
-    h += `<button type="button" class="chip" data-lote="${escapeAtributo(l)}" onclick="ponerLoteSugerido(this)" style="cursor:pointer;">${escapeHtml(l)}</button>`;
+    h += `<button type="button" class="chip mono" data-lote="${escapeAtributo(l)}" onclick="ponerLoteSugerido(this)" style="${estiloPista}">${escapeHtml(l)}</button>`;
   });
   if(coinciden.length > PISTAS_LOTE_MAX){
-    h += `<span class="hint" style="margin:0; align-self:center;">${coinciden.length - PISTAS_LOTE_MAX} más: escribe para filtrar</span>`;
+    h += `<span class="hint" style="margin:0; align-self:center; font-size:14px;">${coinciden.length - PISTAS_LOTE_MAX} más: escribe para filtrar</span>`;
   }
   return h;
 }
@@ -17025,7 +17066,7 @@ async function subirHojaEscaneadaApp(){
     const volverA = h.volverA;
     hojaEsc = null; cerrarSheet();
     toast('Hoja guardada');
-    if(volverA){ if(volverA === 'completa') entregaFirmadaSubida = true; entregar(volverA, true); return; }
+    if(volverA){ entregaFirmadaSubida = true; entregaSinHoja = ''; entregar(volverA, true); return; }
     if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') reabrirDetalleSeguro(h.id);
   }catch(err){
     h.subiendo = false; pintarEscanerHoja();
@@ -17743,7 +17784,23 @@ let entregaItemsEstado = {};
 let entregaPorActivo = null; // null = quien tiene la sesión abierta; si no, nombre ya verificado con su PIN
 let entregaDraft = { a:'', nota:'' };
 
-let entregaFirmadaSubida = false; // en el formulario de Entrega completa: ya se subió la hoja firmada (solo administradores)
+let entregaFirmadaSubida = false; // en el formulario de entrega (completa o parcial): ya se subió la hoja firmada
+// Explicación cuando no hay hoja firmada (picking de antes de la app). Se guarda en la nota de la entrega.
+let entregaSinHoja = '';
+function pedirSinHojaFirmada(tipo){
+  guardarBorradorEntrega();
+  mostrarSheet(`<h3>Excepción: sin hoja firmada</h3>
+    <p style="font-size:14px; margin:0 0 10px;">Explica por qué no hay hoja firmada. Queda anotado en la entrega.</p>
+    <textarea id="sinHojaMotivo" placeholder="Ej. Picking de antes de la app: lo controlaba Pedro y él firmaba">${escapeHtml(entregaSinHoja)}</textarea>
+    <button class="btn btn-primary" onclick="guardarSinHoja('${tipo}')">Guardar explicación</button>
+    <button class="btn btn-ghost" onclick="entregar('${tipo}', true)">Volver</button>`);
+}
+function guardarSinHoja(tipo){
+  const motivo = ((document.getElementById('sinHojaMotivo')||{}).value || '').trim();
+  if(motivo.length < 10){ toast('Escribe una explicación con algo más de detalle'); return; }
+  entregaSinHoja = motivo;
+  entregar(tipo, true);
+}
 function entregar(tipo, manteniendoEstado){
   if(tipo==='lote'){ entregarLote(true); return; } // "Cancelar" / volver desde el cambio de quién entrega en una entrega en lote
   const p = DB.find(x=>x.id===ofEnDetalle);
@@ -17751,6 +17808,7 @@ function entregar(tipo, manteniendoEstado){
   if(!manteniendoEstado){
     entregaPorActivo = null;
     entregaFirmadaSubida = false;
+    entregaSinHoja = '';
     entregaDraft = { a:'', nota:'' };
     if(tipo==='parcial' && p){
       entregaItemsEstado = {};
@@ -17774,6 +17832,7 @@ function entregar(tipo, manteniendoEstado){
     <button type="button" class="check-pill add" style="margin-top:10px; display:inline-block; width:auto; padding:10px 16px;" onclick="mostrarCajaNuevoComponente()">+ Añadir componente</button>`;
   }
 
+  const requiereHoja = !!(p && usuarioActual && String(p.id).indexOf('tmp_')!==0);
   let html = `
     <h3>${tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</h3>
     ${(tipo==='completa' && p && fueraActivas(p).length) ? `<div style="background:#FFF4D6; border:1.5px solid #E0B64A; border-radius:10px; padding:9px 11px; margin:0 0 12px; font-size:14px;"><b>⚠ Ojo: además de la caja, lleva fuera:</b><br>${fueraActivas(p).map(k=> '• ' + escapeHtml(k) + ' — ' + escapeHtml((p.ubicaciones||{})[k] || 'sin ubicación')).join('<br>')}<div style="font-size:12.5px; margin-top:4px;">Comprueba que se entrega todo junto.</div></div>` : ''}
@@ -17791,10 +17850,13 @@ function entregar(tipo, manteniendoEstado){
     <textarea id="entregaNota" placeholder="Ej. Se llevan 2 perfiles del part number X, quedan 5 por retirar">${escapeHtml(entregaDraft.nota)}</textarea>` : `<label>Comentario <span style="font-weight:400; color:var(--ink-soft);">(opcional — si queda algo sin entregar, anótalo aquí)</span></label>
     <textarea id="entregaNota" placeholder="Ej. Lo firma Pedro pero lo retira Luis · Falta por entregar el perfil X">${escapeHtml(entregaDraft.nota)}</textarea>`}
 
-    ${(tipo==='completa' && p && usuarioActual && String(p.id).indexOf('tmp_')!==0) ? `<div class="obs-box" style="margin:12px 0;">
+    ${requiereHoja ? `<div class="obs-box" id="hojaFirmaBloque" style="margin:12px 0;">
       <b>Hoja firmada</b>
-      ${entregaFirmadaSubida ? `<div style="margin:6px 0; color:#1B7F3B;"><b>Hoja firmada adjuntada ✓</b></div>` : `<div class="hint" style="margin:4px 0 8px;">Opcional: haz foto de la hoja con la firma de DHV y queda guardada con la OF.</div>`}
+      ${entregaFirmadaSubida ? `<div style="margin:6px 0; color:#1B7F3B;"><b>Hoja firmada adjuntada ✓</b></div>`
+        : (entregaSinHoja ? `<div style="margin:6px 0; color:#8A5A00;"><b>Excepción:</b> ${escapeHtml(entregaSinHoja)}</div>`
+        : `<div class="hint" style="margin:4px 0 8px;">Obligatorio: escanea la hoja firmada por DHV. Si no existe, pulsa “Excepción: no hay hoja firmada”.</div>`)}
       <button type="button" class="btn btn-outline" style="margin:0;" onclick="escanearHojaFirmadaDesdeEntrega('${tipo}')">${entregaFirmadaSubida ? 'Escanear otra hoja' : 'Escanear hoja firmada'}</button>
+      ${entregaFirmadaSubida ? '' : `<button type="button" class="btn btn-outline" style="margin:8px 0 0;" onclick="pedirSinHojaFirmada('${tipo}')">${entregaSinHoja ? 'Cambiar explicación' : 'Excepción: no hay hoja firmada'}</button>`}
     </div>` : ''}
     <div class="sign-banner">
       <label>
@@ -17907,7 +17969,8 @@ function confirmarAnadirComponenteEntrega(){
 function toggleBtnEntrega(){
   const chk = document.getElementById('confirmFirma');
   const btn = document.getElementById('btnConfirmarEntrega');
-  if(chk && btn) btn.style.opacity = chk.checked ? '1' : '0.5';
+  const hojaOk = !document.getElementById('hojaFirmaBloque') || entregaFirmadaSubida || !!entregaSinHoja;
+  if(chk && btn) btn.style.opacity = (chk.checked && hojaOk) ? '1' : '0.5';
 }
 function rellenarEntregaA(valor){
   const campo = document.getElementById('entregaA');
@@ -17935,6 +17998,8 @@ async function confirmarEntrega(tipo){
     if(!por){ toast('Falta quién entrega'); return; }
     if(!a){ toast('Falta a quién se entrega'); return; }
     if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
+    const requiereHoja = !!(usuarioActual && String(p.id).indexOf('tmp_')!==0);
+    if(requiereHoja && !entregaFirmadaSubida && !entregaSinHoja){ toast('Escanea la hoja firmada o pulsa “Excepción: no hay hoja firmada”'); return; }
 
     let items = [];
     if(tipo==='parcial'){
@@ -17943,6 +18008,7 @@ async function confirmarEntrega(tipo){
     }
 
     if(items.length) nota = `[${items.map(([n,e])=>`${n}:${e}`).join('|')}] ${nota}`;
+    if(requiereHoja && !entregaFirmadaSubida && entregaSinHoja) nota = `[Excepción sin hoja firmada: ${entregaSinHoja}] ${nota}`.trim();
 
     const entregaLocal = { tipo, entregadoPor: por, entregadoA: a, nota, fecha: new Date().toISOString() };
     p.entregas.push(entregaLocal);
@@ -17956,6 +18022,7 @@ async function confirmarEntrega(tipo){
 
     encolarOperacion('entregar', { pickingId: p.id, tipo, entregadoPor: por, entregadoA: a, nota }, p.id, (tipo==='completa' ? 'Entregar' : 'Entrega parcial') + ' OF ' + p.of);
     entregaFirmadaSubida = false;
+    entregaSinHoja = '';
   } catch(errGeneral){
     toast('Algo falló al confirmar — inténtalo de nuevo');
   }
