@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1175</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1176</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -16522,8 +16522,57 @@ function continuarLineaBip(codigo){
 }
 
 // Campo de lote (se escribe a mano).
+// Lotes que ya se usaron para ese mismo código (de los pickings guardados en este móvil)
+let lotePistasActuales = [];
+function lotesAnterioresCodigo(codigo){
+  const out = [];
+  const añadir = c => { if(c && c.codigo === codigo && c.lote && c.lote !== 'N/A' && out.indexOf(c.lote) === -1) out.push(c.lote); };
+  ((sesionPicking && sesionPicking.componentes) || []).forEach(añadir);
+  (DB || []).forEach(p => (p.componentesPicking || []).forEach(añadir));
+  return out;
+}
+// Muestra los lotes que coinciden con lo escrito (un mismo código puede tener muchos lotes).
+// Sin escribir nada se ven los 6 más recientes; al escribir, la lista se va filtrando.
+const PISTAS_LOTE_MAX = 6;
+function pistasLoteHtml(valor, lotes){
+  const v = String(valor || '').toUpperCase();
+  let h = '';
+  if(/^\d{4}$/.test(v)) h += `<button type="button" class="chip" onclick="ponerSufijoLote()" style="cursor:pointer;">+ -ESP-</button>`;
+  const coinciden = (lotes || []).filter(l => l !== v && l.toUpperCase().indexOf(v) !== -1);
+  coinciden.slice(0, PISTAS_LOTE_MAX).forEach(l => {
+    h += `<button type="button" class="chip" data-lote="${escapeAtributo(l)}" onclick="ponerLoteSugerido(this)" style="cursor:pointer;">${escapeHtml(l)}</button>`;
+  });
+  if(coinciden.length > PISTAS_LOTE_MAX){
+    h += `<span class="hint" style="margin:0; align-self:center;">${coinciden.length - PISTAS_LOTE_MAX} más: escribe para filtrar</span>`;
+  }
+  return h;
+}
 function campoLoteHtml(valor, codigoEsperado, placeholder){
-  return `<input type="text" class="mono" id="lineaLote" value="${escapeAtributo(valor||'')}" placeholder="${escapeAtributo(placeholder||'')}" autocomplete="off">`;
+  lotePistasActuales = lotesAnterioresCodigo(codigoEsperado);
+  return `<input type="text" class="mono" id="lineaLote" value="${escapeAtributo(valor||'')}" placeholder="${escapeAtributo(placeholder||'')}" autocomplete="off" autocapitalize="characters" oninput="loteEscrito(this)">
+    <div id="lotePistas" style="display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px;">${pistasLoteHtml(valor, lotePistasActuales)}</div>`;
+}
+// Al escribir: todo en mayúsculas (conservando la posición del cursor) y se actualizan las pistas
+function loteEscrito(input){
+  const pos = input.selectionStart;
+  const up = input.value.toUpperCase();
+  if(up !== input.value){
+    input.value = up;
+    try{ input.setSelectionRange(pos, pos); }catch(e){}
+  }
+  const box = document.getElementById('lotePistas');
+  if(box) box.innerHTML = pistasLoteHtml(input.value, lotePistasActuales);
+}
+function ponerSufijoLote(){
+  const input = document.getElementById('lineaLote'); if(!input) return;
+  input.value = input.value + '-ESP-';
+  loteEscrito(input);
+  input.focus();
+}
+function ponerLoteSugerido(btn){
+  const input = document.getElementById('lineaLote'); if(!input) return;
+  input.value = btn.dataset.lote || '';
+  loteEscrito(input);
 }
 
 // Cantidad con decimales: acepta coma o punto (1,8 o 1.8). Si no es un número positivo, cuenta 1.
@@ -16535,7 +16584,7 @@ function leerCantidadLinea(){
 
 function confirmarLineaBip(){
   if(!rpLineaPendiente || !sesionPicking) return;
-  const lote = document.getElementById('lineaLote').value.trim() || 'N/A';
+  const lote = document.getElementById('lineaLote').value.trim().toUpperCase() || 'N/A';
   const cantidad = leerCantidadLinea();
   sesionPicking.componentes.push({ codigo: rpLineaPendiente.codigo, lote, cantidad });
   rpLineaPendiente = null;
@@ -16562,7 +16611,7 @@ function editarLineaBip(idx){
 function guardarEdicionLineaBip(idx){
   const c = sesionPicking.componentes[idx];
   if(!c) return;
-  c.lote = document.getElementById('lineaLote').value.trim() || 'N/A';
+  c.lote = document.getElementById('lineaLote').value.trim().toUpperCase() || 'N/A';
   c.cantidad = leerCantidadLinea();
   cerrarSheet();
   refrescarBipUI();
