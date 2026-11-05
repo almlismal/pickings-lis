@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1174</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1175</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11147,6 +11147,7 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
     ubicaciones: parseUbicaciones(row['Ubicaciones']),
     observaciones: row['Observaciones'] || '',
     registradoPor: row['Registrado por'] || '',
+    segundaPersonaPicking: row['Segunda persona'] || '',
     fecha: row['Fecha'],
     // si la columna Estado está vacía pero consta una entrega completa, está entregada
     // una entrega completa anotada manda sobre la columna Estado: si la fila quedó en Pickings
@@ -12034,13 +12035,14 @@ function fechaDDMMAAAA(d){
 }
 function encolarRegenHoja(p, firmaDhv, entregado, fechaISO, extra){
   if(!p) return null;      // la hoja de cálculo decide si hay líneas de las que rehacerla
-  const hechoPor = p.hechoPorPicking || p.registradoPor || '';
+  const quien = p.hechoPorPicking || p.registradoPor || '';
+  const otra = p.segundaPersonaPicking || '';
   const item = {
     clave: p.id, opId: 'rg_' + p.id + '_' + Date.now().toString(36), intentos: 0,
     datos: {
       pickingId: p.id, firmaDhv: firmaDhv || '', fechaEntrega: entregado ? fechaDDMMAAAA(fechaISO ? new Date(fechaISO) : new Date()) : '',
       semana: p.semanaPicking || semanaISO(new Date(p.fecha || Date.now())),
-      hechoPor, iniciales: inicialesLis(hechoPor)
+      hechoPor: hechoPorEquipo(quien, otra), iniciales: inicialesEquipo(quien, otra)
     }
   };
   if(extra){ item.datos.componentes = extra.componentes; item.datos.incidencias = extra.incidencias; }
@@ -15183,6 +15185,7 @@ async function guardarPicking(){
 
 function mostrarConfirmacionRegistro(datos, verificada){
   pendienteRegistro = datos;
+  segundaModo = 'registro'; segundaElegida = datos.segundaPersona || '';
   mostrarSheet(`
     <h3>Confirmar registro</h3>
     <div class="attn-banner" style="margin:0 0 10px;"><span class="dot">!</span><span><b>Atento antes de confirmar</b> — revisa bien que todos los datos estén correctos.</span></div>
@@ -15194,6 +15197,8 @@ function mostrarConfirmacionRegistro(datos, verificada){
     <p style="font-size:14px; color:var(--ink-soft); text-align:center; margin:0 0 4px;">
       Proyecto <b style="color:var(--ink);">${datos.proyecto || '—'}</b>${datos.subproyecto ? ` · FM <b style="color:var(--ink);">${datos.subproyecto}</b>` : ''}
     </p>
+    <label>Otra persona que lo hizo (opcional)</label>
+    <div id="segundaPersonaBurbujas" style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px;">${burbujasSegundaPersona(datos.segundaPersona || '', datos.registradoPor || usuarioActual)}</div>
     <button class="btn btn-primary" onclick="confirmarPasoRegistro(false)">✓ Está bien, registrar</button>
     <button class="btn btn-outline" onclick="confirmarPasoRegistro(true)">Registrar y añadir otra OF de este proyecto</button>
     ${!verificada ? `<button class="btn btn-outline" onclick="verificarOfConCamara()">Escanear la etiqueta para comprobar la OF</button>` : ''}
@@ -15462,6 +15467,7 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
     incidenciasPicking: datos.incidencias || [],
     semanaPicking: datos.semanaPicking || '',
     hechoPorPicking: datos.hechoPorPicking || '',
+    segundaPersonaPicking: datos.segundaPersona || '',
     hojaPickingUrl: '', // se rellena solo en cuanto la nube confirme el PDF
     sync: 'pendiente', syncError: ''
   };
@@ -15484,7 +15490,8 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
   const datosEnvio = Object.assign({}, datos, {
     componentes: conDescripciones(datos.componentes),
     incidencias: conDescripciones(datos.incidencias),
-    inicialesPicking: inicialesLis(datos.hechoPorPicking)
+    inicialesPicking: inicialesEquipo(datos.hechoPorPicking || datos.registradoPor || '', datos.segundaPersona),
+    hechoPorTexto: hechoPorEquipo(datos.hechoPorPicking || datos.registradoPor || '', datos.segundaPersona)
   });
   encolarOperacion('crearPicking', datosEnvio, optimista.id, 'Registrar OF ' + datos.of);
 }
@@ -15963,7 +15970,8 @@ function detalleHtml(p){
   `;
 
   const gestionBtns = puedeGestionar(p)
-    ? `<button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:14px;">Editar datos del picking</button>
+    ? `<button class="btn btn-outline" onclick="abrirCambiarSegundaPersona('${p.id}')" style="margin-top:14px;">Otra persona que lo hizo</button>
+       <button class="btn btn-outline" onclick="abrirEdicion('${p.id}')" style="margin-top:8px;">Editar datos del picking</button>
        <button class="btn btn-outline" onclick="abrirBorrarPicking('${p.id}')" style="margin-top:8px; color:#B33A3A; border-color:#B33A3A;">Eliminar este picking</button>`
     : `<div class="hint" style="margin-top:14px;">Solo quien lo registró o un administrador pueden editar o eliminar este picking.</div>`;
 
@@ -15982,7 +15990,7 @@ function detalleHtml(p){
         ${Object.entries(p.ubicaciones).map(([k,v])=>`<b>${k==='Cajas' ? 'Cajas de picking ('+p.cajas+')' : k}</b> → ${v}`).join('<br>')}
       </div>` : ''}
       ${p.observaciones ? `<div class="obs-box">${p.observaciones}</div>` : ''}
-      <div class="hint" style="margin-top:10px;">Picking registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}</div>
+      <div class="hint" style="margin-top:10px;">Picking registrado por ${escapeHtml(quienesHicieron(p))} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? p.anexosPicking.map((a,i)=>`<a class="btn btn-outline" href="${escapeAtributo(a.url)}" target="_blank" style="display:block; width:100%; box-sizing:border-box; margin-top:8px; text-decoration:none; text-align:center;">Hoja anexa #${i+1} (${a.lineas} líneas)</a>`).join('') : ''}
       ${(!entregado && usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirReubicar('${p.id}')" style="margin-top:8px;">Reubicar</button>` : ''}
@@ -16274,7 +16282,7 @@ function resumenEscaneoEncontrado(p){
     <div class="obs-box">
       <b>OF ${p.of}</b> ya está registrada — ${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''}<br>
       ${textoCajas(p.cajas)}${ubic ? ' · '+ubic : ''}<br>
-      Registrado por ${p.registradoPor} · ${fechaCorta(p.fecha)}
+      Registrado por ${escapeHtml(quienesHicieron(p))} · ${fechaCorta(p.fecha)}
     </div>
     <button class="btn btn-primary" onclick="irAAmpliarDesdeEscaner('${p.id}')" style="margin-top:10px;">Meter en su misma caja</button>
     <button class="btn btn-outline" onclick="verDetalleDesdeEscaner('${p.id}')" style="margin-top:8px;">Ver detalle completo</button>
@@ -16803,10 +16811,10 @@ function confirmarAgregarComponentesExistente(modo){
 
   encolarOperacion('agregarComponentesPicking', {
     id, of: p.of, proyecto: p.proyecto, subproyecto: p.subproyecto,
-    semana: semanaISO(new Date()), hechoPor: usuarioActual || 'Sin identificar',
+    semana: semanaISO(new Date()), hechoPor: hechoPorEquipo(p.hechoPorPicking || p.registradoPor || usuarioActual || 'Sin identificar', p.segundaPersonaPicking),
     agregadoPor: usuarioActual || 'Sin identificar',
     nuevosComponentes: conDescripciones(nuevosComponentes), nuevasIncidencias: conDescripciones(nuevasIncidencias), modo,
-    iniciales: inicialesLis(usuarioActual)
+    iniciales: inicialesEquipo(p.hechoPorPicking || p.registradoPor || usuarioActual || '', p.segundaPersonaPicking)
   }, id, (modo==='regenerar' ? 'Regenerar hoja' : 'Añadir hoja aparte') + ' OF ' + p.of);
 }
 
@@ -17024,6 +17032,56 @@ function semanaISO(d){
   const numero = 1 + Math.round(((date - semana1) / 86400000 - 3 + (semana1.getDay()+6)%7) / 7);
   return `Semana ${numero} · ${date.getFullYear()}`;
 }
+// Dos personas por picking: quien lo registró y, opcionalmente, otra persona.
+let segundaElegida = '', segundaModo = 'registro', segundaCambioId = null;
+// Iniciales para la casilla de firma: "ASD · Delia" (o solo las de una persona si no hay otra)
+function inicialesEquipo(quien, otra){
+  if(!otra) return inicialesLis(quien);
+  const a = inicialesLis(quien) || String(quien || '');
+  const b = inicialesLis(otra) || otra;
+  return a ? a + ' · ' + b : b;
+}
+// Texto para "Hecho por": "Adrián y Delia"
+function hechoPorEquipo(quien, otra){ return otra ? quien + ' y ' + otra : quien; }
+function quienesHicieron(p){ return p.segundaPersonaPicking ? (p.registradoPor || '') + ' y ' + p.segundaPersonaPicking : (p.registradoPor || ''); }
+// Burbujas con los usuarios registrados, sin la persona que ya figura como registrada
+function burbujasSegundaPersona(sel, excluir){
+  const ex = claveNombre(excluir || usuarioActual || '');
+  const nombres = cargarNombres().filter(n=>claveNombre(n)!==ex);
+  if(!nombres.length) return '<span class="hint">No hay otros usuarios registrados.</span>';
+  return nombres.map(n=>{
+    const on = sel === n;
+    return `<button type="button" class="chip" data-n="${escapeAtributo(n)}" onclick="elegirSegundaPersona(this)" style="cursor:pointer;${on ? 'background:#2B4C7E;color:#fff;border-color:#2B4C7E;' : ''}">${escapeHtml(n)}</button>`;
+  }).join('');
+}
+function elegirSegundaPersona(btn){
+  const n = btn.dataset.n;
+  segundaElegida = segundaElegida === n ? '' : n;
+  if(segundaModo === 'registro' && pendienteRegistro) pendienteRegistro.segundaPersona = segundaElegida;
+  document.querySelectorAll('#segundaPersonaBurbujas .chip').forEach(c=>{
+    const on = c.dataset.n === segundaElegida;
+    c.style.background = on ? '#2B4C7E' : ''; c.style.color = on ? '#fff' : ''; c.style.borderColor = on ? '#2B4C7E' : '';
+  });
+}
+function abrirCambiarSegundaPersona(id){
+  const p = DB.find(x=>x.id===id); if(!p) return;
+  segundaCambioId = id; segundaModo = 'cambio'; segundaElegida = p.segundaPersonaPicking || '';
+  const quien = p.registradoPor || '';
+  mostrarSheet(`<h3>Otra persona que lo hizo</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Lo registró <b>${escapeHtml(quien)}</b>. Toca una persona para elegirla; si la tocas otra vez, se quita.</p>
+    <div id="segundaPersonaBurbujas" style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px;">${burbujasSegundaPersona(segundaElegida, quien)}</div>
+    <button class="btn btn-primary" onclick="guardarSegundaPersona()">Guardar</button>
+    <button class="btn btn-ghost" onclick="cerrarSheet()">Cancelar</button>`);
+}
+function guardarSegundaPersona(){
+  const p = DB.find(x=>x.id===segundaCambioId); if(!p) return;
+  p.segundaPersonaPicking = segundaElegida || '';
+  guardarDBLocal();
+  cerrarSheet();
+  encolarOperacion('cambiarSegundaPersona', { pickingId: p.id, segundaPersona: p.segundaPersonaPicking, quien: usuarioActual || '' }, p.id, 'Cambiar otra persona OF ' + p.of);
+  actualizarHojaPicking(p.id);
+}
+
 // Iniciales que se escriben solas en "FIRMA Y NOMBRE LIS" de la hoja.
 // Se busca por el nombre con el que se identifica cada persona (sin
 // importar mayúsculas ni tildes). Si el nombre no está aquí, la casilla
