@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1186</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1187</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -17156,7 +17156,7 @@ function burbujasSegundaPersona(sel, excluir){
   if(!nombres.length) return '<span class="hint">No hay otros usuarios registrados.</span>';
   return nombres.map(n=>{
     const on = sel === n;
-    return `<button type="button" class="chip" data-n="${escapeAtributo(n)}" onclick="elegirSegundaPersona(this)" style="cursor:pointer;${on ? 'background:#2B4C7E;color:#fff;border-color:#2B4C7E;' : ''}">${escapeHtml(n)}</button>`;
+    return `<button type="button" class="chip" data-n="${escapeAtributo(n)}" onclick="elegirSegundaPersona(this)" style="cursor:pointer; font-size:16px; font-weight:700; padding:10px 14px; min-height:44px;${on ? 'background:#2B4C7E;color:#fff;border-color:#2B4C7E;' : ''}">${escapeHtml(n)}</button>`;
   }).join('');
 }
 function elegirSegundaPersona(btn){
