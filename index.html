@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1190</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1191</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -17327,7 +17327,7 @@ function generarHojaPickingHtml(datos){
   const filas = datos.componentes.map(c=>`
     <tr><td>${escapeHtml(c.codigo)}</td><td>${escapeHtml(descripcionCatalogoTexto(c.codigo))}</td><td>${escapeHtml(c.lote||'N/A')}</td><td>${c.cantidad}</td></tr>
   `).join('') || `<tr><td colspan="4" style="text-align:center; color:#888; font-weight:400;">Sin componentes bipados</td></tr>`;
-  const faltante = datos.incidencias.map(i=>{ const d = descripcionCatalogoTexto(i.codigo); return `${escapeHtml(i.codigo)}${d ? ' — '+escapeHtml(d) : ''} (${escapeHtml(i.motivo)})`; }).join(' · ');
+  const faltante = datos.incidencias.map(i=> `${escapeHtml(i.codigo)}${i.motivo ? ' ('+escapeHtml(i.motivo)+')' : ''}`).join(' · ');
   const hoy = fechaCorta(new Date().toISOString());
   return `
     <div class="print-doc">
