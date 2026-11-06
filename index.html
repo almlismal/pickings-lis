@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1194</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1195</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13991,6 +13991,10 @@ async function actualizarEntregados(){
 }
 
 // Icono de hoja escaneada (mismo en todas las pantallas).
+// Hoja de picking digital (generada por la app): documento con etiqueta. Se distingue de la hojita escaneada.
+function iconoDigitalHtml(){
+  return '<span class="chip hoja-dig" title="Tiene la hoja de picking digital" aria-label="Hoja digital" style="display:inline-flex; align-items:center; gap:4px; color:#0F5257; background:#E7F1F1; border-color:#B9D6D6; padding:3px 7px; font-size:12px; font-weight:600;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><rect x="5" y="11" width="14" height="6" rx="1.5" fill="currentColor" stroke="none"/></svg>Digital</span>';
+}
 function iconoHojaHtml(){
   return '<span class="chip hoja-esc" title="Tiene la hoja firmada escaneada" aria-label="Hoja escaneada"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>';
 }
@@ -14035,7 +14039,7 @@ function renderEntregados(){
         <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
       </div>
       <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
-      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}</div>
+      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}${r['Hoja de picking URL'] ? iconoDigitalHtml() : ''}</div>
       <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
     </div>
   `;}).join('');
@@ -15808,6 +15812,7 @@ function ticketHtml(p){
   if(entregado) chips.push(`<span class="chip done">Entregado</span>`);
   if(p.hojasEscaneadas && p.hojasEscaneadas.length) chips.push(iconoHojaHtml());
   else if(p.entregas.length>0) chips.push(`<span class="chip attn">Entrega anotada</span>`);
+  if(p.hojaPickingUrl) chips.push(iconoDigitalHtml());
   const syncChip = syncBadgeHtml(p);
   if(syncChip) chips.push(syncChip);
 
@@ -15851,7 +15856,7 @@ async function buscarEntregadosDeProyecto(val, cont, idsLocales){
     cont.insertAdjacentHTML('beforeend', '<div class="hint" style="margin:14px 0 6px;">Entregados con ese proyecto</div>' + filas.map(r=>{
       const id = r['ID'] ? String(r['ID']) : '';
       const onclick = id ? 'onclick="verPickingEntregado(\''+id.replace(/'/g,"\\'")+'\')"' : '';
-      return '<div class="ticket" '+onclick+' style="'+(id ? '' : 'cursor:default;')+'"><div class="ticket-top"><span class="ticket-of">OF '+r['OF']+'</span><span class="ticket-date">'+fechaCorta(r['Fecha de entrega'])+'</span></div><div class="ticket-proj">'+(r['Proyecto'] || '—')+(r['Subproyecto'] ? ' · '+r['Subproyecto'] : '')+'</div><div class="ticket-meta"><span class="chip done">Entregado</span>'+(entregadoTieneHoja(r) ? iconoHojaHtml() : '')+'</div></div>';
+      return '<div class="ticket" '+onclick+' style="'+(id ? '' : 'cursor:default;')+'"><div class="ticket-top"><span class="ticket-of">OF '+r['OF']+'</span><span class="ticket-date">'+fechaCorta(r['Fecha de entrega'])+'</span></div><div class="ticket-proj">'+(r['Proyecto'] || '—')+(r['Subproyecto'] ? ' · '+r['Subproyecto'] : '')+'</div><div class="ticket-meta"><span class="chip done">Entregado</span>'+(entregadoTieneHoja(r) ? iconoHojaHtml() : '')+(r['Hoja de picking URL'] ? iconoDigitalHtml() : '')+'</div></div>';
     }).join(''));
   }catch(err){}
 }
@@ -15897,7 +15902,7 @@ async function buscarOF(){
             </div>
             <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
             <div class="ticket-meta">
-              <span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}
+              <span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}${r['Hoja de picking URL'] ? iconoDigitalHtml() : ''}
             </div>
             <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
           </div>
