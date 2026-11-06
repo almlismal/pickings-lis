@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1192</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1194</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -757,7 +757,6 @@
       <h2>Realizar picking</h2>
     </div>
     <div id="rpPausados"></div>
-    <div id="realizadosEspera"></div>
     <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
     <button class="btn btn-outline" onclick="escanearParaInicio()" style="margin:0 0 6px;">Escanear etiqueta para leer la OF</button>
     <div class="hint" style="margin:0 0 12px;">Opcional. Si la etiqueta no se lee, escribe la OF a mano.</div>
@@ -15178,6 +15177,11 @@ async function guardarPicking(){
   if(!of){ toast('Falta el número de OF'); return; }
   if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
   if(!proyecto){ toast('Falta el proyecto (es obligatorio)'); const cp = document.getElementById('f_proyecto'); if(cp) cp.focus(); return; }
+  // Si esta OF ya tiene el picking terminado (en espera), se ofrece usar esa hoja en vez de registrarla sin hoja.
+  if(!editingId && !(pickingPendienteDatos && pickingPendienteDatos.realizadoId && pickingPendienteDatos.of === of)){
+    const enEspera = await buscarRealizadoPorOf(of);
+    if(enEspera){ mostrarAvisoRealizadoEnEspera(enEspera); return; }
+  }
   if(cajas===0 && !Object.keys(fueraSeleccion).some(k=>fueraSeleccion[k])){ toast('Sin cajas: marca qué componentes van fuera de la caja'); return; }
   const itemsFaltan = itemsParaUbicar().filter(it=>!ubicacionesSeleccion[it]);
   if(itemsFaltan.length){ toast('Falta elegir dónde va: ' + itemsFaltan.join(', ')); return; }
@@ -15202,6 +15206,7 @@ async function guardarPicking(){
   // Si se llegó aquí desde "Realizar picking" (bipado en vivo), se adjuntan
   // sus datos a esta misma OF nueva. En el registro normal, de siempre,
   // pickingPendienteDatos no existe y esto no hace nada.
+  if(pickingPendienteDatos && pickingPendienteDatos.realizadoId && pickingPendienteDatos.of !== of){ pickingPendienteDatos = null; }
   if(pickingPendienteDatos){
     datosNuevos.componentes = pickingPendienteDatos.componentes;
     datosNuevos.incidencias = pickingPendienteDatos.incidencias;
@@ -16431,7 +16436,6 @@ function nuevoRealizarPicking(){
   actualizarInfoCatalogo();
   renderPausados();
   sincronizarPausados();
-  cargarRealizadosEspera();
 }
 
 // ---- Terminar un picking (hoja en espera) y registrar la OF después: procesos separados ----
@@ -16443,45 +16447,40 @@ function aplicarVisibilidadRealizarPicking(){
   if(b) b.style.display = puedeRealizarPicking() ? '' : 'none';
 }
 async function cargarRealizadosEspera(){
-  const cont = document.getElementById('realizadosEspera');
-  if(!cont) return;
-  if(!puedeRealizarPicking()){ cont.innerHTML = ''; return; }
   try{
     const res = await fetchConLimite(GAS_URL + '?pickingsRealizados=1', {}, 25000);
     const datos = await res.json();
     if(datos && datos.ok !== false) realizadosEsperaCache = datos.pickings || [];
-  }catch(err){ /* sin conexión: se muestra lo último que se cargó */ }
-  renderRealizadosEspera();
+  }catch(err){ /* sin conexión: se usa lo último que se cargó */ }
+  return realizadosEsperaCache;
 }
-function renderRealizadosEspera(){
-  const cont = document.getElementById('realizadosEspera');
-  if(!cont) return;
-  const lista = realizadosEsperaCache || [];
-  if(!lista.length){ cont.innerHTML = ''; return; }
-  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Hojas terminadas en espera (${lista.length}) — registra la OF cuando toque</div>` + lista.map(x=>{
-    const n = (x.datos && x.datos.componentes) ? x.datos.componentes.length : 0;
-    return `<div class="ticket">
-      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(x.of)}</span><span class="ticket-date">${n} línea${n===1?'':'s'}</span></div>
-      <div class="ticket-proj">${escapeHtml(x.proyecto||'—')}${x.subproyecto ? ' · '+escapeHtml(x.subproyecto) : ''}</div>
-      <div class="ticket-proj" style="font-size:12px;">Terminado por ${escapeHtml(x.terminadoPor||'—')} · ${escapeHtml(haceTexto(x.fecha))}</div>
-      <div style="display:flex; gap:8px; margin-top:8px;">
-        <button class="btn btn-primary" style="margin:0;" onclick="registrarRealizadoEspera('${escapeAtributo(x.id)}')">Registrar OF</button>
-        ${x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin:0;" onclick="window.open('${escapeAtributo(x.hojaPickingUrl)}','_blank')">Ver hoja</button>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+// Al registrar una OF se comprueba si ya tiene el picking terminado (en espera).
+async function buscarRealizadoPorOf(of){
+  await cargarRealizadosEspera();
+  const q = String(of).trim();
+  return (realizadosEsperaCache || []).find(r => String(r.of).trim() === q) || null;
 }
-// Abre el registro normal de una OF, con la hoja que ya estaba terminada (no se vuelve a generar).
-function registrarRealizadoEspera(id){
+function mostrarAvisoRealizadoEnEspera(x){
+  mostrarSheet(`
+    <h3>Esta OF ya tiene el picking terminado</h3>
+    <p style="font-size:14px; margin:0 0 10px;">OF <b>${escapeHtml(x.of)}</b> · ${escapeHtml(x.proyecto||'—')}. Terminado por ${escapeHtml(x.terminadoPor||'—')} · ${escapeHtml(haceTexto(x.fecha))}.</p>
+    <p class="hint" style="margin:0 0 12px;">Se usa esa hoja: no hace falta bipar otra vez. Solo queda elegir la ubicación y registrar.</p>
+    <button class="btn btn-primary" onclick="usarRealizadoEnEspera('${escapeAtributo(x.id)}')">✓ Usar esa hoja</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Volver</button>
+  `);
+}
+// Deja la hoja en espera cargada para esta OF; el registro la adjunta al pulsar «Registrar».
+function usarRealizadoEnEspera(id){
   const x = (realizadosEsperaCache || []).find(r=>r.id===id);
-  if(!x){ toast('No encuentro esa hoja, actualiza la pantalla'); return; }
-  rpDocDatosActuales = {
-    of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto,
+  cerrarSheet();
+  if(!x){ toast('No encuentro esa hoja, vuelve a intentarlo'); return; }
+  pickingPendienteDatos = {
+    of: x.of,
     componentes: x.datos.componentes || [], incidencias: x.datos.incidencias || [],
-    semana: x.datos.semana || '', hechoPor: x.hechoPor || x.datos.hechoPor || ''
+    semana: x.datos.semana || '', hechoPor: x.hechoPor || x.datos.hechoPor || '',
+    realizadoId: id, hojaPickingUrl: x.hojaPickingUrl || ''
   };
-  continuarARegistroDesdeDoc();
-  if(pickingPendienteDatos){ pickingPendienteDatos.realizadoId = id; pickingPendienteDatos.hojaPickingUrl = x.hojaPickingUrl || ''; }
+  toast('Hoja de la OF ' + x.of + ' cargada: elige la ubicación y registra');
 }
 // «Terminar el picking»: guarda la hoja en espera. No registra la OF ni pregunta por la entrega.
 async function guardarEnEsperaPickingRealizado(){
@@ -16495,6 +16494,7 @@ async function guardarEnEsperaPickingRealizado(){
     const res = await llamarBackend('guardarPickingRealizado', {
       id: id, of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto,
       semana: datos.semana, hechoPor: datos.hechoPor, terminadoPor: usuarioActual,
+      iniciales: inicialesEquipo(datos.hechoPor || usuarioActual || '', ''),
       componentes: conDescripciones(datos.componentes), incidencias: conDescripciones(datos.incidencias)
     }, id, 120000);
     if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
@@ -16502,7 +16502,6 @@ async function guardarEnEsperaPickingRealizado(){
     borrarBorradorBip();
     toast('Picking terminado: la hoja queda en espera hasta registrar la OF');
     ir('realizar-inicio');
-    cargarRealizadosEspera();
   }catch(err){
     toast('No se pudo guardar la hoja: ' + (err && err.message ? err.message : 'error') + '. Reintenta; no se ha perdido nada.');
   } finally {
