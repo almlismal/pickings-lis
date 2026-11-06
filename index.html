@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1191</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1192</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -551,7 +551,7 @@
         <b>Buscar / Entregar</b>
         <span>Buscar una OF registrada y gestionar su entrega</span>
       </button>
-      <button class="home-btn alt" onclick="nuevoRealizarPicking()">
+      <button class="home-btn alt" id="btnRealizarPickingHome" onclick="nuevoRealizarPicking()">
         <b>Realizar picking<span id="badgePausados"></span></b>
         <span>Escaneo de componentes durante el picking</span>
       </button>
@@ -757,6 +757,7 @@
       <h2>Realizar picking</h2>
     </div>
     <div id="rpPausados"></div>
+    <div id="realizadosEspera"></div>
     <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
     <button class="btn btn-outline" onclick="escanearParaInicio()" style="margin:0 0 6px;">Escanear etiqueta para leer la OF</button>
     <div class="hint" style="margin:0 0 12px;">Opcional. Si la etiqueta no se lee, escribe la OF a mano.</div>
@@ -816,7 +817,7 @@
     </div>
     <div id="rpDocContenido"></div>
     <button class="btn btn-outline no-print" onclick="imprimirHojaPicking()">Guardar / imprimir como PDF</button>
-    <button class="btn btn-primary no-print" id="rpDocContinuarBtn" onclick="preguntarUbicarPickingRealizado()" style="display:none;">Continuar →</button>
+    <button class="btn btn-primary no-print" id="rpDocContinuarBtn" onclick="guardarEnEsperaPickingRealizado()" style="display:none;">✓ Terminar el picking</button>
   </section>
 
   <!-- ============ DETALLE / ENTREGA ============ -->
@@ -12467,6 +12468,7 @@ function ir(pantalla, esVolver){
   if(pantalla==='pendientes' || pantalla==='buscar' || pantalla==='ubicaciones') actualizarBarraLote(); else ocultarBarraLote();
   if(pantalla.indexOf('admin')===0 && !esAdminSheet(usuarioActual)){ ir('buscar'); return; }
   if(esVolver){ if(pantalla==='inventario') renderInventario(); if(pantalla==='antiguas') renderAntiguas(); return; }
+  if(pantalla==='home') aplicarVisibilidadRealizarPicking();
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
   if(pantalla==='ubicaciones') entrarAUbicaciones();
@@ -15205,6 +15207,7 @@ async function guardarPicking(){
     datosNuevos.incidencias = pickingPendienteDatos.incidencias;
     datosNuevos.semanaPicking = pickingPendienteDatos.semana;
     datosNuevos.hechoPorPicking = pickingPendienteDatos.hechoPor;
+    if(pickingPendienteDatos.realizadoId){ datosNuevos.realizadoId = pickingPendienteDatos.realizadoId; datosNuevos.hojaPickingUrl = pickingPendienteDatos.hojaPickingUrl || ''; }
     pickingPendienteDatos = null;
   }
 
@@ -15520,7 +15523,7 @@ async function ejecutarCrearPicking(datos, continuarMismoProy){
     semanaPicking: datos.semanaPicking || '',
     hechoPorPicking: datos.hechoPorPicking || '',
     segundaPersonaPicking: datos.segundaPersona || '',
-    hojaPickingUrl: '', // se rellena solo en cuanto la nube confirme el PDF
+    hojaPickingUrl: datos.hojaPickingUrl || '', // se rellena solo en cuanto la nube confirme el PDF
     sync: 'pendiente', syncError: ''
   };
   DB.unshift(optimista);
@@ -16428,6 +16431,83 @@ function nuevoRealizarPicking(){
   actualizarInfoCatalogo();
   renderPausados();
   sincronizarPausados();
+  cargarRealizadosEspera();
+}
+
+// ---- Terminar un picking (hoja en espera) y registrar la OF después: procesos separados ----
+// De momento, "Realizar picking" solo lo ve Adrián (prueba). Para abrirlo al equipo, basta con cambiar esta función.
+let realizadosEsperaCache = [];
+function puedeRealizarPicking(){ return normalizarNombre(usuarioActual || '') === 'adrian'; }
+function aplicarVisibilidadRealizarPicking(){
+  const b = document.getElementById('btnRealizarPickingHome');
+  if(b) b.style.display = puedeRealizarPicking() ? '' : 'none';
+}
+async function cargarRealizadosEspera(){
+  const cont = document.getElementById('realizadosEspera');
+  if(!cont) return;
+  if(!puedeRealizarPicking()){ cont.innerHTML = ''; return; }
+  try{
+    const res = await fetchConLimite(GAS_URL + '?pickingsRealizados=1', {}, 25000);
+    const datos = await res.json();
+    if(datos && datos.ok !== false) realizadosEsperaCache = datos.pickings || [];
+  }catch(err){ /* sin conexión: se muestra lo último que se cargó */ }
+  renderRealizadosEspera();
+}
+function renderRealizadosEspera(){
+  const cont = document.getElementById('realizadosEspera');
+  if(!cont) return;
+  const lista = realizadosEsperaCache || [];
+  if(!lista.length){ cont.innerHTML = ''; return; }
+  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Hojas terminadas en espera (${lista.length}) — registra la OF cuando toque</div>` + lista.map(x=>{
+    const n = (x.datos && x.datos.componentes) ? x.datos.componentes.length : 0;
+    return `<div class="ticket">
+      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(x.of)}</span><span class="ticket-date">${n} línea${n===1?'':'s'}</span></div>
+      <div class="ticket-proj">${escapeHtml(x.proyecto||'—')}${x.subproyecto ? ' · '+escapeHtml(x.subproyecto) : ''}</div>
+      <div class="ticket-proj" style="font-size:12px;">Terminado por ${escapeHtml(x.terminadoPor||'—')} · ${escapeHtml(haceTexto(x.fecha))}</div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="btn btn-primary" style="margin:0;" onclick="registrarRealizadoEspera('${escapeAtributo(x.id)}')">Registrar OF</button>
+        ${x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin:0;" onclick="window.open('${escapeAtributo(x.hojaPickingUrl)}','_blank')">Ver hoja</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+// Abre el registro normal de una OF, con la hoja que ya estaba terminada (no se vuelve a generar).
+function registrarRealizadoEspera(id){
+  const x = (realizadosEsperaCache || []).find(r=>r.id===id);
+  if(!x){ toast('No encuentro esa hoja, actualiza la pantalla'); return; }
+  rpDocDatosActuales = {
+    of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto,
+    componentes: x.datos.componentes || [], incidencias: x.datos.incidencias || [],
+    semana: x.datos.semana || '', hechoPor: x.hechoPor || x.datos.hechoPor || ''
+  };
+  continuarARegistroDesdeDoc();
+  if(pickingPendienteDatos){ pickingPendienteDatos.realizadoId = id; pickingPendienteDatos.hojaPickingUrl = x.hojaPickingUrl || ''; }
+}
+// «Terminar el picking»: guarda la hoja en espera. No registra la OF ni pregunta por la entrega.
+async function guardarEnEsperaPickingRealizado(){
+  const datos = rpDocDatosActuales;
+  if(!datos){ toast('No hay hoja que guardar'); return; }
+  if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
+  const id = 'rz_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  const btn = document.getElementById('rpDocContinuarBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Guardando la hoja…'; }
+  try{
+    const res = await llamarBackend('guardarPickingRealizado', {
+      id: id, of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto,
+      semana: datos.semana, hechoPor: datos.hechoPor, terminadoPor: usuarioActual,
+      componentes: conDescripciones(datos.componentes), incidencias: conDescripciones(datos.incidencias)
+    }, id, 120000);
+    if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
+    sesionPicking = null; rpDocDatosActuales = null;
+    borrarBorradorBip();
+    toast('Picking terminado: la hoja queda en espera hasta registrar la OF');
+    ir('realizar-inicio');
+    cargarRealizadosEspera();
+  }catch(err){
+    toast('No se pudo guardar la hoja: ' + (err && err.message ? err.message : 'error') + '. Reintenta; no se ha perdido nada.');
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '✓ Terminar el picking'; }
+  }
 }
 
 function empezarBipado(){
