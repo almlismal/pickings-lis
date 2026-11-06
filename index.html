@@ -514,12 +514,18 @@
 
     .detail-block{ padding:22px; }
   }
+.dots-carga i{display:inline-block; width:5px; height:5px; margin-left:3px; border-radius:50%; background:currentColor; opacity:.25; animation:puntosCarga 1.2s infinite ease-in-out; vertical-align:middle;}
+.dots-carga i:nth-child(2){animation-delay:.2s;}
+.dots-carga i:nth-child(3){animation-delay:.4s;}
+@keyframes puntosCarga{0%,80%,100%{opacity:.25; transform:translateY(0);} 40%{opacity:1; transform:translateY(-3px);}}
+.btn-subiendo{background:linear-gradient(90deg,#0F5257,#D9822B,#1F4E79,#0F5257) !important; background-size:300% 100% !important; border-color:transparent !important; color:#fff !important; animation:barraSubida 2.4s linear infinite;}
+@keyframes barraSubida{from{background-position:0% 50%;} to{background-position:300% 50%;}}
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1188</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1190</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -566,7 +572,7 @@
     <div class="row2">
       <div>
         <label>Proyecto <span style="color:#C62828;">*</span></label>
-        <input type="text" id="f_proyecto" placeholder="Ej. 2024-275" oninput="renderUbicacionPills()">
+        <input type="text" id="f_proyecto" list="listaProyectos" onfocus="refrescarListaProyectos()" placeholder="Ej. 2024-275" oninput="renderUbicacionPills()">
       </div>
       <div>
         <label>Subproyecto</label>
@@ -598,7 +604,7 @@
     </div>
 
     <label>OF o proyecto</label>
-    <input type="text" class="mono" id="buscarInput" placeholder="Ej. 20260912 o 2025-072">
+    <input type="text" class="mono" id="buscarInput" list="listaProyectos" onfocus="refrescarListaProyectos()" placeholder="Ej. 20260912 o 2025-072">
     <button class="btn btn-outline" onclick="buscarOF()">Buscar</button>
 
     <div id="buscarResultado" style="margin-top:20px;"></div>
@@ -757,7 +763,7 @@
     <label>OF</label>
     <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
     <div class="row2">
-      <div><label>Proyecto <span style="color:#C62828;">*</span></label><input type="text" id="rp_proyecto" placeholder="Ej. 2024-275"></div>
+      <div><label>Proyecto <span style="color:#C62828;">*</span></label><input type="text" id="rp_proyecto" list="listaProyectos" onfocus="refrescarListaProyectos()" placeholder="Ej. 2024-275"></div>
       <div><label>Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
     </div>
     <button class="btn btn-primary" onclick="empezarBipado()">Empezar a escanear</button>
@@ -15814,6 +15820,34 @@ function fechaCorta(iso){
 }
 
 /* ---------- buscar ---------- */
+// Lista de proyectos ya conocidos: al escribir el principio (p. ej. 2025-277) el teléfono
+// ofrece 2025-277-00-00, y el buscador también los encuentra por ese prefijo.
+function refrescarListaProyectos(){
+  try{
+    let dl = document.getElementById('listaProyectos');
+    if(!dl){ dl = document.createElement('datalist'); dl.id = 'listaProyectos'; document.body.appendChild(dl); }
+    const set = new Set();
+    DB.forEach(p=>{ const v = String(p.proyecto||'').trim(); if(v) set.add(v); });
+    dl.innerHTML = [...set].sort().map(v=>'<option value="'+escapeAtributo(v)+'"></option>').join('');
+  }catch(e){}
+}
+function pareceProyecto(v){ return /\d{4}-\d{3}/.test(v); }
+// Entregados con ese proyecto (la búsqueda local solo tiene pendientes): se añaden debajo.
+async function buscarEntregadosDeProyecto(val, cont, idsLocales){
+  try{
+    const res = await fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(val), {}, 25000);
+    const datos = await res.json();
+    const filas = (datos.entregados || []).filter(r=> idsLocales.indexOf(String(r['ID']||'')) === -1);
+    const campo = document.getElementById('buscarInput');
+    if(!filas.length || !campo || campo.value.trim() !== val) return;
+    cont.insertAdjacentHTML('beforeend', '<div class="hint" style="margin:14px 0 6px;">Entregados con ese proyecto</div>' + filas.map(r=>{
+      const id = r['ID'] ? String(r['ID']) : '';
+      const onclick = id ? 'onclick="verPickingEntregado(\''+id.replace(/'/g,"\\'")+'\')"' : '';
+      return '<div class="ticket" '+onclick+' style="'+(id ? '' : 'cursor:default;')+'"><div class="ticket-top"><span class="ticket-of">OF '+r['OF']+'</span><span class="ticket-date">'+fechaCorta(r['Fecha de entrega'])+'</span></div><div class="ticket-proj">'+(r['Proyecto'] || '—')+(r['Subproyecto'] ? ' · '+r['Subproyecto'] : '')+'</div><div class="ticket-meta"><span class="chip done">Entregado</span>'+(entregadoTieneHoja(r) ? iconoHojaHtml() : '')+'</div></div>';
+    }).join(''));
+  }catch(err){}
+}
+
 async function buscarOF(){
   const val = document.getElementById('buscarInput').value.trim();
   const cont = document.getElementById('buscarResultado');
@@ -15868,6 +15902,7 @@ async function buscarOF(){
   }
   ultimosResultadosBuscarIds = resultados.map(p=>p.id);
   renderResultadosBuscar();
+  if(pareceProyecto(val)) buscarEntregadosDeProyecto(val, cont, resultados.map(p=>String(p.id)));
 }
 // Resultados de la búsqueda en DB (por OF o proyecto). Se pueden volver a
 // pintar (p.ej. al marcar pickings para entregar en lote) sin repetir la búsqueda.
@@ -16038,7 +16073,7 @@ function detalleHtml(p){
       <div class="hint" style="margin-top:10px;">Picking registrado por ${escapeHtml(quienesHicieron(p))} · ${fechaCorta(p.fecha)}</div>
       ${(p.hojaPickingError && !p.hojaPickingUrl) ? `<div class="hint" style="color:#B33A3A; margin-top:6px;">No se pudo guardar el PDF en la nube: ${escapeHtml(p.hojaPickingError)}</div>` : ''}
       ${(p.anexosPicking && p.anexosPicking.length) ? p.anexosPicking.map((a,i)=>`<a class="btn btn-outline" href="${escapeAtributo(a.url)}" target="_blank" style="display:block; width:100%; box-sizing:border-box; margin-top:8px; text-decoration:none; text-align:center;">Hoja anexa #${i+1} (${a.lineas} líneas)</a>`).join('') : ''}
-      ${(!entregado && usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirReubicar('${p.id}')" style="margin-top:8px;">Reubicar</button>` : ''}
+      ${(!entregado && usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirReubicar('${p.id}')" style="margin-top:8px;">${Object.values(p.ubicaciones||{}).some(v=>String(v||'').trim()) ? 'Reubicar' : 'Ubicar la caja'}</button>` : ''}
       ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')" style="border-width:2px; border-color:#0F5257;">Ver hoja firmada${firmadaPorHoja(p, p.hojasEscaneadas[p.hojasEscaneadas.length-1]) ? ' por: ' + escapeHtml(firmadaPorHoja(p, p.hojasEscaneadas[p.hojasEscaneadas.length-1])) : ''}${p.hojasEscaneadas.length > 1 ? ' (' + p.hojasEscaneadas.length + ')' : ''}</button>`
         : ((p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : '')}
       ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
@@ -16230,6 +16265,10 @@ function procesarTextoQR(texto){
       escanerParaInicio = false;
       const campo = document.getElementById('rp_of');
       if(campo) campo.value = of;
+      // Si la etiqueta trae un proyecto (xxxx-xxx o xxxx-xxx-xx-xx), se rellena solo si el campo está vacío.
+      const coincide = String(texto).match(/\b\d{4}-\d{3}(?:-\d{2}-\d{2})?\b/);
+      const campoProy = document.getElementById('rp_proyecto');
+      if(coincide && campoProy && !campoProy.value.trim()) campoProy.value = coincide[0];
       restaurarPantallaComprobarOf();
       ir('realizar-inicio');
       toast('OF leída: ' + of + '. Revisa los datos y pulsa Empezar');
@@ -16962,6 +17001,7 @@ function pintarEscanerHoja(){
     <button type="button" class="btn btn-outline" ${h.subiendo?'disabled':''} onclick="document.getElementById('hojaEscArchivo').click()">Elegir PDF o fotos ya hechas</button>
     ${n ? `<div style="display:flex; flex-wrap:wrap; gap:8px; margin:10px 0;">${miniaturas}</div><div class="hint">${n} página${n===1?'':'s'}.${n>8 ? ' Son muchas páginas: la subida puede tardar.' : ''}</div>` : ''}
     ${h.pdf ? `<div class="obs-box" style="margin-top:10px;">PDF elegido: <b>${escapeHtml(h.pdf.nombre)}</b> (${Math.round(h.pdf.bytes.length/1024)} KB)</div>` : ''}
+    ${h.errorSubida ? `<div class="hint" style="color:#B33A3A; margin-top:8px;">${escapeHtml(h.errorSubida)}</div>` : ''}
     <div id="hojaEscEstado" class="hint" style="margin-top:8px;"></div>
     <button type="button" class="btn btn-ok" ${(listo && !h.subiendo)?'':'disabled style="opacity:0.5;"'} onclick="subirHojaEscaneadaApp()">${h.subiendo ? 'Subiendo…' : 'Subir hoja' + (n ? ' ('+n+' pág.)' : '')}</button>
     <button type="button" class="btn btn-outline" ${h.subiendo?'disabled':''} onclick="cancelarEscanerHoja()">Cancelar</button>
@@ -17061,39 +17101,86 @@ function bytesABase64(bytes){
   for(let i=0;i<bytes.length;i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000));
   return btoa(bin);
 }
+// Subidas de hoja firmada en segundo plano: ids de picking que están subiendo ahora.
+const hojasSubiendo = new Set();
+let formEntregaAbierto = null; // { tipo, id } del formulario de entrega que está visible
+let loteExcepciones = {};      // en entrega en lote: id de OF -> motivo de la excepción (sin hoja firmada)
+function hojaSubiendo(id){ return hojasSubiendo.has(id); }
+function requiereHojaPicking(p){ return !!(p && usuarioActual && String(p.id).indexOf('tmp_')!==0); }
+// Una hoja subida después de la última entrega registrada es la que sirve para la entrega que se está haciendo.
+function hojaPendienteEntrega(p){
+  if(!p || !p.hojasEscaneadas || !p.hojasEscaneadas.length) return false;
+  const ultima = (p.entregas || []).reduce((m,e)=> Math.max(m, new Date(e.fecha).getTime() || 0), 0);
+  return p.hojasEscaneadas.some(h => { const t = new Date(h.fecha).getTime(); return !isNaN(t) && t > ultima; });
+}
+function botonSubiendoHtml(n){
+  const txt = n > 1 ? 'Subiendo hojas de picking (' + n + ')' : 'Subiendo hoja de picking';
+  return escapeHtml(txt) + '<span class="dots-carga" aria-hidden="true"><i></i><i></i><i></i></span>';
+}
+function refrescarFormEntregaTrasSubida(pid){
+  const f = formEntregaAbierto;
+  if(!f || !document.getElementById('btnConfirmarEntrega')) return;
+  if(f.tipo === 'lote'){
+    if(!document.getElementById('loteFirmas') || !idsLoteVigentes().includes(pid)) return;
+    guardarBorradorEntrega(); entregarLote(true); return;
+  }
+  if(f.id !== pid || ofEnDetalle !== pid) return;
+  guardarBorradorEntrega(); entregar(f.tipo, true);
+}
 async function subirHojaEscaneadaApp(){
   const h = hojaEsc; if(!h || h.subiendo) return;
   if(!h.paginas.length && !h.pdf){ toast('Haz alguna foto o elige un PDF'); return; }
   if(navigator.onLine === false){ toast('Sin conexión: se necesita internet para subir la hoja'); return; }
-  h.subiendo = true; pintarEscanerHoja();
-  const est = ()=> document.getElementById('hojaEscEstado');
+  let bytes;
   try{
-    if(est()) est().textContent = 'Preparando el PDF…';
-    const bytes = h.pdf ? h.pdf.bytes : pdfDesdeJpegs(h.paginas);
+    bytes = h.pdf ? h.pdf.bytes : pdfDesdeJpegs(h.paginas);
     if(bytes.length > 16 * 1024 * 1024) throw new Error('El PDF pesa demasiado (' + Math.round(bytes.length/1048576) + ' MB). Haz menos páginas.');
-    if(!h.opId) h.opId = 'esc_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
-    if(est()) est().textContent = 'Subiendo ' + Math.round(bytes.length/1024) + ' KB… no cierres la app.';
-    const res = await llamarBackend('subirHojaEscaneada', {
-      id: h.id, of: h.of, proyecto: h.proyecto, base64: bytesABase64(bytes), mime: 'application/pdf',
-      paginas: h.pdf ? 0 : h.paginas.length, subidoPor: usuarioActual || ''
-    }, h.opId, 120000);
-    if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
-    const p = DB.find(x=>x.id===h.id);
-    if(p){
-      if(!p.hojasEscaneadas) p.hojasEscaneadas = [];
-      p.hojasEscaneadas.push(res.hoja || { url: '', fecha: new Date().toISOString(), subidoPor: usuarioActual || '', paginas: h.paginas.length });
-      try{ guardarDBLocal(); }catch(e){}
-    }
-    h.paginas.forEach(pg=>{ try{ URL.revokeObjectURL(pg.thumb); }catch(e){} });
-    const volverA = h.volverA;
-    hojaEsc = null; cerrarSheet();
-    toast('Hoja guardada');
-    if(volverA){ entregaFirmadaSubida = true; entregaSinHoja = ''; entregar(volverA, true); return; }
-    if(document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle') reabrirDetalleSeguro(h.id);
   }catch(err){
-    h.subiendo = false; pintarEscanerHoja();
-    const e2 = est(); if(e2) e2.innerHTML = '<span style="color:#B33A3A;">No se pudo subir: ' + escapeHtml(err && err.message ? err.message : 'error') + '. Tus páginas siguen aquí: toca «Subir hoja» para reintentar.</span>';
+    const e2 = document.getElementById('hojaEscEstado');
+    if(e2) e2.innerHTML = '<span style="color:#B33A3A;">' + escapeHtml(err && err.message ? err.message : 'No se pudo preparar el PDF') + '</span>';
+    return;
   }
+  if(!h.opId) h.opId = 'esc_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+  const pid = h.id, of = h.of, proyecto = h.proyecto, volverA = h.volverA, opId = h.opId;
+  const nPaginas = h.pdf ? 0 : h.paginas.length, base64 = bytesABase64(bytes);
+  const subidoPor = usuarioActual || '';
+  h.subiendo = true; h.errorSubida = '';
+  hojasSubiendo.add(pid);
+  // La subida sigue en segundo plano: el escáner se cierra y la entrega muestra el estado de subida.
+  hojaEsc = null;
+  if(volverA){ guardarBorradorEntrega(); entregar(volverA, true); }
+  else { cerrarSheet(); toast('Subiendo hoja de picking… puedes seguir trabajando'); }
+
+  (async ()=>{
+    try{
+      const res = await llamarBackend('subirHojaEscaneada', {
+        id: pid, of: of, proyecto: proyecto, base64: base64, mime: 'application/pdf',
+        paginas: nPaginas, subidoPor: subidoPor
+      }, opId, 120000);
+      if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
+      const p = DB.find(x=>x.id===pid);
+      if(p){
+        if(!p.hojasEscaneadas) p.hojasEscaneadas = [];
+        p.hojasEscaneadas.push(res.hoja || { url: '', fecha: new Date().toISOString(), subidoPor: subidoPor, paginas: h.paginas.length });
+        try{ guardarDBLocal(); }catch(e){}
+      }
+      h.paginas.forEach(pg=>{ try{ URL.revokeObjectURL(pg.thumb); }catch(e){} });
+      hojasSubiendo.delete(pid);
+      toast('Hoja de picking guardada' + (of ? ' (OF ' + of + ')' : ''));
+      refrescarFormEntregaTrasSubida(pid);
+      if(!volverA && document.querySelector('.screen.active') && document.querySelector('.screen.active').id === 'screen-detalle' && ofEnDetalle === pid) reabrirDetalleSeguro(pid);
+    }catch(err){
+      hojasSubiendo.delete(pid);
+      const msg = err && err.message ? err.message : 'error';
+      if(!hojaEsc){
+        // Se reabre el escáner con las páginas para no perderlas.
+        h.subiendo = false; h.errorSubida = 'No se pudo subir: ' + msg + '. Tus páginas siguen aquí: toca «Subir hoja» para reintentar.';
+        hojaEsc = h; pintarEscanerHoja();
+      }
+      toast('No se pudo subir la hoja de la OF ' + of + ': ' + msg);
+      refrescarFormEntregaTrasSubida(pid);
+    }
+  })();
 }
 
 
@@ -17294,18 +17381,18 @@ function imprimirHojaPicking(){
 function preguntarUbicarPickingRealizado(){
   if(!rpDocDatosActuales) return;
   mostrarSheet(`
-    <h3>¿Asignas ubicación a este picking?</h3>
+    <h3>¿Terminar el picking?</h3>
     <p class="hint" style="margin:0 0 10px;">
-      Si la caja se almacena, indica dónde. Si se entrega en mano, no hace falta ubicación.
+      Terminar registra la OF ya, sin ubicación. La caja se puede ubicar ahora o después (desde la OF, con «Ubicar la caja»).
     </p>
-    <button class="btn btn-primary" onclick="cerrarSheet(); continuarARegistroDesdeDoc();">Sí, elegir dónde va</button>
-    <button class="btn btn-outline" onclick="cerrarSheet(); preguntarEntregaInmediataSinUbicar();">No, se entrega en mano</button>
+    <button class="btn btn-primary" onclick="cerrarSheet(); preguntarEntregaInmediataSinUbicar();">✓ Terminar el picking</button>
+    <button class="btn btn-outline" onclick="cerrarSheet(); continuarARegistroDesdeDoc();">Ubicar la caja ahora</button>
   `);
 }
 function preguntarEntregaInmediataSinUbicar(){
   mostrarSheet(`
     <h3>¿Se entrega ahora mismo?</h3>
-    <p class="hint" style="margin:0 0 10px;">El picking se registra sin ubicación de todas formas — puedes ubicarlo más tarde editándolo si hiciera falta.</p>
+    <p class="hint" style="margin:0 0 10px;">El picking queda registrado sin ubicación. Ubica la caja cuando quieras desde la OF («Ubicar la caja»).</p>
     <button class="btn btn-primary" onclick="cerrarSheet(); registrarPickingSinUbicar(true);">✓ Sí, entregarlo ahora</button>
     <button class="btn btn-outline" onclick="cerrarSheet(); registrarPickingSinUbicar(false);">Todavía no — solo registrar</button>
   `);
@@ -17321,7 +17408,7 @@ function registrarPickingSinUbicar(entregarAhora){
   const datosNuevos = {
     of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto,
     cajas: 1, fuera: '', ubicaciones: '',
-    observaciones: 'Sin ubicar — se entrega en mano',
+    observaciones: entregarAhora ? 'Sin ubicar — se entrega en mano' : '',
     registradoPor: usuarioActual, fecha: new Date().toISOString(),
     componentes: datos.componentes, incidencias: datos.incidencias,
     semanaPicking: datos.semana, hechoPorPicking: datos.hechoPor
@@ -17716,15 +17803,13 @@ function entregarLote(manteniendoEstado){
   }
   const quienEntrega = entregaPorActivo || usuarioActual;
   const adminHojas = !!usuarioActual;   // el escáner de hojas firmadas es para todos
-  const todasConHoja = adminHojas && ids.every(id=>{ const q = DB.find(x=>x.id===id); return q && q.hojasEscaneadas && q.hojasEscaneadas.length; });
+  if(!manteniendoEstado) loteExcepciones = {};
+  formEntregaAbierto = { tipo: 'lote', id: '' };
+  const todasConHoja = ids.every(id=>{ const q = DB.find(x=>x.id===id); return !requiereHojaPicking(q) || hojaPendienteEntrega(q) || !!loteExcepciones[id]; });
   const filas = ids.map(id=>{
     const p = DB.find(x=>x.id===id);
     const motivos = motivosAtencionLote(p);
-    const nHojas = (p.hojasEscaneadas || []).length;
-    const bloqueHoja = (adminHojas && String(p.id).indexOf('tmp_')!==0) ? `<div style="margin-top:6px;">
-        ${nHojas ? `<span style="color:#1B7F3B; font-size:13px;"><b>✓ Hoja firmada adjuntada${nHojas>1 ? ' ('+nHojas+')' : ''}</b></span> ` : ''}
-        <button type="button" class="btn btn-outline" style="margin:0; width:auto; padding:5px 10px; font-size:13px;" onclick="escanearHojaFirmadaDesdeLote('${p.id}')">${nHojas ? 'Escanear otra' : 'Escanear hoja firmada'}</button>
-      </div>` : '';
+    const bloqueHoja = (adminHojas && requiereHojaPicking(p)) ? bloqueHojaLoteHtml(p) : '';
     return `<div style="display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--line);">
       <div style="flex:1;">
         <div><b style="font-family:var(--mono);">OF ${escapeHtml(p.of)}</b> · ${escapeHtml(p.proyecto || '—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</div>
@@ -17737,8 +17822,8 @@ function entregarLote(manteniendoEstado){
   mostrarSheet(`
     <h3>Entregar ${ids.length} picking${ids.length===1?'':'s'}</h3>
     ${(()=>{ const con = ids.map(id=>DB.find(x=>x.id===id)).filter(q=>q && fueraActivas(q).length); return con.length ? `<div style="background:#FFF4D6; border:1.5px solid #E0B64A; border-radius:10px; padding:9px 11px; margin:0 0 12px; font-size:14px;"><b>⚠ ${con.length===1?'Una OF lleva':con.length+' OF llevan'} cosas fuera de la caja:</b><br>${con.map(q=> '• <b>OF '+escapeHtml(q.of)+'</b>: ' + fueraActivas(q).map(k=> escapeHtml(k.toLowerCase()) + ' (' + escapeHtml((q.ubicaciones||{})[k] || 'sin ubicación') + ')').join(', ')).join('<br>')}<div style="font-size:12.5px; margin-top:4px;">Comprueba que se entrega todo junto.</div></div>` : ''; })()}
-    ${adminHojas ? `<div class="hint" style="margin:0 0 6px;">Opcional: escanea la hoja firmada de cada OF (una o varias hojas por OF).</div>` : ''}
-    <div style="max-height:40vh; overflow:auto; margin-bottom:12px;">${filas}</div>
+    ${adminHojas ? `<div class="hint" style="margin:0 0 6px;">Obligatorio: escanea la hoja firmada de cada OF (una o varias hojas por OF). Si alguna no existe, pulsa «Excepción» en esa OF.</div>` : ''}
+    <div id="loteFirmas" style="max-height:40vh; overflow:auto; margin-bottom:12px;">${filas}</div>
     <label>¿Quién entrega?</label>
     <div class="hint" style="margin:0 0 4px;">La entrega queda registrada a nombre de: <b>${escapeHtml(quienEntrega)}</b>${entregaPorActivo ? ' (verificado con su PIN)' : ''}</div>
     <div class="hint" style="margin:0 0 14px;"><span class="link-action" onclick="abrirCambioEntregaPor('lote')">¿Entrega otra persona? Cambiar</span></div>
@@ -17756,11 +17841,35 @@ function entregarLote(manteniendoEstado){
         <span>Confirmo que <b id="signLabelName">la persona de DHV</b> firmará las hojas de picking antes de irme</span>
       </label>
     </div>
-    <button class="btn btn-primary" id="btnConfirmarEntrega" onclick="confirmarEntregaLote()" style="opacity:0.5;">Confirmar ${ids.length} entrega${ids.length===1?'':'s'}</button>
+    <button class="btn btn-primary" id="btnConfirmarEntrega" data-label="Confirmar ${ids.length} entrega${ids.length===1?'':'s'}" onclick="confirmarEntregaLote()" style="opacity:0.5;">Confirmar ${ids.length} entrega${ids.length===1?'':'s'}</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `);
   actualizarTextoFirma();
   toggleBtnEntrega();
+}
+function bloqueHojaLoteHtml(p){
+  if(hojaSubiendo(p.id)) return `<div style="margin-top:6px; color:#0F5257; font-size:13px;"><b>Subiendo hoja de picking</b><span class="dots-carga" aria-hidden="true"><i></i><i></i><i></i></span></div>`;
+  const btnBase = 'margin:0; width:auto; padding:5px 10px; font-size:13px;';
+  const btnEscanear = (estilo) => `<button type="button" class="btn btn-outline" style="${btnBase}${estilo||''}" onclick="escanearHojaFirmadaDesdeLote('${p.id}')">`;
+  if(hojaPendienteEntrega(p)) return `<div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;"><span style="color:#1B7F3B; font-size:13px;"><b>✓ Hoja firmada adjuntada</b></span>${btnEscanear()}Escanear otra</button></div>`;
+  const exc = loteExcepciones[p.id];
+  if(exc) return `<div style="margin-top:6px;"><div style="color:#8A5A00; font-size:13px;"><b>Excepción:</b> ${escapeHtml(exc)}</div><div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">${btnEscanear()}Escanear hoja firmada</button><button type="button" class="btn btn-outline" style="${btnBase}" onclick="pedirSinHojaFirmadaLote('${p.id}')">Cambiar explicación</button></div></div>`;
+  return `<div style="margin-top:6px;"><div style="font-size:13px; color:var(--ink-soft);">Obligatorio: escanea la hoja firmada, o pulsa «Excepción».</div><div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;"><button type="button" class="btn btn-primary" style="${btnBase} background:#D9822B; border-color:#D9822B; color:#fff; font-weight:700;" onclick="escanearHojaFirmadaDesdeLote('${p.id}')">Escanear hoja firmada</button><button type="button" class="btn btn-outline" style="${btnBase}" onclick="pedirSinHojaFirmadaLote('${p.id}')">Excepción: no hay hoja firmada</button></div></div>`;
+}
+function pedirSinHojaFirmadaLote(id){
+  const p = DB.find(x=>x.id===id);
+  guardarBorradorEntrega();
+  mostrarSheet(`<h3>Excepción: sin hoja firmada</h3>
+    <p style="font-size:14px; margin:0 0 10px;">OF ${escapeHtml(p ? p.of : '')}. Explica por qué no hay hoja firmada. Queda anotado en la entrega.</p>
+    <textarea id="sinHojaMotivo" placeholder="Ej. Picking de antes de la app: lo controlaba Pedro y él firmaba">${escapeHtml(loteExcepciones[id] || '')}</textarea>
+    <button class="btn btn-primary" onclick="guardarSinHojaLote('${id}')">Guardar explicación</button>
+    <button class="btn btn-ghost" onclick="entregarLote(true)">Volver</button>`);
+}
+function guardarSinHojaLote(id){
+  const motivo = ((document.getElementById('sinHojaMotivo')||{}).value || '').trim();
+  if(motivo.length < 10){ toast('Escribe una explicación con algo más de detalle'); return; }
+  loteExcepciones[id] = motivo;
+  entregarLote(true);
 }
 function escanearHojaFirmadaDesdeLote(id){
   guardarBorradorEntrega();
@@ -17784,13 +17893,20 @@ async function confirmarEntregaLote(){
     if(!por){ toast('Falta quién entrega'); return; }
     if(!a){ toast('Falta a quién se entrega'); return; }
     if(!chk || !chk.checked){ toast('Confirma que va a firmar las hojas de picking'); return; }
+    const idsLote = idsLoteVigentes();
+    if(idsLote.some(id=>hojaSubiendo(id))){ toast('Espera a que terminen de subir las hojas firmadas'); return; }
+    const sinResolver = idsLote.find(id=>{ const q = DB.find(x=>x.id===id); return q && requiereHojaPicking(q) && !hojaPendienteEntrega(q) && !loteExcepciones[id]; });
+    if(sinResolver){ const q = DB.find(x=>x.id===sinResolver); toast('Falta la hoja firmada de la OF ' + (q ? q.of : '') + ': escanéala o pulsa «Excepción»'); return; }
 
     const ahora = new Date().toISOString();
     const hechos = [];
     idsLoteVigentes().forEach(id=>{
       const p = DB.find(x=>x.id===id);
       if(!p) return;
-      p.entregas.push({ tipo:'completa', entregadoPor: por, entregadoA: a, nota: notaLote, fecha: ahora });
+      const sinHoja = requiereHojaPicking(p) && !hojaPendienteEntrega(p);
+      const notaOF = (sinHoja && loteExcepciones[id]) ? ('[Excepción sin hoja firmada: ' + loteExcepciones[id] + '] ' + notaLote).trim() : notaLote;
+      p.entregas.push({ tipo:'completa', entregadoPor: por, entregadoA: a, nota: notaOF, fecha: ahora });
+      delete loteExcepciones[id];
       p.estado = 'completado';
       hechos.push(p);
     });
@@ -17806,7 +17922,7 @@ async function confirmarEntregaLote(){
     toast(hechos.length + ' entrega' + (hechos.length===1?'':'s') + ' registrada' + (hechos.length===1?'':'s') + ' — recuerda las firmas');
 
     hechos.forEach(p=>{
-      encolarOperacion('entregar', { pickingId: p.id, tipo:'completa', entregadoPor: por, entregadoA: a, nota: notaLote }, p.id, 'Entregar OF ' + p.of);
+      encolarOperacion('entregar', { pickingId: p.id, tipo:'completa', entregadoPor: por, entregadoA: a, nota: (p.entregas[p.entregas.length-1] || {}).nota || '' }, p.id, 'Entregar OF ' + p.of);
     });
   }catch(err){
     toast('Algo falló al confirmar — inténtalo de nuevo');
@@ -17871,6 +17987,8 @@ function entregar(tipo, manteniendoEstado){
   }
 
   const requiereHoja = !!(p && usuarioActual && String(p.id).indexOf('tmp_')!==0);
+  if(requiereHoja && hojaPendienteEntrega(p)) entregaFirmadaSubida = true;
+  formEntregaAbierto = { tipo: tipo, id: p ? p.id : '' };
   let html = `
     <h3>${tipo==='completa' ? 'Entrega completa' : 'Entrega parcial'}</h3>
     ${(tipo==='completa' && p && fueraActivas(p).length) ? `<div style="background:#FFF4D6; border:1.5px solid #E0B64A; border-radius:10px; padding:9px 11px; margin:0 0 12px; font-size:14px;"><b>⚠ Ojo: además de la caja, lleva fuera:</b><br>${fueraActivas(p).map(k=> '• ' + escapeHtml(k) + ' — ' + escapeHtml((p.ubicaciones||{})[k] || 'sin ubicación')).join('<br>')}<div style="font-size:12.5px; margin-top:4px;">Comprueba que se entrega todo junto.</div></div>` : ''}
@@ -17903,7 +18021,7 @@ function entregar(tipo, manteniendoEstado){
       </label>
     </div>
 
-    <button class="btn btn-primary" id="btnConfirmarEntrega" onclick="confirmarEntrega('${tipo}')" style="opacity:0.5;">Confirmar entrega</button>
+    <button class="btn btn-primary" id="btnConfirmarEntrega" data-label="Confirmar entrega" onclick="confirmarEntrega('${tipo}')" style="opacity:0.5;">Confirmar entrega</button>
   `;
   mostrarSheet(html);
   if(tipo==='parcial' && p) renderEntregaItems();
@@ -18007,8 +18125,22 @@ function confirmarAnadirComponenteEntrega(){
 function toggleBtnEntrega(){
   const chk = document.getElementById('confirmFirma');
   const btn = document.getElementById('btnConfirmarEntrega');
-  const hojaOk = !document.getElementById('hojaFirmaBloque') || entregaFirmadaSubida || !!entregaSinHoja;
-  if(chk && btn) btn.style.opacity = (chk.checked && hojaOk) ? '1' : '0.5';
+  if(!chk || !btn) return;
+  let subiendo = 0, hojaOk;
+  if(document.getElementById('loteFirmas')){
+    const ids = idsLoteVigentes();
+    subiendo = ids.filter(id=>hojaSubiendo(id)).length;
+    hojaOk = ids.every(id=>{ const q = DB.find(x=>x.id===id); return !q || !requiereHojaPicking(q) || hojaPendienteEntrega(q) || !!loteExcepciones[id]; });
+  } else {
+    const p = DB.find(x=>x.id===ofEnDetalle);
+    subiendo = (p && hojaSubiendo(p.id)) ? 1 : 0;
+    hojaOk = !document.getElementById('hojaFirmaBloque') || entregaFirmadaSubida || !!entregaSinHoja;
+  }
+  const listo = !!chk.checked && hojaOk && !subiendo;
+  btn.disabled = subiendo > 0;
+  btn.classList.toggle('btn-subiendo', subiendo > 0);
+  btn.innerHTML = subiendo > 0 ? botonSubiendoHtml(subiendo) : escapeHtml(btn.getAttribute('data-label') || 'Confirmar entrega');
+  btn.style.opacity = (listo || subiendo > 0) ? '1' : '0.5';
 }
 function rellenarEntregaA(valor){
   const campo = document.getElementById('entregaA');
@@ -18036,6 +18168,7 @@ async function confirmarEntrega(tipo){
     if(!por){ toast('Falta quién entrega'); return; }
     if(!a){ toast('Falta a quién se entrega'); return; }
     if(!firmaConfirmada){ toast('Confirma que va a firmar la hoja de picking'); return; }
+    if(hojaSubiendo(p.id)){ toast('La hoja firmada todavía se está subiendo: espera a que termine'); return; }
     const requiereHoja = !!(usuarioActual && String(p.id).indexOf('tmp_')!==0);
     if(requiereHoja && !entregaFirmadaSubida && !entregaSinHoja){ toast('Escanea la hoja firmada o pulsa “Excepción: no hay hoja firmada”'); return; }
 
