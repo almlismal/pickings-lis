@@ -519,7 +519,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1187</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1188</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12566,7 +12566,26 @@ function ubicacionesARevisar(){
   const est = estadoHuecos();
   ORDEN_HUECOS.forEach(k=>{ const h = est[k]; if(h && h.cajas > h.max + CAJAS_DE_MAS_TOLERADAS) out.sobre.push({ codigo:k, cajas:h.cajas, max:h.max, clave:'sobre|'+k+'|'+h.cajas }); });
   out.sin.sort((a,b)=> b.dias - a.dias);
+  const rev = leerUbicRevisadas();
+  out.sin = out.sin.filter(x=>!rev[x.clave]);
+  out.sobre = out.sobre.filter(x=>!rev[x.clave]);
+  out.rara = out.rara.filter(x=>!rev[x.clave]);
   return out;
+}
+// Elementos que el administrador marcó como "Revisado": salen de la lista (en este móvil).
+// Si la situación cambia (p. ej. un hueco pasa a tener otro número de cajas), la clave cambia y vuelve a salir.
+const LS_UBIC_REVISADAS = 'pickings_lis_ubic_revisadas_v1';
+function leerUbicRevisadas(){ try{ const o = JSON.parse(localStorage.getItem(LS_UBIC_REVISADAS)); return (o && typeof o==='object') ? o : {}; }catch(e){ return {}; } }
+function escribirUbicRevisadas(o){ try{ localStorage.setItem(LS_UBIC_REVISADAS, JSON.stringify(o)); }catch(e){} }
+function revisarUbicacion(clave){
+  const o = leerUbicRevisadas(); o[clave] = 1; escribirUbicRevisadas(o);
+  entrarAAdminUbicaciones();
+  toast('Quitada de la lista');
+}
+function deshacerRevisadasUbic(){
+  escribirUbicRevisadas({});
+  entrarAAdminUbicaciones();
+  toast('Vuelven a aparecer las revisadas');
 }
 function clavesUbicaciones(u){ return u.sin.concat(u.sobre, u.rara).map(x=>x.clave); }
 function ubicacionesSinVer(){
@@ -12580,14 +12599,18 @@ function entrarAAdminUbicaciones(){
   const v = leerAvisosVistos();
   const nuevo = x => v[x.clave] ? '' : '<span class="chip attn">Nuevo</span> ';
   const sec = (t, n) => `<div class="adm-sec">${t} <span style="font-weight:600;">(${n})</span></div>`;
-  const fila = (clic, l1, l2) => `<div class="reg-fila clic" onclick="${clic}"><div>${l1}</div><div class="hint" style="margin:2px 0 0;">${l2}</div></div>`;
+  const fila = (clic, l1, l2, clave) => `<div class="reg-fila clic" onclick="${clic}"><div>${l1}</div><div class="hint" style="margin:2px 0 0;">${l2}</div>
+    <button type="button" class="btn btn-outline" style="margin:8px 0 0; width:auto; padding:8px 14px;" onclick="event.stopPropagation(); revisarUbicacion('${escapeAtributo(clave)}')">Revisado</button></div>`;
+  const nRev = Object.keys(leerUbicRevisadas()).length;
+  const pieRev = nRev ? `<button type="button" class="btn btn-ghost" style="margin-top:14px;" onclick="deshacerRevisadasUbic()">Volver a ver las revisadas (${nRev})</button>` : '';
   let h = '';
   if(!u.sin.length && !u.sobre.length && !u.rara.length){
-    c.innerHTML = '<div class="empty">Todo en orden: no hay ubicaciones que revisar.</div>'; marcarAvisosVistos([]); actualizarBadgesAdministrador(); return;
+    c.innerHTML = '<div class="empty">Todo en orden: no hay ubicaciones que revisar.</div>' + pieRev; marcarAvisosVistos([]); actualizarBadgesAdministrador(); return;
   }
-  h += sec('Huecos con más cajas de las normales', u.sobre.length) + (u.sobre.length ? u.sobre.map(x=>fila(`adminMapaHueco('${x.codigo}')`, nuevo(x)+'<b>'+x.codigo+'</b>', `${x.cajas} cajas y lo normal son ${x.max}. Mira qué OF hay: puede ser un error o una caja pequeña puesta a propósito.`)).join('') : '<div class="hint">Ninguno.</div>');
-  h += sec('OF sin ubicar (más de ' + DIAS_SIN_UBICAR_AVISO + ' días)', u.sin.length) + (u.sin.length ? u.sin.map(x=>fila(`abrirDetalle('${escapeAtributo(x.p.id)}')`, nuevo(x)+'OF <b class="mono">'+escapeHtml(String(x.p.of))+'</b> · '+escapeHtml(x.p.proyecto||''), `${x.dias} días sin ubicación`)).join('') : '<div class="hint">Ninguna.</div>');
-  h += sec('Ubicación que no es un hueco válido', u.rara.length) + (u.rara.length ? u.rara.map(x=>fila(`abrirDetalle('${escapeAtributo(x.p.id)}')`, nuevo(x)+'OF <b class="mono">'+escapeHtml(String(x.p.of))+'</b> · '+escapeHtml(x.p.proyecto||''), `Cajas en: ${escapeHtml(x.valor)}`)).join('') : '<div class="hint">Ninguna.</div>');
+  h += sec('Huecos con más cajas de las normales', u.sobre.length) + (u.sobre.length ? u.sobre.map(x=>fila(`adminMapaHueco('${x.codigo}')`, nuevo(x)+'<b>'+x.codigo+'</b>', `${x.cajas} cajas y lo normal son ${x.max}. Mira qué OF hay: puede ser un error o una caja pequeña puesta a propósito.`, x.clave)).join('') : '<div class="hint">Ninguno.</div>');
+  h += sec('OF sin ubicar (más de ' + DIAS_SIN_UBICAR_AVISO + ' días)', u.sin.length) + (u.sin.length ? u.sin.map(x=>fila(`abrirDetalle('${escapeAtributo(x.p.id)}')`, nuevo(x)+'OF <b class="mono">'+escapeHtml(String(x.p.of))+'</b> · '+escapeHtml(x.p.proyecto||''), `${x.dias} días sin ubicación`, x.clave)).join('') : '<div class="hint">Ninguna.</div>');
+  h += sec('Ubicación que no es un hueco válido', u.rara.length) + (u.rara.length ? u.rara.map(x=>fila(`abrirDetalle('${escapeAtributo(x.p.id)}')`, nuevo(x)+'OF <b class="mono">'+escapeHtml(String(x.p.of))+'</b> · '+escapeHtml(x.p.proyecto||''), `Cajas en: ${escapeHtml(x.valor)}`, x.clave)).join('') : '<div class="hint">Ninguna.</div>');
+  h += pieRev;
   c.innerHTML = h;
   marcarAvisosVistos(clavesUbicaciones(u));   // al entrar se dan por vistas: la burbuja desaparece
   actualizarBadgesAdministrador();
