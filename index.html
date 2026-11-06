@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1197</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1198</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -564,6 +564,7 @@
       <button class="back" onclick="ir('home')">←</button>
       <h2 id="formTitle">Registrar OF</h2>
     </div>
+    <div id="registroRealizadosEspera"></div>
 
     <label>OF</label>
     <input type="text" class="mono" id="f_of" placeholder="Ej. 20260912" oninput="chequearOfEnVivo()">
@@ -12471,6 +12472,7 @@ function ir(pantalla, esVolver){
   if(pantalla.indexOf('admin')===0 && !esAdminSheet(usuarioActual)){ ir('buscar'); return; }
   if(esVolver){ if(pantalla==='inventario') renderInventario(); if(pantalla==='antiguas') renderAntiguas(); return; }
   if(pantalla==='home') aplicarVisibilidadRealizarPicking();
+  if(pantalla==='registro' && !esVolver) refrescarRegistroRealizados();
   if(pantalla==='buscar') entrarABuscar();
   if(pantalla==='pendientes') entrarAPendientes();
   if(pantalla==='ubicaciones') entrarAUbicaciones();
@@ -16467,6 +16469,38 @@ async function buscarRealizadoPorOf(of){
   await cargarRealizadosEspera();
   const q = String(of).trim();
   return (realizadosEsperaCache || []).find(r => String(r.of).trim() === q) || null;
+}
+// Arriba del registro: OF con el picking ya hecho (en espera), con quién lo hizo. Solo lo ve quien hace los pickings.
+async function refrescarRegistroRealizados(){
+  const cont = document.getElementById('registroRealizadosEspera');
+  if(!cont) return;
+  if(!puedeRealizarPicking()){ cont.innerHTML = ''; return; }
+  cont.innerHTML = '';
+  await cargarRealizadosEspera();
+  const lista = realizadosEsperaCache || [];
+  if(!lista.length){ cont.innerHTML = ''; return; }
+  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Picking ya hecho, pendiente de ubicar (${lista.length})</div>` + lista.map(x=>{
+    const n = (x.datos && x.datos.componentes) ? x.datos.componentes.length : 0;
+    const hecho = x.hechoPor || (x.datos && x.datos.hechoPor) || '—';
+    const termino = x.terminadoPor || '';
+    return `<div class="ticket" style="cursor:pointer;" onclick="cargarRealizadoEnFormulario('${escapeAtributo(x.id)}')">
+      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(x.of)}</span><span class="ticket-date">${n} línea${n===1?'':'s'}</span></div>
+      <div class="ticket-proj">${escapeHtml(x.proyecto||'—')}${x.subproyecto ? ' · '+escapeHtml(x.subproyecto) : ''}</div>
+      <div class="ticket-proj" style="font-size:13px;"><b>Hecho por ${escapeHtml(hecho)}</b>${termino && termino !== hecho ? ' · terminado por '+escapeHtml(termino) : ''}</div>
+      <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))} · toca para ubicar y registrar</div>
+    </div>`;
+  }).join('') + `<div class="hint" style="margin:6px 0 14px;">O escribe la OF abajo; si ya tiene el picking hecho, te lo avisará.</div>`;
+}
+// Carga una OF terminada en el formulario de registro, con su hoja y sus líneas.
+function cargarRealizadoEnFormulario(id){
+  const x = (realizadosEsperaCache || []).find(r=>r.id===id);
+  if(!x){ toast('No encuentro esa OF, actualiza la pantalla'); return; }
+  document.getElementById('f_of').value = x.of;
+  document.getElementById('f_proyecto').value = x.proyecto || '';
+  document.getElementById('f_subproyecto').value = x.subproyecto || '';
+  usarRealizadoEnEspera(id);
+  const cont = document.getElementById('registroRealizadosEspera');
+  if(cont) cont.innerHTML = '';
 }
 function mostrarAvisoRealizadoEnEspera(x){
   mostrarSheet(`
