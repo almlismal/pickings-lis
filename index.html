@@ -16094,7 +16094,6 @@ function detalleHtml(p){
       ${(!entregado && usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-outline" onclick="abrirReubicar('${p.id}')" style="margin-top:8px;">${Object.values(p.ubicaciones||{}).some(v=>String(v||'').trim()) ? 'Reubicar' : 'Ubicar la caja'}</button>` : ''}
       ${(p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-outline" onclick="verHojasFirmadas('${p.id}')" style="border-width:2px; border-color:#0F5257;">Ver hoja firmada${firmadaPorHoja(p, p.hojasEscaneadas[p.hojasEscaneadas.length-1]) ? ' por: ' + escapeHtml(firmadaPorHoja(p, p.hojasEscaneadas[p.hojasEscaneadas.length-1])) : ''}${p.hojasEscaneadas.length > 1 ? ' (' + p.hojasEscaneadas.length + ')' : ''}</button>`
         : ((p.hojaPickingUrl || (p.componentesPicking && p.componentesPicking.length)) ? `<button class="btn btn-outline" onclick="verHojaPickingDetalle('${p.id}')">Ver hoja de picking</button>` : '')}
-      ${(p.hojaPickingUrl && !idsSinLineas().includes(p.id)) ? `<button class="btn btn-outline" onclick="actualizarHojaPicking('${p.id}')">Actualizar hoja de picking</button>` : ''}
       ${(usuarioActual && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0 && p.hojasEscaneadas && p.hojasEscaneadas.length) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear nueva hoja firmada</button>` : ((usuarioActual && entregado && p.sync!=='pendiente' && String(p.id).indexOf('tmp_')!==0) ? `<button class="btn btn-ok" onclick="abrirEscanerHoja('${p.id}')">Escanear hoja firmada</button>` : '')}
       ${gestionBtns}
     </div>
@@ -18159,7 +18158,7 @@ function firmaDigitalAbrir(tipo){
   mostrarSheet(`
     <h3>Firma digital</h3>
     <p class="hint" style="margin:0 0 8px;">Firma dentro del recuadro y escribe el nombre de quien firma.</p>
-    <canvas id="firmaPad" width="600" height="180" style="width:100%; height:auto; aspect-ratio:600/180; border:2px dashed #9AA6B5; border-radius:10px; background:#fff; touch-action:none;"></canvas>
+    <canvas id="firmaPad" width="600" height="300" style="width:100%; height:auto; aspect-ratio:600/300; border:2px dashed #9AA6B5; border-radius:10px; background:#fff; touch-action:none;"></canvas>
     <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
     <label>Nombre de quien firma</label>
     <input type="text" id="firmaNombre" value="${escapeAtributo(entregaDraft.a || '')}" placeholder="Nombre de la persona de DHV">
