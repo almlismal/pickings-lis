@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1203</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1204</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12907,7 +12907,7 @@ async function adminUsuarioEjecutar(i, que){
     extra.confirmar = (document.getElementById('admConfirmarNombre')||{}).value || '';
     if(claveNombre(extra.confirmar) !== claveNombre(u.Nombre)){ toast('Escribe el nombre tal cual para confirmar'); return; }
   }
-  const btn = document.getElementById('admConfirmar'); if(btn){ btn.disabled = true; btn.textContent = 'Guardando…'; }
+  const btn = document.getElementById('admConfirmar'); if(btn){ marcarEsperando(btn, 'Guardando…'); }
   try{
     const r = await adminLlamar('adminUsuarioAccion', extra);
     admUsuarios = r.usuarios || admUsuarios;
@@ -12929,7 +12929,7 @@ function adminUsuarioNuevoAbrir(){
 async function adminUsuarioNuevoGuardar(){
   const nombre = ((document.getElementById('admNuevoUsuario')||{}).value || '').replace(/\s+/g,' ').trim();
   if(!nombre){ toast('Escribe el nombre'); return; }
-  const btn = document.getElementById('admConfirmar'); if(btn){ btn.disabled = true; btn.textContent = 'Guardando…'; }
+  const btn = document.getElementById('admConfirmar'); if(btn){ marcarEsperando(btn, 'Guardando…'); }
   try{
     const r = await adminLlamar('adminUsuarioNuevo', { objetivo: nombre });
     admUsuarios = r.usuarios || admUsuarios;
@@ -12957,12 +12957,14 @@ function confirmarCopiaSeguridad(){
     <button class="btn btn-ghost" onclick="cerrarSheet()">Cancelar</button>`);
 }
 async function hacerCopiaSeguridad(){
-  const b = document.getElementById('admCopiaBtn'); if(b){ b.disabled = true; b.textContent = 'Copiando…'; }
+  const b = document.getElementById('admCopiaBtn'); if(b){ marcarEsperando(b, 'Copiando…'); }
   try{
     const r = await adminLlamar('adminCopia', {}, 90000);
     mostrarSheet(`<h3>Copia hecha</h3><p style="font-size:14px; margin:0 0 12px;">${escapeHtml(r.nombre || '')}<br><span class="hint">Carpeta “Copias de seguridad” en Drive.</span></p><button class="btn btn-primary" onclick="cerrarSheet()">Cerrar</button>`);
   }catch(err){
     mostrarSheet(`<h3>No se pudo</h3><p style="font-size:14px; margin:0 0 12px;">${escapeHtml(err.message || 'Error')}</p><button class="btn btn-primary" onclick="cerrarSheet()">Cerrar</button>`);
+  } finally {
+    if(b){ b.disabled = false; b.textContent = 'Hacer copia ahora'; }
   }
 }
 
@@ -13823,7 +13825,7 @@ function entrarAPendientes(){
 
 async function actualizarPendientes(){
   const btn = document.getElementById('btnActualizarPendientes');
-  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  if(btn){ marcarEsperando(btn, 'Actualizando…'); }
   try{
     await cargarLigeroYActualizarDB();
     renderPendientes();
@@ -13845,7 +13847,7 @@ function entrarAUbicaciones(){
 
 async function actualizarUbicaciones(){
   const btn = document.getElementById('btnActualizarUbicaciones');
-  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  if(btn){ marcarEsperando(btn, 'Actualizando…'); }
   try{
     await cargarLigeroYActualizarDB();
     renderUbicaciones();
@@ -13987,7 +13989,7 @@ function entrarAEntregados(){
 
 async function actualizarEntregados(){
   const btn = document.getElementById('btnActualizarEntregados');
-  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  if(btn){ marcarEsperando(btn, 'Actualizando…'); }
   try{
     await cargarEntregadosYActualizar();
     renderEntregados();
@@ -14259,7 +14261,7 @@ let invFrescura = null; // { hora, ok }
 function pintarFrescuraInv(cargando){
   const f = document.getElementById('invFrescura');
   const b = document.getElementById('invBtnActualizar');
-  if(b){ b.disabled = !!cargando; b.textContent = cargando ? 'Actualizando…' : 'Actualizar datos'; }
+  if(b){ b.disabled = !!cargando; if(cargando) marcarEsperando(b, 'Actualizando…'); else b.textContent = 'Actualizar datos'; }
   if(!f) return;
   if(cargando){ f.textContent = 'Actualizando datos…'; return; }
   if(!invFrescura){ f.textContent = 'Aún no actualizados en esta sesión (se usan los datos guardados en el móvil).'; return; }
@@ -14740,7 +14742,7 @@ function entrarADuplicadas(){
 }
 async function actualizarDuplicadas(){
   const btn = document.getElementById('btnActualizarDuplicadas');
-  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  if(btn){ marcarEsperando(btn, 'Actualizando…'); }
   try{ await refrescarDuplicadas(); }catch(e){ toast('No se pudo actualizar'); }
   renderDuplicadas();
   if(btn){ btn.disabled = false; btn.textContent = 'Actualizar'; }
@@ -14753,7 +14755,7 @@ function entrarAResumen(){
 
 async function actualizarResumen(){
   const btn = document.getElementById('btnActualizarResumen');
-  if(btn){ btn.disabled = true; btn.textContent = 'Actualizando…'; }
+  if(btn){ marcarEsperando(btn, 'Actualizando…'); }
   try{
     await cargarEntregadosYActualizar();
     renderResumen();
@@ -16542,7 +16544,7 @@ async function guardarEnEsperaPickingRealizado(){
   if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
   const id = 'rz_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
   const btn = document.getElementById('rpDocContinuarBtn');
-  if(btn){ btn.disabled = true; btn.textContent = 'Guardando la hoja…'; }
+  if(btn){ marcarEsperando(btn, 'Guardando la hoja…'); }
   try{
     const res = await llamarBackend('guardarPickingRealizado', {
       id: id, of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto,
@@ -17347,6 +17349,16 @@ function hojaPendienteEntrega(p){
   if(!p || !p.hojasEscaneadas || !p.hojasEscaneadas.length) return false;
   const ultima = (p.entregas || []).reduce((m,e)=> Math.max(m, new Date(e.fecha).getTime() || 0), 0);
   return p.hojasEscaneadas.some(h => { const t = new Date(h.fecha).getTime(); return !isNaN(t) && t > ultima; });
+}
+// Espera visible en un botón (guardar, actualizar, terminar...): texto + puntos animados.
+// Al terminar, el propio botón vuelve a su texto (textContent lo reemplaza y quita los puntos).
+function esperandoHtml(texto){
+  return escapeHtml(texto) + '<span class="dots-carga" aria-hidden="true"><i></i><i></i><i></i></span>';
+}
+function marcarEsperando(btn, texto){
+  if(!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = esperandoHtml(texto);
 }
 function botonSubiendoHtml(n){
   const txt = n > 1 ? 'Subiendo hojas de picking (' + n + ')' : 'Subiendo hoja de picking';
