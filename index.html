@@ -16888,24 +16888,58 @@ function refrescarBipUI(){
 }
 
 /* ---- incidencias (falta de stock / no se encuentra / etc.) ---- */
+// Varios PN con el mismo motivo: la lista va aparte del campo de escribir
+let incidenciaCodigosElegidos = [];
 function abrirIncidencia(codigoPrellenado){
   detenerBipCamara();
-  if(codigoPrellenado===undefined) motivoIncidenciaSeleccionado = '';
+  if(codigoPrellenado===undefined){ motivoIncidenciaSeleccionado = ''; incidenciaCodigosElegidos = []; }
   mostrarSheet(`
     <h3>Registrar incidencia</h3>
-    <label>Código</label>
+    <label>Códigos (PN)</label>
     <div class="row2">
       <div><input type="text" class="mono" id="incidenciaCodigo" placeholder="Ej. SPC-MC-6370" value="${escapeAtributo(codigoPrellenado||'')}" oninput="sugerirCodigoIncidencia()" autocomplete="off"></div>
       <div style="flex:0 0 auto;"><button class="btn btn-outline" style="margin-top:0; width:auto; padding:12px 14px;" onclick="biparCodigoIncidencia()">Escanear</button></div>
     </div>
     <div id="incidenciaDescripcion" class="hint" style="margin:4px 0 0; font-size:13px;"></div>
     <div id="incidenciaSugerencias"></div>
-    <label>Motivo</label>
+    <button class="btn btn-outline" style="margin-top:8px;" onclick="anadirCodigoIncidencia()">+ Añadir este PN a la lista</button>
+    <div id="incidenciaListaCodigos"></div>
+    <label>Motivo (para todos los PN de la lista)</label>
     <div id="motivoIncidenciaChips"></div>
     <button class="btn btn-primary" onclick="confirmarIncidencia()">Guardar incidencia</button>
   `);
   renderMotivosIncidencia();
+  renderListaCodigosIncidencia();
   mostrarDescripcionIncidencia();
+}
+function renderListaCodigosIncidencia(){
+  const cont = document.getElementById('incidenciaListaCodigos');
+  if(!cont) return;
+  cont.innerHTML = incidenciaCodigosElegidos.length
+    ? `<div class="hint" style="margin:10px 0 4px;">${incidenciaCodigosElegidos.length} PN en la lista:</div>` + incidenciaCodigosElegidos.map((c,i)=>
+        `<div class="ticket" style="padding:8px 10px; margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
+          <span class="ticket-of" style="font-size:14px;">${escapeHtml(c)}</span>
+          <span class="link-action" onclick="quitarCodigoIncidencia(${i})">Quitar</span>
+        </div>`).join('')
+    : '';
+}
+function anadirCodigoIncidencia(){
+  const campo = document.getElementById('incidenciaCodigo');
+  let codigo = campo ? campo.value.trim() : '';
+  if(!codigo){ toast('Escribe o escanea el PN'); return; }
+  const oficial = buscarEnCatalogo(codigo);
+  if(oficial) codigo = oficial.c;
+  if(!incidenciaCodigosElegidos.includes(codigo)) incidenciaCodigosElegidos.push(codigo);
+  campo.value = '';
+  const cont = document.getElementById('incidenciaSugerencias');
+  if(cont) cont.innerHTML = '';
+  mostrarDescripcionIncidencia();
+  renderListaCodigosIncidencia();
+  campo.focus();
+}
+function quitarCodigoIncidencia(i){
+  incidenciaCodigosElegidos.splice(i, 1);
+  renderListaCodigosIncidencia();
 }
 // Descripción del código que hay escrito, si está en el catálogo
 function mostrarDescripcionIncidencia(){
@@ -16988,14 +17022,21 @@ function confirmarAnadirMotivoIncidencia(){
   abrirIncidencia(rpIncidenciaCodigoPendiente);
 }
 function confirmarIncidencia(){
-  let codigo = document.getElementById('incidenciaCodigo').value.trim();
-  if(!codigo){ toast('Escribe o escanea el código'); return; }
-  const oficialInc = buscarEnCatalogo(codigo);
-  if(oficialInc) codigo = oficialInc.c;
+  // Lo que está en la lista, más lo escrito en el campo si todavía no se ha añadido
+  const codigos = incidenciaCodigosElegidos.slice();
+  const campo = document.getElementById('incidenciaCodigo');
+  let escrito = campo ? campo.value.trim() : '';
+  if(escrito){
+    const oficialInc = buscarEnCatalogo(escrito);
+    if(oficialInc) escrito = oficialInc.c;
+    if(!codigos.includes(escrito)) codigos.push(escrito);
+  }
+  if(!codigos.length){ toast('Escribe o escanea el PN'); return; }
   if(!motivoIncidenciaSeleccionado){ toast('Elige un motivo'); return; }
-  sesionPicking.incidencias.push({ codigo, motivo: motivoIncidenciaSeleccionado });
+  codigos.forEach(c => sesionPicking.incidencias.push({ codigo: c, motivo: motivoIncidenciaSeleccionado }));
+  incidenciaCodigosElegidos = [];
   cerrarSheet();
-  toast('Incidencia registrada');
+  toast(codigos.length > 1 ? codigos.length + ' incidencias registradas' : 'Incidencia registrada');
   refrescarBipUI();
   iniciarBipCamara();
 }
@@ -17025,12 +17066,20 @@ function resumenPickingHtml(){
       </div>
     `).join('') || '<div class="empty">No se escaneó ningún componente</div>'}</div>
     ${s.incidencias.length ? `<label>Incidencias (${s.incidencias.length})</label>
-    <div class="obs-box">${s.incidencias.map(i=>{ const d = descripcionCatalogoTexto(i.codigo); return `${escapeHtml(i.codigo)}${d ? ' ('+escapeHtml(d)+')' : ''} — ${escapeHtml(i.motivo)}`; }).join('<br>')}</div>` : ''}
+    <div class="obs-box">${s.incidencias.map((i,n)=>`<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:4px 0;"><span>${escapeHtml(i.codigo)} — ${escapeHtml(i.motivo)}</span><span class="link-action" style="color:#B33A3A; white-space:nowrap;" onclick="quitarIncidenciaResumen(${n})">Quitar</span></div>`).join('')}</div>` : ''}
     <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
     ${s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ ${(()=>{ const q = DB.find(x=>x.id===s.idExistente); return (q && !q.hojaPickingUrl && !(q.componentesPicking||[]).length) ? 'Generar la hoja de la OF ' : 'Añadir a la OF '; })()}${escapeHtml(s.of)}</button>`
       : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar OF y generar hoja</button>`}
   `;
+}
+// Quita una incidencia de la lista de este picking (todavía no registrado) y repinta el resumen
+function quitarIncidenciaResumen(i){
+  if(!sesionPicking || !sesionPicking.incidencias[i]) return;
+  sesionPicking.incidencias.splice(i, 1);
+  const cont = document.getElementById('rpResumenContenido');
+  if(cont) cont.innerHTML = resumenPickingHtml();
+  toast('Incidencia quitada');
 }
 function registrarPickingRealizado(){
   if(!sesionPicking) return;
