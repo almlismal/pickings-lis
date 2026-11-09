@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1205</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1206</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -17580,7 +17580,9 @@ function inicialesLis(nombre){
   return r ? r.iniciales : '';
 }
 function generarHojaPickingHtml(datos){
-  const filas = datos.componentes.map(c=>`
+  // Como sale la hoja guardada: orden alfabético por PN
+  const ordenados = (datos.componentes || []).slice().sort((a,b)=> String(a.codigo||'').localeCompare(String(b.codigo||''), 'es', {numeric:true, sensitivity:'base'}));
+  const filas = ordenados.map(c=>`
     <tr><td>${escapeHtml(c.codigo)}</td><td>${escapeHtml(descripcionCatalogoTexto(c.codigo))}</td><td>${escapeHtml(c.lote||'N/A')}</td><td>${c.cantidad}</td></tr>
   `).join('') || `<tr><td colspan="4" style="text-align:center; color:#888; font-weight:400;">Sin componentes bipados</td></tr>`;
   const faltante = datos.incidencias.map(i=> `${escapeHtml(i.codigo)}${i.motivo ? ' ('+escapeHtml(i.motivo)+')' : ''}`).join(' · ');
