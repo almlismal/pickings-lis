@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1200</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1203</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11750,6 +11750,7 @@ function retomarPausado(id){
   programarSincPausados(1500);
   if(d.fase === 'bip' && d.sesion){
     sesionPicking = JSON.parse(JSON.stringify(d.sesion));
+    resetIncidenciasEnCurso();
     sesionPicking.draftId = d.id;
     document.getElementById('rpBipOf').textContent = sesionPicking.of;
     const campoManual = document.getElementById('rp_codigoManual');
@@ -16551,6 +16552,7 @@ async function guardarEnEsperaPickingRealizado(){
     }, id, 120000);
     if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
     sesionPicking = null; rpDocDatosActuales = null;
+    resetIncidenciasEnCurso();
     borrarBorradorBip();
     toast('Picking terminado: la hoja queda en espera hasta registrar la OF');
     ir('realizar-inicio');
@@ -16561,7 +16563,14 @@ async function guardarEnEsperaPickingRealizado(){
   }
 }
 
+// Las incidencias a medias (PN en la lista, código escaneado) son de UN picking: al cambiar de OF se vacían
+function resetIncidenciasEnCurso(){
+  incidenciaCodigosElegidos = [];
+  rpIncidenciaCodigoPendiente = '';
+  rpModoIncidencia = false;
+}
 function empezarBipado(){
+  resetIncidenciasEnCurso();
   const of = document.getElementById('rp_of').value.trim();
   const proyecto = document.getElementById('rp_proyecto').value.trim();
   const subproyecto = document.getElementById('rp_subproyecto').value.trim();
@@ -16583,6 +16592,7 @@ function empezarBipado(){
 // al terminar, en vez de ir a "Registrar OF" se pregunta cómo
 // actualizar la hoja de picking del que ya existe.
 function empezarBipadoParaPickingExistente(id){
+  resetIncidenciasEnCurso();
   const p = DB.find(x=>x.id===id);
   if(!p){ toast('No se encontró esa OF'); return; }
   borradorActivoId = null;
@@ -16600,6 +16610,7 @@ function cancelarBipado(sinPreguntar){
     if(!confirm('Se perderá lo escaneado hasta ahora. ¿Confirmas que quieres salir?')) return;
   }
   detenerBipCamara();
+  resetIncidenciasEnCurso();
   const volverAId = sesionPicking && sesionPicking.idExistente;
   sesionPicking = null;
   borrarBorradorBip();
@@ -17108,21 +17119,24 @@ function resumenPickingHtml(){
         <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A</b>' : escapeHtml(c.lote)}</div>
       </div>
     `).join('') || '<div class="empty">No se escaneó ningún componente</div>'}</div>
-    ${s.incidencias.length ? `<label>Incidencias (${s.incidencias.length})</label>
-    <div class="obs-box">${s.incidencias.map((i,n)=>`<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:4px 0;"><span>${escapeHtml(i.codigo)} — ${escapeHtml(i.motivo)}</span><span class="link-action" style="color:#B33A3A; white-space:nowrap;" onclick="quitarIncidenciaResumen(${n})">Quitar</span></div>`).join('')}</div>` : ''}
+    ${s.incidencias.length ? `<label>Material faltante (${s.incidencias.length})</label>
+    <div class="obs-box">${materialFaltanteAgrupadoHtml(s.incidencias)}</div>
+    <div class="hint" style="margin:4px 0 10px;">Para cambiar un motivo o quitar una incidencia, vuelve a la pantalla principal.</div>` : ''}
     <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
     ${s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ ${(()=>{ const q = DB.find(x=>x.id===s.idExistente); return (q && !q.hojaPickingUrl && !(q.componentesPicking||[]).length) ? 'Generar la hoja de la OF ' : 'Añadir a la OF '; })()}${escapeHtml(s.of)}</button>`
       : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar OF y generar hoja</button>`}
   `;
 }
-// Quita una incidencia de la lista de este picking (todavía no registrado) y repinta el resumen
-function quitarIncidenciaResumen(i){
-  if(!sesionPicking || !sesionPicking.incidencias[i]) return;
-  sesionPicking.incidencias.splice(i, 1);
-  const cont = document.getElementById('rpResumenContenido');
-  if(cont) cont.innerHTML = resumenPickingHtml();
-  toast('Incidencia quitada');
+// Mismo formato que el PDF: una línea por motivo, con sus PN separados por comas
+function materialFaltanteAgrupadoHtml(lista){
+  const grupos = {}, orden = [];
+  lista.forEach(i => {
+    const m = i.motivo || 'Sin motivo';
+    if(!grupos[m]){ grupos[m] = []; orden.push(m); }
+    if(!grupos[m].includes(i.codigo)) grupos[m].push(i.codigo);
+  });
+  return orden.map(m => `<div style="padding:3px 0;">${grupos[m].map(c => escapeHtml(c)).join(', ')} (${escapeHtml(m)})</div>`).join('');
 }
 function registrarPickingRealizado(){
   if(!sesionPicking) return;
