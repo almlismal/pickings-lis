@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1204</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v31oct-1205</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -16464,7 +16464,16 @@ async function cargarRealizadosEspera(){
   try{
     const res = await fetchConLimite(GAS_URL + '?pickingsRealizados=1', {}, 25000);
     const datos = await res.json();
-    if(datos && datos.ok !== false) realizadosEsperaCache = datos.pickings || [];
+    if(datos && datos.ok !== false){
+      // Una OF solo aparece una vez: si hay varias entradas, se queda la más reciente
+      const porOf = {};
+      (datos.pickings || []).forEach(x => {
+        const k = String(x.of || '');
+        const t = new Date(x.fecha).getTime() || 0;
+        if(!porOf[k] || t >= (new Date(porOf[k].fecha).getTime() || 0)) porOf[k] = x;
+      });
+      realizadosEsperaCache = Object.values(porOf).sort((a,b) => (new Date(b.fecha).getTime()||0) - (new Date(a.fecha).getTime()||0));
+    }
   }catch(err){ /* sin conexión: se usa lo último que se cargó */ }
   return realizadosEsperaCache;
 }
