@@ -797,6 +797,8 @@
     <label>Líneas escaneadas (<span id="rpNumLineas">0</span>)</label>
     <div id="rpListaLineas"></div>
 
+    <div id="rpBloqueIncidencias"></div>
+
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" onclick="pausarPicking()">Pausar — seguir luego o que siga otra persona</button>
     <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar escaneo →</button>
@@ -16876,6 +16878,47 @@ function renderLineasBip(){
       <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A — falta ponerlo</b>' : escapeHtml(c.lote)}</div>
     </div>
   `).join('');
+  renderIncidenciasBip();
+}
+// Incidencias del picking en la pantalla principal: se ven, se cambia su motivo o se quitan
+function renderIncidenciasBip(){
+  const bloque = document.getElementById('rpBloqueIncidencias');
+  if(!bloque || !sesionPicking) return;
+  const lista = sesionPicking.incidencias || [];
+  if(!lista.length){ bloque.innerHTML = ''; return; }
+  bloque.innerHTML = `<label>Incidencias (${lista.length})</label>` + lista.map((i,n)=>`
+    <div class="ticket" style="padding:10px 12px;">
+      <div class="ticket-top"><span class="ticket-of" style="font-size:15px;">${escapeHtml(i.codigo)}</span></div>
+      <div class="ticket-proj" style="margin-top:4px;">Motivo: <b>${escapeHtml(i.motivo)}</b></div>
+      <div style="display:flex; gap:16px; margin-top:8px;">
+        <span class="link-action" onclick="abrirCambiarMotivoIncidencia(${n})">Cambiar motivo</span>
+        <span class="link-action" style="color:#B33A3A;" onclick="quitarIncidenciaBip(${n})">Quitar</span>
+      </div>
+    </div>`).join('');
+}
+function abrirCambiarMotivoIncidencia(n){
+  const i = sesionPicking && sesionPicking.incidencias[n];
+  if(!i) return;
+  const opciones = MOTIVOS_INCIDENCIA_BASE.concat(cargarMotivosIncidencia());
+  mostrarSheet(`
+    <h3>Motivo de ${escapeHtml(i.codigo)}</h3>
+    <div class="ubic-grid">${opciones.map((m,k)=>`<div class="loc-chip ${m===i.motivo?'active':''}" onclick="guardarMotivoIncidencia(${n}, ${k})">${escapeHtml(m)}</div>`).join('')}</div>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+}
+function guardarMotivoIncidencia(n, k){
+  const opciones = MOTIVOS_INCIDENCIA_BASE.concat(cargarMotivosIncidencia());
+  if(!sesionPicking || !sesionPicking.incidencias[n] || !opciones[k]) return;
+  sesionPicking.incidencias[n].motivo = opciones[k];
+  cerrarSheet();
+  refrescarBipUI();
+  toast('Motivo cambiado');
+}
+function quitarIncidenciaBip(n){
+  if(!sesionPicking || !sesionPicking.incidencias[n]) return;
+  sesionPicking.incidencias.splice(n, 1);
+  refrescarBipUI();
+  toast('Incidencia quitada');
 }
 function refrescarBipUI(){
   renderLineasBip();
