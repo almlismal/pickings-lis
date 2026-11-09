@@ -16487,8 +16487,17 @@ async function refrescarRegistroRealizados(){
       <div class="ticket-proj">${escapeHtml(x.proyecto||'—')}${x.subproyecto ? ' · '+escapeHtml(x.subproyecto) : ''}</div>
       <div class="ticket-proj" style="font-size:13px;"><b>Hecho por ${escapeHtml(hecho)}</b>${termino && termino !== hecho ? ' · terminado por '+escapeHtml(termino) : ''}</div>
       <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))} · toca para ubicar y registrar</div>
+      ${x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaRealizado('${escapeAtributo(x.id)}')">Ver hoja para imprimir</button>` : ''}
     </div>`;
   }).join('') + `<div class="hint" style="margin:6px 0 14px;">O escribe la OF abajo; si ya tiene el picking hecho, te lo avisará.</div>`;
+}
+// Abre la hoja (sin firmar) de un picking ya hecho, para imprimirla y tildar lo emitido.
+// Se abre directamente desde el toque para que el navegador no la bloquee.
+function verHojaRealizado(id){
+  const x = (realizadosEsperaCache || []).find(r=>r.id===id);
+  if(!x || !x.hojaPickingUrl){ toast('Esta OF no tiene hoja todavía'); return; }
+  const w = window.open(x.hojaPickingUrl, '_blank');
+  if(!w) toast('El navegador ha bloqueado la hoja: permite las ventanas emergentes para esta app');
 }
 // Carga una OF terminada en el formulario de registro, con su hoja y sus líneas.
 function cargarRealizadoEnFormulario(id){
