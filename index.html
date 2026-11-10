@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v09nov-1206</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v10nov-1255</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12685,6 +12685,7 @@ function entrarAAdmin(){
     sec('Personas y seguridad') +
     adminBoton('', 'Usuarios', "ir('admin-usuarios')") +
     adminBoton('', 'Copia de seguridad', "confirmarCopiaSeguridad()");
+    adminBoton('', 'Lotes recordados (reiniciar)', "confirmarReiniciarLotes()");
   try{ actualizarBadgeAntiguas(); }catch(e){}
   try{ actualizarBadgeDuplicadas(); }catch(e){}
   try{ actualizarBadgesAdministrador(); }catch(e){}
@@ -12947,6 +12948,33 @@ function adminVerActividad(i, hojaReg){
   cerrarSheet();
   abrirRegistroAdmin(hojaReg);
   reg.persona = nombre;
+}
+
+/* ---------- lotes recordados: reiniciar ---------- */
+function confirmarReiniciarLotes(){
+  mostrarSheet(`<h3>Lotes recordados</h3>
+    <p style="font-size:14px; margin:0 0 12px;">Los lotes que se usan para cada PN se recuerdan en este móvil para ofrecerlos al bipear. Aquí puedes borrarlos cuando queden obsoletos. No cambia ninguna OF ni ninguna hoja ya hecha, y solo afecta a este móvil.</p>
+    <label>PN concreto</label>
+    <input type="text" class="mono" id="reinicioPN" placeholder="Ej. SPC-MC-560" autocomplete="off" autocapitalize="characters">
+    <button class="btn btn-primary" onclick="reiniciarLotesPN()">Reiniciar los lotes de este PN</button>
+    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="reiniciarLotesTodos()">Reiniciar todos los lotes</button>
+    <button class="btn btn-ghost" onclick="cerrarSheet()">Cancelar</button>`);
+}
+function reiniciarLotesPN(){
+  const pn = (document.getElementById('reinicioPN') || {}).value || '';
+  if(!pn.trim()){ toast('Escribe el PN'); return; }
+  reiniciarLotesEnServidor(pn.trim().toUpperCase());
+}
+function reiniciarLotesTodos(){
+  if(!confirm('¿Borrar los lotes recordados de TODOS los PN?')) return;
+  reiniciarLotesEnServidor('TODOS');
+}
+// Solo borra los lotes de ESTE móvil
+function reiniciarLotesEnServidor(codigo){
+  if(codigo === 'TODOS') lotesRecordados = {}; else delete lotesRecordados[codigo];
+  guardarLotesRecordados();
+  cerrarSheet();
+  toast(codigo === 'TODOS' ? 'Lotes de este móvil borrados' : 'Lotes de ' + codigo + ' borrados de este móvil');
 }
 
 /* ---------- copia de seguridad ---------- */
@@ -16582,6 +16610,7 @@ function resetIncidenciasEnCurso(){
 }
 function empezarBipado(){
   resetIncidenciasEnCurso();
+  cargarLotesRecordados();
   const of = document.getElementById('rp_of').value.trim();
   const proyecto = document.getElementById('rp_proyecto').value.trim();
   const subproyecto = document.getElementById('rp_subproyecto').value.trim();
@@ -16604,6 +16633,7 @@ function empezarBipado(){
 // actualizar la hoja de picking del que ya existe.
 function empezarBipadoParaPickingExistente(id){
   resetIncidenciasEnCurso();
+  cargarLotesRecordados();
   const p = DB.find(x=>x.id===id);
   if(!p){ toast('No se encontró esa OF'); return; }
   borradorActivoId = null;
@@ -16778,11 +16808,33 @@ function continuarLineaBip(codigo){
 // Campo de lote (se escribe a mano).
 // Lotes que ya se usaron para ese mismo código (de los pickings guardados en este móvil)
 let lotePistasActuales = [];
+// Lotes recordados por PN, solo en ESTE móvil (localStorage). No se envían al Excel.
+const LS_LOTES_RECORDADOS = 'pickings_lis_lotes_recordados_v1';
+let lotesRecordados = {};
+function cargarLotesRecordados(){
+  try{
+    const v = JSON.parse(localStorage.getItem(LS_LOTES_RECORDADOS) || '{}');
+    lotesRecordados = (v && typeof v === 'object') ? v : {};
+  }catch(e){ lotesRecordados = {}; }
+}
+function guardarLotesRecordados(){
+  try{ localStorage.setItem(LS_LOTES_RECORDADOS, JSON.stringify(lotesRecordados)); }catch(e){}
+}
+// Un lote usado para un PN queda recordado en este móvil (los 5 más recientes)
+function recordarLoteUso(codigo, lote){
+  const l = String(lote || '').trim().toUpperCase();
+  if(!codigo || !l || l === 'N/A') return;
+  const previos = (lotesRecordados[codigo] || []).filter(x => x !== l);
+  lotesRecordados[codigo] = [l].concat(previos).slice(0, 5);
+  guardarLotesRecordados();
+}
 function lotesAnterioresCodigo(codigo){
   const out = [];
-  const añadir = c => { if(c && c.codigo === codigo && c.lote && c.lote !== 'N/A' && out.indexOf(c.lote) === -1) out.push(c.lote); };
-  ((sesionPicking && sesionPicking.componentes) || []).forEach(añadir);
-  (DB || []).forEach(p => (p.componentesPicking || []).forEach(añadir));
+  const añadir = lote => { if(lote && lote !== 'N/A' && out.indexOf(lote) === -1) out.push(lote); };
+  (lotesRecordados[codigo] || []).forEach(añadir);
+  const deLinea = c => { if(c && c.codigo === codigo) añadir(c.lote); };
+  ((sesionPicking && sesionPicking.componentes) || []).forEach(deLinea);
+  (DB || []).forEach(p => (p.componentesPicking || []).forEach(deLinea));
   return out;
 }
 // Muestra los lotes que coinciden con lo escrito (un mismo código puede tener muchos lotes).
@@ -16842,6 +16894,7 @@ function confirmarLineaBip(){
   const lote = document.getElementById('lineaLote').value.trim().toUpperCase() || 'N/A';
   const cantidad = leerCantidadLinea();
   sesionPicking.componentes.push({ codigo: rpLineaPendiente.codigo, lote, cantidad });
+  recordarLoteUso(rpLineaPendiente.codigo, lote);
   rpLineaPendiente = null;
   cerrarSheet();
   refrescarBipUI();
@@ -16868,6 +16921,7 @@ function guardarEdicionLineaBip(idx){
   if(!c) return;
   c.lote = document.getElementById('lineaLote').value.trim().toUpperCase() || 'N/A';
   c.cantidad = leerCantidadLinea();
+  recordarLoteUso(c.codigo, c.lote);
   cerrarSheet();
   refrescarBipUI();
 }
@@ -17351,6 +17405,9 @@ function bytesABase64(bytes){
 const hojasSubiendo = new Set();
 let formEntregaAbierto = null; // { tipo, id } del formulario de entrega que está visible
 let loteExcepciones = {};      // en entrega en lote: id de OF -> motivo de la excepción (sin hoja firmada)
+let loteFirmaDigital = null;   // en entrega en lote: firma digital { png, nombre } para las OF con documento digital
+// Una OF con documento digital (y sin hoja escaneada) queda firmada con la firma del lote.
+function firmaDigitalLoteAplica(p){ return !!loteFirmaDigital && requiereHojaPicking(p) && !!p.hojaPickingUrl && !hojaPendienteEntrega(p); }
 function hojaSubiendo(id){ return hojasSubiendo.has(id); }
 function requiereHojaPicking(p){ return !!(p && usuarioActual && String(p.id).indexOf('tmp_')!==0); }
 // Una hoja subida después de la última entrega registrada es la que sirve para la entrega que se está haciendo.
@@ -17580,8 +17637,8 @@ function inicialesLis(nombre){
   return r ? r.iniciales : '';
 }
 function generarHojaPickingHtml(datos){
-  // Como sale la hoja guardada: orden alfabético por PN
-  const ordenados = (datos.componentes || []).slice().sort((a,b)=> String(a.codigo||'').localeCompare(String(b.codigo||''), 'es', {numeric:true, sensitivity:'base'}));
+  // Como sale la hoja guardada: orden por PN carácter a carácter
+  const ordenados = (datos.componentes || []).slice().sort((a,b)=>{ const x = String(a.codigo||''), y = String(b.codigo||''); return x < y ? -1 : (x > y ? 1 : 0); });   // carácter a carácter, como SAP
   const filas = ordenados.map(c=>`
     <tr><td>${escapeHtml(c.codigo)}</td><td>${escapeHtml(descripcionCatalogoTexto(c.codigo))}</td><td>${escapeHtml(c.lote||'N/A')}</td><td>${c.cantidad}</td></tr>
   `).join('') || `<tr><td colspan="4" style="text-align:center; color:#888; font-weight:400;">Sin componentes bipados</td></tr>`;
@@ -18061,9 +18118,9 @@ function entregarLote(manteniendoEstado){
   }
   const quienEntrega = entregaPorActivo || usuarioActual;
   const adminHojas = !!usuarioActual;   // el escáner de hojas firmadas es para todos
-  if(!manteniendoEstado) loteExcepciones = {};
+  if(!manteniendoEstado){ loteExcepciones = {}; loteFirmaDigital = null; }
   formEntregaAbierto = { tipo: 'lote', id: '' };
-  const todasConHoja = ids.every(id=>{ const q = DB.find(x=>x.id===id); return !requiereHojaPicking(q) || hojaPendienteEntrega(q) || !!loteExcepciones[id]; });
+  const todasConHoja = ids.every(id=>{ const q = DB.find(x=>x.id===id); return !requiereHojaPicking(q) || hojaPendienteEntrega(q) || !!loteExcepciones[id] || firmaDigitalLoteAplica(q); });
   const filas = ids.map(id=>{
     const p = DB.find(x=>x.id===id);
     const motivos = motivosAtencionLote(p);
@@ -18081,6 +18138,21 @@ function entregarLote(manteniendoEstado){
     <h3>Entregar ${ids.length} picking${ids.length===1?'':'s'}</h3>
     ${(()=>{ const con = ids.map(id=>DB.find(x=>x.id===id)).filter(q=>q && fueraActivas(q).length); return con.length ? `<div style="background:#FFF4D6; border:1.5px solid #E0B64A; border-radius:10px; padding:9px 11px; margin:0 0 12px; font-size:14px;"><b>⚠ ${con.length===1?'Una OF lleva':con.length+' OF llevan'} cosas fuera de la caja:</b><br>${con.map(q=> '• <b>OF '+escapeHtml(q.of)+'</b>: ' + fueraActivas(q).map(k=> escapeHtml(k.toLowerCase()) + ' (' + escapeHtml((q.ubicaciones||{})[k] || 'sin ubicación') + ')').join(', ')).join('<br>')}<div style="font-size:12.5px; margin-top:4px;">Comprueba que se entrega todo junto.</div></div>` : ''; })()}
     ${adminHojas ? `<div class="hint" style="margin:0 0 6px;">Obligatorio: escanea la hoja firmada de cada OF (una o varias hojas por OF). Si alguna no existe, pulsa «Excepción» en esa OF.</div>` : ''}
+    ${(()=>{
+      if(!adminHojas) return '';
+      const lista = ids.map(id=>DB.find(x=>x.id===id)).filter(q=>q && requiereHojaPicking(q));
+      const digitales = lista.filter(q=> q.hojaPickingUrl && !hojaPendienteEntrega(q));
+      const sinDigital = lista.filter(q=> !q.hojaPickingUrl && !hojaPendienteEntrega(q) && !loteExcepciones[q.id]);
+      if(!digitales.length) return '';
+      return `<div class="obs-box" style="margin:0 0 12px;">
+        <b>Firma digital del lote</b>
+        ${loteFirmaDigital
+          ? `<div style="margin:6px 0; color:#1B7F3B;"><b>Firma digital puesta ✓</b> · ${escapeHtml(loteFirmaDigital.nombre)} · se aplica a ${digitales.length} OF</div>`
+          : `<div class="hint" style="margin:4px 0 8px;">${digitales.length} OF con documento digital: una sola firma para todas.</div>`}
+        <button type="button" class="btn btn-primary" style="margin:0 0 4px; background:#0F5257; border-color:#0F5257; color:#fff; font-weight:700;" onclick="firmaDigitalLoteAbrir()">✍ ${loteFirmaDigital ? 'Cambiar firma digital' : 'Firma digital para estas OF'}</button>
+        ${sinDigital.length ? `<div class="hint" style="margin:6px 0 0; color:var(--warn-ink);">Sin documento digital (firmar en papel y escanear la hoja): ${sinDigital.map(q=>'OF '+escapeHtml(q.of)).join(', ')}</div>` : ''}
+      </div>`;
+    })()}
     <div id="loteFirmas" style="max-height:40vh; overflow:auto; margin-bottom:12px;">${filas}</div>
     <label>¿Quién entrega?</label>
     <div class="hint" style="margin:0 0 4px;">La entrega queda registrada a nombre de: <b>${escapeHtml(quienEntrega)}</b>${entregaPorActivo ? ' (verificado con su PIN)' : ''}</div>
@@ -18106,6 +18178,7 @@ function entregarLote(manteniendoEstado){
   toggleBtnEntrega();
 }
 function bloqueHojaLoteHtml(p){
+  if(firmaDigitalLoteAplica(p)) return `<div style="margin-top:6px; color:#1B7F3B; font-size:13px;"><b>✓ Firma digital del lote</b></div>`;
   if(hojaSubiendo(p.id)) return `<div style="margin-top:6px; color:#0F5257; font-size:13px;"><b>Subiendo hoja de picking</b><span class="dots-carga" aria-hidden="true"><i></i><i></i><i></i></span></div>`;
   const btnBase = 'margin:0; width:auto; padding:5px 10px; font-size:13px;';
   const btnEscanear = (estilo) => `<button type="button" class="btn btn-outline" style="${btnBase}${estilo||''}" onclick="escanearHojaFirmadaDesdeLote('${p.id}')">`;
@@ -18113,6 +18186,31 @@ function bloqueHojaLoteHtml(p){
   const exc = loteExcepciones[p.id];
   if(exc) return `<div style="margin-top:6px;"><div style="color:#8A5A00; font-size:13px;"><b>Excepción:</b> ${escapeHtml(exc)}</div><div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">${btnEscanear()}Escanear hoja firmada</button><button type="button" class="btn btn-outline" style="${btnBase}" onclick="pedirSinHojaFirmadaLote('${p.id}')">Cambiar explicación</button></div></div>`;
   return `<div style="margin-top:6px;"><div style="font-size:13px; color:var(--ink-soft);">Obligatorio: escanea la hoja firmada, o pulsa «Excepción».</div><div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;"><button type="button" class="btn btn-primary" style="${btnBase} background:#D9822B; border-color:#D9822B; color:#fff; font-weight:700;" onclick="escanearHojaFirmadaDesdeLote('${p.id}')">Escanear hoja firmada</button><button type="button" class="btn btn-outline" style="${btnBase}" onclick="pedirSinHojaFirmadaLote('${p.id}')">Excepción: no hay hoja firmada</button></div></div>`;
+}
+// Firma digital para todas las OF con documento digital de la entrega en lote (una sola vez).
+function firmaDigitalLoteAbrir(){
+  guardarBorradorEntrega();
+  mostrarSheet(`
+    <h3>Firma digital del lote</h3>
+    <p class="hint" style="margin:0 0 8px;">Esta firma se pone en la hoja de cada OF con documento digital de esta entrega.</p>
+    <canvas id="firmaPad" width="600" height="300" style="width:100%; height:auto; aspect-ratio:600/300; border:2px dashed #9AA6B5; border-radius:10px; background:#fff; touch-action:none;"></canvas>
+    <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
+    <label>Nombre de quien firma</label>
+    <input type="text" id="firmaNombre" value="${escapeAtributo(entregaDraft.a || '')}" placeholder="Nombre de la persona de DHV">
+    <button class="btn btn-primary" onclick="firmaGuardarLote()">✓ Guardar firma digital</button>
+    <button class="btn btn-outline" onclick="entregarLote(true)">Cancelar</button>
+  `);
+  firmaPadIniciar();
+}
+function firmaGuardarLote(){
+  const c = document.getElementById('firmaPad');
+  const nombre = ((document.getElementById('firmaNombre') || {}).value || '').trim();
+  if(!c || !c.dataset.dibujado){ toast('Firma dentro del recuadro'); return; }
+  if(!nombre){ toast('Escribe el nombre de quien firma'); return; }
+  loteFirmaDigital = { png: c.toDataURL('image/png'), nombre: nombre };
+  entregaDraft.a = entregaDraft.a || nombre;
+  entregarLote(true);
+  toast('Firma digital puesta para el lote');
 }
 function pedirSinHojaFirmadaLote(id){
   const p = DB.find(x=>x.id===id);
@@ -18153,15 +18251,18 @@ async function confirmarEntregaLote(){
     if(!chk || !chk.checked){ toast('Confirma que va a firmar las hojas de picking'); return; }
     const idsLote = idsLoteVigentes();
     if(idsLote.some(id=>hojaSubiendo(id))){ toast('Espera a que terminen de subir las hojas firmadas'); return; }
-    const sinResolver = idsLote.find(id=>{ const q = DB.find(x=>x.id===id); return q && requiereHojaPicking(q) && !hojaPendienteEntrega(q) && !loteExcepciones[id]; });
+    const sinResolver = idsLote.find(id=>{ const q = DB.find(x=>x.id===id); return q && requiereHojaPicking(q) && !hojaPendienteEntrega(q) && !loteExcepciones[id] && !firmaDigitalLoteAplica(q); });
     if(sinResolver){ const q = DB.find(x=>x.id===sinResolver); toast('Falta la hoja firmada de la OF ' + (q ? q.of : '') + ': escanéala o pulsa «Excepción»'); return; }
 
     const ahora = new Date().toISOString();
     const hechos = [];
+    const firmasPorOF = {};
     idsLoteVigentes().forEach(id=>{
       const p = DB.find(x=>x.id===id);
       if(!p) return;
-      const sinHoja = requiereHojaPicking(p) && !hojaPendienteEntrega(p);
+      const firmaOF = firmaDigitalLoteAplica(p) ? loteFirmaDigital : null;
+      if(firmaOF) firmasPorOF[id] = firmaOF;
+      const sinHoja = requiereHojaPicking(p) && !hojaPendienteEntrega(p) && !firmaOF;
       const notaOF = (sinHoja && loteExcepciones[id]) ? ('[Excepción sin hoja firmada: ' + loteExcepciones[id] + '] ' + notaLote).trim() : notaLote;
       p.entregas.push({ tipo:'completa', entregadoPor: por, entregadoA: a, nota: notaOF, fecha: ahora });
       delete loteExcepciones[id];
@@ -18172,6 +18273,7 @@ async function confirmarEntregaLote(){
     guardarDBLocal();
     recordarDestinatario(a);
 
+    loteFirmaDigital = null;
     loteSeleccion.clear();
     loteModo = false;
     cerrarSheet();
@@ -18180,7 +18282,7 @@ async function confirmarEntregaLote(){
     toast(hechos.length + ' entrega' + (hechos.length===1?'':'s') + ' registrada' + (hechos.length===1?'':'s') + ' — recuerda las firmas');
 
     hechos.forEach(p=>{
-      encolarOperacion('entregar', { pickingId: p.id, tipo:'completa', entregadoPor: por, entregadoA: a, nota: (p.entregas[p.entregas.length-1] || {}).nota || '' }, p.id, 'Entregar OF ' + p.of);
+      encolarOperacion('entregar', { pickingId: p.id, tipo:'completa', entregadoPor: por, entregadoA: a, nota: (p.entregas[p.entregas.length-1] || {}).nota || '', firmaDigital: firmasPorOF[p.id] || null }, p.id, 'Entregar OF ' + p.of);
     });
   }catch(err){
     toast('Algo falló al confirmar — inténtalo de nuevo');
