@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1234</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1241</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -759,8 +759,6 @@
     </div>
     <div id="rpPausados"></div>
     <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
-    <button class="btn btn-outline" onclick="escanearParaInicio()" style="margin:0 0 6px;">Escanear etiqueta para leer la OF</button>
-    <div class="hint" style="margin:0 0 12px;">Opcional. Si la etiqueta no se lee, escribe la OF a mano.</div>
     <label>OF</label>
     <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
     <div class="row2">
@@ -16118,7 +16116,7 @@ function detalleHtml(p){
 
   const acciones = p.estado==='completado' ? '' : `
     <button class="btn btn-ok" onclick="entregar('completa')">Entrega completa</button>
-    <button class="btn btn-outline" onclick="abrirAmpliacion('${p.id}')" style="margin-top:8px;">Añadir algo más a este picking</button>
+    <button class="btn btn-outline" onclick="elegirModoEscaneo('empezarBipadoParaPickingExistente', '${p.id}', 'abrirAmpliacion')" style="margin-top:8px;">Añadir algo más a este picking</button>
   `;
 
   const gestionBtns = puedeGestionar(p)
@@ -16550,12 +16548,12 @@ async function refrescarRegistroRealizados(){
       <div class="ticket-proj" style="font-size:13px;"><b>Hecho por ${escapeHtml(hecho)}</b>${termino && termino !== hecho ? ' · terminado por '+escapeHtml(termino) : ''}</div>
       <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))} · toca para ubicar y registrar</div>
       ${x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaRealizado('${escapeAtributo(x.id)}')">Ver hoja para imprimir</button>` : ''}
-      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); empezarBipadoParaRealizado('${escapeAtributo(x.id)}')">Editar hoja (añadir o quitar)</button>
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); elegirModoEscaneo('empezarBipadoParaRealizado', '${escapeAtributo(x.id)}')">Editar hoja (añadir o quitar)</button>
     </div>`;
   }).join('') + `<div class="hint" style="margin:6px 0 14px;">O escribe la OF abajo; si ya tiene el picking hecho, te lo avisará.</div>`;
 }
 // ---- añadir líneas a un picking YA hecho y en espera (todavía sin OF registrada) ----
-function empezarBipadoParaRealizado(id){
+function empezarBipadoParaRealizado(id, conPda){
   const x = (realizadosEsperaCache || []).find(r=>r.id===id);
   if(!x){ toast('No encuentro esa hoja, actualiza la pantalla'); return; }
   resetIncidenciasEnCurso();
@@ -16573,6 +16571,7 @@ function empezarBipadoParaRealizado(id){
   if(campoManual) campoManual.value = '';
   refrescarBipUI();
   guardarBorradorBip('bip');
+  if(conPda === true){ abrirPantallaPda(); return; }
   ir('realizar-bip');
 }
 // Antes de guardar: se ve la hoja completa (lo de antes + lo nuevo) para comprobar que no falta ni sobra nada.
@@ -16731,7 +16730,7 @@ function empezarBipado(conPda){
 // toda la misma pantalla y cámara de bipado — lo único que cambia es que,
 // al terminar, en vez de ir a "Registrar OF" se pregunta cómo
 // actualizar la hoja de picking del que ya existe.
-function empezarBipadoParaPickingExistente(id){
+function empezarBipadoParaPickingExistente(id, conPda){
   resetIncidenciasEnCurso();
   cargarLotesRecordados();
   const p = DB.find(x=>x.id===id);
@@ -16743,7 +16742,22 @@ function empezarBipadoParaPickingExistente(id){
   if(campoManual) campoManual.value = '';
   renderLineasBip();
   guardarBorradorBip('bip');
+  if(conPda === true){ abrirPantallaPda(); return; }
   ir('realizar-bip');
+}
+
+// Antes de escanear, pregunta con qué: móvil o PDA (la PDA solo para ti, de prueba).
+// Si se pasa notaFn, añade la opción de dejar solo una nota.
+function elegirModoEscaneo(fn, id, notaFn){
+  if(!esPruebaPda() && !notaFn){ window[fn](id, false); return; }
+  const idSeguro = escapeAtributo(id);
+  mostrarSheet(`
+    <h3>¿Con qué escaneas?</h3>
+    <button class="btn btn-primary" onclick="cerrarSheet(); window['${fn}']('${idSeguro}', false)">Escanear con móvil</button>
+    ${esPruebaPda() ? `<button class="btn btn-outline" onclick="cerrarSheet(); window['${fn}']('${idSeguro}', true)">Escanear con PDA</button>` : ''}
+    ${notaFn ? `<button class="btn btn-outline" onclick="cerrarSheet(); window['${notaFn}']('${idSeguro}')">Solo dejar una nota</button>` : ''}
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
 }
 
 function cancelarBipado(sinPreguntar){
