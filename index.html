@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1252</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1253</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11743,11 +11743,12 @@ function actualizarInicioExtra(){
   if(!cont) return;
   if(!rpModoExtra){ cont.innerHTML = ''; return; }
   cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">Cargando los pendientes de firma…</div>';
-  llamarBackend('listarPickingsExtra', {}, 'lista_ext_' + Date.now(), 30000).then(r => {
+  llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'lista_ext_' + Date.now(), 30000).then(r => {
     if(!rpModoExtra) return;
     const pendientes = ((r && r.pickings) || []).filter(p => p.estado === 'pendiente');
-    if(!pendientes.length){ cont.innerHTML = ''; return; }
     const yo = normalizarNombre(usuarioActual || '');
+    const botonFirmados = `<button class="btn btn-outline" onclick="abrirFirmadosExtra()" style="margin-top:10px;">Ver pickings extra firmados</button>`;
+    if(!pendientes.length){ cont.innerHTML = botonFirmados; return; }
     cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Pendientes de firma (${pendientes.length})</div>` + pendientes.map(p => {
       const puede = normalizarNombre(p.creadoPor) === yo || yo === 'maria';
       return `<div class="ticket">
@@ -11759,8 +11760,23 @@ function actualizarInicioExtra(){
           ${puede ? `<span class="link-action" onclick="extraEntregarPendiente('${escapeAtributo(p.id)}')">Entregar y firmar</span>` : ''}
         </div>
       </div>`;
-    }).join('');
-  }).catch(() => { cont.innerHTML = ''; });
+    }).join('') + botonFirmados;
+  }).catch(() => { cont.innerHTML = botonFirmados; });
+}
+// Hojas firmadas: María ve todas; cada persona, solo las que hizo (lo filtra el servidor).
+function abrirFirmadosExtra(){
+  llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'firm_' + Date.now(), 30000).then(r => {
+    const firmados = ((r && r.pickings) || []).filter(p => p.estado === 'entregado')
+      .sort((a, b) => ((b.fecha + b.hora) > (a.fecha + a.hora) ? 1 : -1));
+    const filas = firmados.length ? firmados.map(p => `<div class="ticket" style="padding:10px 12px;">
+        <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${escapeHtml(p.fecha)}</span></div>
+        <div class="ticket-proj">${escapeHtml(p.proyecto || '—')} · ${p.lineas} línea${p.lineas === 1 ? '' : 's'} · hecho por ${escapeHtml(p.creadoPor)}</div>
+        <div class="ticket-proj" style="font-size:12px;">Firmado por ${escapeHtml(p.firmadoPor || '—')} el ${escapeHtml(p.fechaEntrega || '—')}</div>
+        <div style="text-align:right; margin-top:6px;">${p.hojaUrl ? `<span class="link-action" onclick="window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}</div>
+      </div>`).join('') : `<div class="hint">No hay pickings extra firmados que puedas ver.</div>`;
+    mostrarSheet(`<h3>Pickings extra firmados</h3><div style="max-height:60vh; overflow:auto;">${filas}</div>
+      <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+  });
 }
 let extraDatosPendientes = null, extraEnviando = false, extraPendienteId = null;
 function finalizarPickingExtra(){
