@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1132</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1222</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -801,6 +801,21 @@
 
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" onclick="pausarPicking()">Pausar — seguir luego o que siga otra persona</button>
+    <button class="btn btn-outline" id="btnPdaBip" onclick="abrirPantallaPda()" style="display:none; margin-top:18px;">Escanear con PDA</button>
+    <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar escaneo →</button>
+  </section>
+
+  <section class="screen" id="screen-realizar-pda" onclick="pdaRecuperarFoco()">
+    <div class="screen-title">
+      <button class="back" onclick="volverDePda()">←</button>
+      <h2>PDA · OF <span id="pdaOf"></span></h2>
+    </div>
+    <div class="hint" style="margin:0 0 8px;">Escanea con la PDA. Cada código abre el panel de lote y cantidad.</div>
+    <input type="text" id="pdaInput" class="mono" inputmode="none" autocomplete="off" autocapitalize="characters" placeholder="Escanea aquí" onkeydown="pdaTecla(event)" onblur="pdaRecuperarFoco()" style="font-size:20px; text-align:center;">
+    <div id="pdaEstado" class="hint" style="text-align:center; margin:8px 0; min-height:18px;"></div>
+    <label>Líneas escaneadas (<span id="pdaNum">0</span>)</label>
+    <div id="pdaLista"></div>
+    <button class="btn btn-outline" id="pdaTecladoBtn" onclick="pdaTecladoAlternar()" style="margin-top:14px;">Escribir con teclado</button>
     <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar escaneo →</button>
   </section>
 
@@ -13282,6 +13297,7 @@ function mostrarSheet(html, bloqueante){
 function cerrarSheet(){
   const ov = document.getElementById('sheetOverlay');
   if(ov) ov.remove();
+  pdaRecuperarFoco();
 }
 
 /* ---------- registro de picking ---------- */
@@ -17018,6 +17034,7 @@ function editarLineaBipDesdeResumen(idx){
 }
 
 function renderLineasBip(){
+  aplicarVisibilidadPda();
   const cont = document.getElementById('rpListaLineas');
   const num = document.getElementById('rpNumLineas');
   if(!sesionPicking || !cont) return;
@@ -17080,6 +17097,12 @@ function quitarIncidenciaBip(n){
 }
 function refrescarBipUI(){
   renderLineasBip();
+  renderPdaLista();
+  const pantallaPda = document.getElementById('screen-realizar-pda');
+  if(pantallaPda && pantallaPda.classList.contains('active')){
+    const campoPda = document.getElementById('pdaInput');
+    if(campoPda) campoPda.focus();
+  }
   const pantallaResumen = document.getElementById('screen-realizar-resumen');
   const cont = document.getElementById('rpResumenContenido');
   if(sesionPicking && cont && pantallaResumen && pantallaResumen.classList.contains('active')){
@@ -17240,6 +17263,67 @@ function confirmarIncidencia(){
   toast(codigos.length > 1 ? codigos.length + ' incidencias registradas' : 'Incidencia registrada');
   refrescarBipUI();
   iniciarBipCamara();
+}
+
+/* ---- PDA (solo para Adrián, de prueba): misma sesión de picking, otra forma de escanear ---- */
+function esPruebaPda(){ return normalizarNombre(usuarioActual || '') === 'adrian'; }
+function aplicarVisibilidadPda(){
+  const b = document.getElementById('btnPdaBip');
+  if(b) b.style.display = esPruebaPda() ? '' : 'none';
+}
+function abrirPantallaPda(){
+  if(!sesionPicking){ toast('Empieza primero el bipado de la OF'); return; }
+  detenerBipCamara();
+  document.getElementById('pdaOf').textContent = sesionPicking.of;
+  pdaEstado('');
+  ir('realizar-pda');
+  renderPdaLista();
+  setTimeout(()=>{ const c = document.getElementById('pdaInput'); if(c) c.focus(); }, 100);
+}
+function volverDePda(){ ir('realizar-bip'); }
+function pdaEstado(texto){ const e = document.getElementById('pdaEstado'); if(e) e.textContent = texto; }
+function ventanaAbierta(){ return !!document.getElementById('sheetOverlay'); }
+// Mantiene el cursor en el campo de escaneo mientras estés en la pantalla PDA: no hace falta tocarlo para bipear.
+function pdaRecuperarFoco(){
+  setTimeout(()=>{
+    const pantalla = document.getElementById('screen-realizar-pda');
+    const campo = document.getElementById('pdaInput');
+    if(pantalla && pantalla.classList.contains('active') && !ventanaAbierta() && campo) campo.focus();
+  }, 50);
+}
+function renderPdaLista(){
+  const num = document.getElementById('pdaNum');
+  const cont = document.getElementById('pdaLista');
+  if(!sesionPicking || !cont) return;
+  if(num) num.textContent = sesionPicking.componentes.length;
+  const ultimas = sesionPicking.componentes.slice(-15).reverse();
+  cont.innerHTML = ultimas.length
+    ? ultimas.map(c => `<div class="ticket" style="padding:8px 12px;"><div class="ticket-top"><span class="ticket-of" style="font-size:15px;">${escapeHtml(c.codigo)}</span><span class="ticket-date">${escapeHtml(String(c.cantidad))} · ${escapeHtml(c.lote)}</span></div></div>`).join('')
+    : `<div class="empty">Todavía no hay líneas</div>`;
+}
+function pdaTecla(event){
+  if(event.key !== 'Enter') return;
+  event.preventDefault();
+  const campo = document.getElementById('pdaInput');
+  const raw = ((campo && campo.value) || '').trim();
+  if(campo) campo.value = '';
+  if(!raw) return;
+  if(ventanaAbierta()){ pdaEstado('Termina el panel de lote y cantidad antes de escanear otro'); return; }
+  const partes = raw.split(';');
+  const escrito = (partes[0] || '').trim();
+  const oficial = buscarEnCatalogo(escrito);
+  pdaEstado('Leído: ' + (oficial ? oficial.c : escrito));
+  procesarCodigoBipado(oficial ? oficial.c : escrito, (partes[1] || '').trim());
+}
+function pdaTecladoAlternar(){
+  const campo = document.getElementById('pdaInput');
+  const btn = document.getElementById('pdaTecladoBtn');
+  if(!campo) return;
+  const conTeclado = campo.getAttribute('inputmode') === 'text';
+  campo.setAttribute('inputmode', conTeclado ? 'none' : 'text');
+  if(btn) btn.textContent = conTeclado ? 'Escribir con teclado' : 'Ocultar teclado';
+  campo.blur();
+  campo.focus();
 }
 
 /* ---- resumen final y confirmación ---- */
