@@ -16483,9 +16483,9 @@ function nuevoRealizarPicking(){
 }
 
 // ---- Terminar un picking (hoja en espera) y registrar la OF después: procesos separados ----
-// De momento, "Realizar picking" solo lo ve Adrián (prueba). Para abrirlo al equipo, basta con cambiar esta función.
+// "Realizar picking" lo ve cualquiera que esté identificado.
 let realizadosEsperaCache = [];
-function puedeRealizarPicking(){ return normalizarNombre(usuarioActual || '') === 'adrian'; }
+function puedeRealizarPicking(){ return !!usuarioActual; }
 function aplicarVisibilidadRealizarPicking(){
   const b = document.getElementById('btnRealizarPickingHome');
   if(b) b.style.display = puedeRealizarPicking() ? '' : 'none';
