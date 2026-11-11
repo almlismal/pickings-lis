@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1243</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1245</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -747,6 +747,7 @@
     <canvas id="escanerCanvas" style="display:none;"></canvas>
     <div id="escanerEstado" class="hint" style="text-align:center; margin-top:12px;"></div>
     <div id="escanerResultado" style="margin-top:12px;"></div>
+    <button id="escanearManualBtn" class="btn btn-outline" onclick="salirEscanerInicio()" style="margin-top:20px; display:none;">Escribir la OF a mano</button>
     <button id="escanearSaltarBtn" class="btn btn-outline" onclick="saltarVerificacionOf()" style="margin-top:20px; display:none;">No dispongo de la etiqueta — continuar sin comprobar</button>
     <button class="btn btn-outline" onclick="cancelarComprobarOf()" style="margin-top:10px;">Cancelar</button>
   </section>
@@ -759,14 +760,14 @@
     </div>
     <div id="rpPausados"></div>
     <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
-    <button class="btn btn-primary" onclick="empezarBipado()">Escanear con móvil</button>
-    <button class="btn btn-outline" id="btnPdaInicio" onclick="empezarBipado(true)" style="display:none; margin-top:10px; margin-bottom:14px;">Escanear con PDA</button>
     <label>OF</label>
     <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
     <div class="row2">
       <div><label>Proyecto <span style="color:#C62828;">*</span></label><input type="text" id="rp_proyecto" list="listaProyectos" onfocus="refrescarListaProyectos()" placeholder="Ej. 2024-275"></div>
       <div><label>Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
     </div>
+    <button class="btn btn-outline" onclick="escanearParaInicio()" style="margin-top:12px;">Escanear QR de la etiqueta para leer la OF</button>
+    <button class="btn btn-primary" onclick="continuarInicioPicking()" style="margin-top:10px;">Continuar</button>
     <div class="hint" id="rpCatInfo" style="margin-top:14px; text-align:center;"></div>
   </section>
 
@@ -15343,6 +15344,8 @@ function restaurarPantallaComprobarOf(){
   if(titulo) titulo.textContent = 'Escanear etiqueta';
   if(hint) hint.textContent = 'Apunta la cámara al QR de la etiqueta de picking de la caja.';
   if(saltarBtn) saltarBtn.style.display = 'none';
+  const manualBtn = document.getElementById('escanearManualBtn');
+  if(manualBtn) manualBtn.style.display = 'none';
 }
 // Escanear la etiqueta al empezar el picking: solo lee la OF; el resto se rellena a mano.
 let escanerParaInicio = false;
@@ -15355,8 +15358,10 @@ function escanearParaInicio(){
   const hint = document.getElementById('escanearHint');
   const saltarBtn = document.getElementById('escanearSaltarBtn');
   if(titulo) titulo.textContent = 'Leer la OF';
-  if(hint) hint.textContent = 'Apunta la cámara al QR de la etiqueta. Si no se lee, vuelve y escribe la OF a mano.';
+  if(hint) hint.textContent = 'Apunta la cámara al QR de la etiqueta. Si no se lee, escribe la OF a mano.';
   if(saltarBtn) saltarBtn.style.display = 'none';
+  const manualBtn = document.getElementById('escanearManualBtn');
+  if(manualBtn) manualBtn.style.display = '';
 }
 function salirEscanerInicio(){
   escanerParaInicio = false;
@@ -16756,6 +16761,21 @@ function elegirModoEscaneo(fn, id, notaFn){
     <button class="btn btn-primary" onclick="cerrarSheet(); window['${fn}']('${idSeguro}', false)">Escanear con móvil</button>
     ${esPruebaPda() ? `<button class="btn btn-outline" onclick="cerrarSheet(); window['${fn}']('${idSeguro}', true)">Escanear con PDA</button>` : ''}
     ${notaFn ? `<button class="btn btn-outline" onclick="cerrarSheet(); window['${notaFn}']('${idSeguro}')">Solo dejar una nota</button>` : ''}
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+}
+
+// Pulsar "Continuar": valida OF y proyecto y luego pregunta con qué escanear.
+function continuarInicioPicking(){
+  const of = document.getElementById('rp_of').value.trim();
+  const proyecto = document.getElementById('rp_proyecto').value.trim();
+  if(!of){ toast('Falta el número de OF'); return; }
+  if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
+  if(!proyecto){ toast('Falta el proyecto (es obligatorio)'); const cp = document.getElementById('rp_proyecto'); if(cp) cp.focus(); return; }
+  mostrarSheet(`
+    <h3>¿Con qué escaneas?</h3>
+    <button class="btn btn-primary" onclick="cerrarSheet(); empezarBipado(false)">Escanear con móvil</button>
+    ${esPruebaPda() ? `<button class="btn btn-outline" onclick="cerrarSheet(); empezarBipado(true)">Escanear con PDA</button>` : ''}
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `);
 }
