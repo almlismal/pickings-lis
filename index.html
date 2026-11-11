@@ -16576,19 +16576,21 @@ function revisarAmpliacionRealizado(){
   mostrarHojaPicking(datosHoja, 'ver', 'realizar-bip');
   const cont = document.getElementById('rpDocContenido');
   cont.insertAdjacentHTML('afterbegin', `<div class="hint" style="margin:0 0 10px;"><b>Revisa la hoja antes de guardar:</b> ${datosHoja.componentes.length} línea${datosHoja.componentes.length===1?'':'s'} en total. Esta lista sustituye a la que tiene ahora la hoja en espera. Si falta algo o sobra, vuelve al bipado.</div>`);
-  cont.insertAdjacentHTML('beforeend', `<div style="margin-top:14px;"><button class="btn btn-primary" onclick="confirmarAmpliarRealizado()">✓ Guardar en la hoja en espera</button><button class="btn btn-outline" onclick="ir('realizar-bip')" style="margin-top:8px;">← Volver al bipado</button></div>`);
+  cont.insertAdjacentHTML('beforeend', `<div style="margin-top:14px;"><button class="btn btn-primary" id="btnGuardarAmpliacion" onclick="confirmarAmpliarRealizado()">✓ Guardar en la hoja en espera</button><button class="btn btn-outline" onclick="ir('realizar-bip')" style="margin-top:8px;">← Volver al bipado</button></div>`);
 }
 let ampliandoRealizado = false;   // evita que un doble toque envíe las mismas líneas dos veces
 async function confirmarAmpliarRealizado(){
   if(ampliandoRealizado) return;
   if(!sesionPicking || !sesionPicking.idRealizado) return;
-  ampliandoRealizado = true;
   if(!sesionPicking.componentes.length && !sesionPicking.incidencias.length){ toast('La hoja se quedaría vacía'); return; }
   const id = sesionPicking.idRealizado;
   const x = (realizadosEsperaCache || []).find(r=>r.id===id);
   if(!x){ toast('No encuentro esa hoja, actualiza la pantalla'); return; }
   if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
   const hechoPor = x.hechoPor || (x.datos && x.datos.hechoPor) || '';
+  ampliandoRealizado = true;
+  const btnGuardar = document.getElementById('btnGuardarAmpliacion');
+  if(btnGuardar) marcarEsperando(btnGuardar, 'Guardando la hoja…');
   try{
     const res = await llamarBackend('ampliarPickingRealizado', {
       id: id,
@@ -16608,6 +16610,7 @@ async function confirmarAmpliarRealizado(){
     toast('No se pudo actualizar la hoja: ' + (err && err.message ? err.message : 'error') + '. Reintenta; no se ha perdido nada.');
   } finally {
     ampliandoRealizado = false;
+    if(btnGuardar){ btnGuardar.disabled = false; btnGuardar.textContent = '✓ Guardar en la hoja en espera'; }
   }
 }
 
