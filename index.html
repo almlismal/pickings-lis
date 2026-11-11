@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v10nov-2141</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1125</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -16532,9 +16532,52 @@ async function refrescarRegistroRealizados(){
       <div class="ticket-proj" style="font-size:13px;"><b>Hecho por ${escapeHtml(hecho)}</b>${termino && termino !== hecho ? ' · terminado por '+escapeHtml(termino) : ''}</div>
       <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))} · toca para ubicar y registrar</div>
       ${x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaRealizado('${escapeAtributo(x.id)}')">Ver hoja para imprimir</button>` : ''}
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); empezarBipadoParaRealizado('${escapeAtributo(x.id)}')">+ Añadir algo más</button>
     </div>`;
   }).join('') + `<div class="hint" style="margin:6px 0 14px;">O escribe la OF abajo; si ya tiene el picking hecho, te lo avisará.</div>`;
 }
+// ---- añadir líneas a un picking YA hecho y en espera (todavía sin OF registrada) ----
+function empezarBipadoParaRealizado(id){
+  const x = (realizadosEsperaCache || []).find(r=>r.id===id);
+  if(!x){ toast('No encuentro esa hoja, actualiza la pantalla'); return; }
+  resetIncidenciasEnCurso();
+  cargarLotesRecordados();
+  borradorActivoId = null;
+  sesionPicking = { of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto, componentes: [], incidencias: [], idRealizado: id };
+  document.getElementById('rpBipOf').textContent = x.of;
+  const campoManual = document.getElementById('rp_codigoManual');
+  if(campoManual) campoManual.value = '';
+  renderLineasBip();
+  guardarBorradorBip('bip');
+  ir('realizar-bip');
+}
+async function confirmarAmpliarRealizado(){
+  if(!sesionPicking || !sesionPicking.idRealizado) return;
+  if(!sesionPicking.componentes.length && !sesionPicking.incidencias.length){ toast('No se ha bipado nada nuevo'); return; }
+  const id = sesionPicking.idRealizado;
+  const x = (realizadosEsperaCache || []).find(r=>r.id===id);
+  if(!x){ toast('No encuentro esa hoja, actualiza la pantalla'); return; }
+  if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
+  const hechoPor = x.hechoPor || (x.datos && x.datos.hechoPor) || '';
+  try{
+    const res = await llamarBackend('ampliarPickingRealizado', {
+      id: id,
+      componentes: conDescripciones(sesionPicking.componentes),
+      incidencias: conDescripciones(sesionPicking.incidencias),
+      iniciales: inicialesEquipo(hechoPor || usuarioActual, usuarioActual !== hechoPor ? usuarioActual : '')
+    }, 'amp_' + id + '_' + Date.now(), 120000);
+    if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
+    sesionPicking = null;
+    resetIncidenciasEnCurso();
+    borrarBorradorBip();
+    await cargarRealizadosEspera();
+    toast('Hoja en espera actualizada: OF ' + x.of);
+    ir('realizar-inicio');
+  }catch(err){
+    toast('No se pudo actualizar la hoja: ' + (err && err.message ? err.message : 'error') + '. Reintenta; no se ha perdido nada.');
+  }
+}
+
 // Abre la hoja (sin firmar) de un picking ya hecho, para imprimirla y tildar lo emitido.
 // Se abre directamente desde el toque para que el navegador no la bloquee.
 function verHojaRealizado(id){
@@ -16655,9 +16698,10 @@ function cancelarBipado(sinPreguntar){
   detenerBipCamara();
   resetIncidenciasEnCurso();
   const volverAId = sesionPicking && sesionPicking.idExistente;
+  const volverARealizado = !!(sesionPicking && sesionPicking.idRealizado);
   sesionPicking = null;
   borrarBorradorBip();
-  if(volverAId) abrirDetalle(volverAId); else ir('home');
+  if(volverAId) abrirDetalle(volverAId); else if(volverARealizado) ir('realizar-inicio'); else ir('home');
 }
 
 /* ---- cámara de bipado (independiente de la de "Comprobar OF") ---- */
@@ -17190,7 +17234,9 @@ function resumenPickingHtml(){
     <div class="obs-box">${materialFaltanteAgrupadoHtml(s.incidencias)}</div>
     <div class="hint" style="margin:4px 0 10px;">Para cambiar un motivo o quitar una incidencia, vuelve a la pantalla principal.</div>` : ''}
     <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
-    ${s.idExistente
+    ${s.idRealizado
+      ? `<button class="btn btn-primary" onclick="confirmarAmpliarRealizado()">✓ Añadir a la hoja en espera de la OF ${escapeHtml(s.of)}</button>`
+      : s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ ${(()=>{ const q = DB.find(x=>x.id===s.idExistente); return (q && !q.hojaPickingUrl && !(q.componentesPicking||[]).length) ? 'Generar la hoja de la OF ' : 'Añadir a la OF '; })()}${escapeHtml(s.of)}</button>`
       : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar OF y generar hoja</button>`}
   `;
