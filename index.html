@@ -16597,7 +16597,7 @@ async function confirmarAmpliarRealizado(){
       reemplazar: true,
       componentes: conDescripciones(sesionPicking.componentes),
       incidencias: conDescripciones(sesionPicking.incidencias),
-      iniciales: inicialesEquipo(hechoPor || usuarioActual, usuarioActual !== hechoPor ? usuarioActual : '')
+      iniciales: inicialesEquipo(hechoPor || usuarioActual, (hechoPor && normalizarNombre(hechoPor).indexOf(normalizarNombre(usuarioActual)) === -1) ? usuarioActual : '')
     }, 'amp_' + id + '_' + Date.now(), 120000);
     if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
     sesionPicking = null;
