@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1251</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1252</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11771,7 +11771,7 @@ function finalizarPickingExtra(){
     <label>Observación (quién lo pide)</label>
     <input type="text" id="extraObs" placeholder="Ej. Pide: Pablo">
     <button class="btn btn-primary" onclick="extraGuardar(true)">Entregar ahora (firmar)</button>
-    <button class="btn btn-outline" onclick="extraGuardar(false)">Guardar sin entregar</button>
+    <button class="btn btn-outline" onclick="extraGuardar(false, this)">Guardar sin entregar</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Seguir escaneando</button>
   `);
 }
@@ -11785,9 +11785,10 @@ function extraDatos(){
     observaciones: obs
   };
 }
-function extraGuardar(conFirma){
+function extraGuardar(conFirma, btn){
   const datos = extraDatos();
   if(conFirma){ extraDatosPendientes = datos; extraFirmar(); return; }
+  marcarEsperando(btn, 'Guardando');
   extraEnviar(datos, null);
 }
 function extraFirmar(){
@@ -11798,23 +11799,23 @@ function extraFirmar(){
     <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
     <label>Nombre de quien firma</label>
     <input type="text" id="firmaNombre" placeholder="Nombre de la persona de DHV">
-    <button class="btn btn-primary" onclick="extraFirmaGuardar()">✓ Entregar y firmar</button>
+    <button class="btn btn-primary" onclick="extraFirmaGuardar(this)">✓ Entregar y firmar</button>
     <button class="btn btn-outline" onclick="finalizarPickingExtra()">Volver</button>
   `);
   firmaPadIniciar();
 }
-function extraFirmaGuardar(){
+function extraFirmaGuardar(btn){
   const c = document.getElementById('firmaPad');
   const nombre = ((document.getElementById('firmaNombre') || {}).value || '').trim();
   if(!c || !c.dataset.dibujado){ toast('Firma dentro del recuadro'); return; }
   if(!nombre){ toast('Escribe el nombre de quien firma'); return; }
+  marcarEsperando(btn, 'Entregando y firmando');
   extraEnviar(extraDatosPendientes, { png: c.toDataURL('image/png'), nombre: nombre });
 }
 function extraEnviar(datos, firma){
   if(!datos || extraEnviando) return;
   extraEnviando = true;
   const payload = Object.assign({}, datos, firma ? { firma: firma } : {});
-  mostrarSheet(`<h3>${firma ? 'Entregando y firmando…' : 'Guardando…'}</h3><div class="hint">Un momento, se genera la hoja.</div>`);
   llamarBackend('guardarPickingExtra', payload, 'ext_' + payload.id + '_' + Date.now(), 120000).then(r => {
     extraEnviando = false;
     if(!r || r.ok === false){ cerrarSheet(); toast((r && r.error) || 'No se guardó. Revisa la conexión y vuelve a intentarlo'); return; }
@@ -11836,18 +11837,19 @@ function extraEntregarPendiente(id){
     <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
     <label>Nombre de quien firma</label>
     <input type="text" id="firmaNombre" placeholder="Nombre de la persona de DHV">
-    <button class="btn btn-primary" onclick="extraFirmaPendienteGuardar()">✓ Entregar y firmar</button>
+    <button class="btn btn-primary" onclick="extraFirmaPendienteGuardar(this)">✓ Entregar y firmar</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `);
   firmaPadIniciar();
 }
-function extraFirmaPendienteGuardar(){
+function extraFirmaPendienteGuardar(btn){
   const c = document.getElementById('firmaPad');
   const nombre = ((document.getElementById('firmaNombre') || {}).value || '').trim();
   if(!c || !c.dataset.dibujado){ toast('Firma dentro del recuadro'); return; }
   if(!nombre){ toast('Escribe el nombre de quien firma'); return; }
+  marcarEsperando(btn, 'Entregando y firmando');
   llamarBackend('entregarPickingExtra', { id: extraPendienteId, quien: usuarioActual || '', firma: { png: c.toDataURL('image/png'), nombre: nombre } }, 'entx_' + Date.now(), 120000).then(r => {
-    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo entregar. Revisa la conexión'); return; }
+    if(!r || r.ok === false){ cerrarSheet(); toast((r && r.error) || 'No se pudo entregar. Revisa la conexión'); return; }
     cerrarSheet();
     toast('Entregado y firmado');
     actualizarInicioExtra();
@@ -11867,7 +11869,7 @@ function abrirInformeExtras(){
     <input type="date" id="infHasta" value="${hoy}">
     <button class="btn btn-primary" onclick="verInformeExtras()">Ver informe</button>
     <div id="infResultado"></div>
-    <button class="btn btn-outline" onclick="enviarInformeExtrasMail()">Enviar Excel a María</button>
+    <button class="btn btn-outline" onclick="enviarInformeExtrasMail(this)">Enviar Excel a María</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>
   `);
 }
@@ -11892,11 +11894,13 @@ function verInformeExtras(){
     </table>`;
   });
 }
-function enviarInformeExtrasMail(){
+function enviarInformeExtrasMail(btn){
   const rango = rangoInformeExtras(); if(!rango) return;
   if(!confirm('¿Enviar el Excel del ' + rango.desde + ' al ' + rango.hasta + ' a María?')) return;
+  marcarEsperando(btn, 'Enviando');
   llamarBackend('enviarInformeExtras', Object.assign({ quien: usuarioActual || '' }, rango), 'envinf_' + Date.now(), 120000).then(r => {
-    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo enviar'); return; }
+    if(!r || r.ok === false){ abrirInformeExtras(); toast((r && r.error) || 'No se pudo enviar'); return; }
+    cerrarSheet();
     toast('Informe enviado a María');
   });
 }
