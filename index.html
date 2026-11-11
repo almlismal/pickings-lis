@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1125</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1132</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -16532,7 +16532,7 @@ async function refrescarRegistroRealizados(){
       <div class="ticket-proj" style="font-size:13px;"><b>Hecho por ${escapeHtml(hecho)}</b>${termino && termino !== hecho ? ' · terminado por '+escapeHtml(termino) : ''}</div>
       <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))} · toca para ubicar y registrar</div>
       ${x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaRealizado('${escapeAtributo(x.id)}')">Ver hoja para imprimir</button>` : ''}
-      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); empezarBipadoParaRealizado('${escapeAtributo(x.id)}')">+ Añadir algo más</button>
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); empezarBipadoParaRealizado('${escapeAtributo(x.id)}')">Editar hoja (añadir o quitar)</button>
     </div>`;
   }).join('') + `<div class="hint" style="margin:6px 0 14px;">O escribe la OF abajo; si ya tiene el picking hecho, te lo avisará.</div>`;
 }
@@ -16543,17 +16543,47 @@ function empezarBipadoParaRealizado(id){
   resetIncidenciasEnCurso();
   cargarLotesRecordados();
   borradorActivoId = null;
-  sesionPicking = { of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto, componentes: [], incidencias: [], idRealizado: id };
+  // Se cargan las líneas e incidencias que ya tiene la hoja: se pueden quitar, cambiar o añadir
+  sesionPicking = {
+    of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto,
+    componentes: JSON.parse(JSON.stringify((x.datos && x.datos.componentes) || [])),
+    incidencias: JSON.parse(JSON.stringify((x.datos && x.datos.incidencias) || [])),
+    idRealizado: id
+  };
   document.getElementById('rpBipOf').textContent = x.of;
   const campoManual = document.getElementById('rp_codigoManual');
   if(campoManual) campoManual.value = '';
-  renderLineasBip();
+  refrescarBipUI();
   guardarBorradorBip('bip');
   ir('realizar-bip');
 }
-async function confirmarAmpliarRealizado(){
+// Antes de guardar: se ve la hoja completa (lo de antes + lo nuevo) para comprobar que no falta ni sobra nada.
+function revisarAmpliacionRealizado(){
   if(!sesionPicking || !sesionPicking.idRealizado) return;
-  if(!sesionPicking.componentes.length && !sesionPicking.incidencias.length){ toast('No se ha bipado nada nuevo'); return; }
+  if(!sesionPicking.componentes.length && !sesionPicking.incidencias.length){ toast('La hoja se quedaría vacía'); return; }
+  const x = (realizadosEsperaCache || []).find(r=>r.id===sesionPicking.idRealizado);
+  if(!x){ toast('No encuentro esa hoja, actualiza la pantalla'); return; }
+  const previos = (x.datos && x.datos.componentes) || [];
+  const previasInc = (x.datos && x.datos.incidencias) || [];
+  const nuevos = sesionPicking.componentes.length;
+  const datosHoja = {
+    of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto,
+    semana: (x.datos && x.datos.semana) || semanaISO(new Date()),
+    hechoPor: x.hechoPor || (x.datos && x.datos.hechoPor) || usuarioActual || '',
+    componentes: sesionPicking.componentes,
+    incidencias: sesionPicking.incidencias
+  };
+  mostrarHojaPicking(datosHoja, 'ver', 'realizar-bip');
+  const cont = document.getElementById('rpDocContenido');
+  cont.insertAdjacentHTML('afterbegin', `<div class="hint" style="margin:0 0 10px;"><b>Revisa la hoja antes de guardar:</b> ${datosHoja.componentes.length} línea${datosHoja.componentes.length===1?'':'s'} en total. Esta lista sustituye a la que tiene ahora la hoja en espera. Si falta algo o sobra, vuelve al bipado.</div>`);
+  cont.insertAdjacentHTML('beforeend', `<div style="margin-top:14px;"><button class="btn btn-primary" onclick="confirmarAmpliarRealizado()">✓ Guardar en la hoja en espera</button><button class="btn btn-outline" onclick="ir('realizar-bip')" style="margin-top:8px;">← Volver al bipado</button></div>`);
+}
+let ampliandoRealizado = false;   // evita que un doble toque envíe las mismas líneas dos veces
+async function confirmarAmpliarRealizado(){
+  if(ampliandoRealizado) return;
+  if(!sesionPicking || !sesionPicking.idRealizado) return;
+  ampliandoRealizado = true;
+  if(!sesionPicking.componentes.length && !sesionPicking.incidencias.length){ toast('La hoja se quedaría vacía'); return; }
   const id = sesionPicking.idRealizado;
   const x = (realizadosEsperaCache || []).find(r=>r.id===id);
   if(!x){ toast('No encuentro esa hoja, actualiza la pantalla'); return; }
@@ -16562,6 +16592,7 @@ async function confirmarAmpliarRealizado(){
   try{
     const res = await llamarBackend('ampliarPickingRealizado', {
       id: id,
+      reemplazar: true,
       componentes: conDescripciones(sesionPicking.componentes),
       incidencias: conDescripciones(sesionPicking.incidencias),
       iniciales: inicialesEquipo(hechoPor || usuarioActual, usuarioActual !== hechoPor ? usuarioActual : '')
@@ -16575,6 +16606,8 @@ async function confirmarAmpliarRealizado(){
     ir('realizar-inicio');
   }catch(err){
     toast('No se pudo actualizar la hoja: ' + (err && err.message ? err.message : 'error') + '. Reintenta; no se ha perdido nada.');
+  } finally {
+    ampliandoRealizado = false;
   }
 }
 
@@ -17235,7 +17268,7 @@ function resumenPickingHtml(){
     <div class="hint" style="margin:4px 0 10px;">Para cambiar un motivo o quitar una incidencia, vuelve a la pantalla principal.</div>` : ''}
     <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
     ${s.idRealizado
-      ? `<button class="btn btn-primary" onclick="confirmarAmpliarRealizado()">✓ Añadir a la hoja en espera de la OF ${escapeHtml(s.of)}</button>`
+      ? `<button class="btn btn-primary" onclick="revisarAmpliacionRealizado()">✓ Revisar la hoja de la OF ${escapeHtml(s.of)} antes de guardar</button>`
       : s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ ${(()=>{ const q = DB.find(x=>x.id===s.idExistente); return (q && !q.hojaPickingUrl && !(q.componentesPicking||[]).length) ? 'Generar la hoja de la OF ' : 'Añadir a la OF '; })()}${escapeHtml(s.of)}</button>`
       : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar OF y generar hoja</button>`}
