@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1246</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1247</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -811,7 +811,7 @@
       <h2>PDA · OF <span id="pdaOf"></span></h2>
     </div>
     <div class="hint" style="margin:0 0 8px;">Escanea con la PDA. Cada código abre el panel de lote y cantidad.</div>
-    <input type="text" id="pdaInput" class="mono" inputmode="none" autocomplete="off" autocapitalize="characters" placeholder="Escanea aquí" onkeydown="pdaTecla(event)" onblur="pdaRecuperarFoco()" style="font-size:20px; text-align:center;">
+    <input type="text" id="pdaInput" class="mono" inputmode="none" autocomplete="off" autocapitalize="characters" placeholder="Escanea aquí" onkeydown="pdaTecla(event)" oninput="pdaEntrada()" onblur="pdaRecuperarFoco()" style="font-size:20px; text-align:center;">
     <div id="pdaEstado" class="hint" style="text-align:center; margin:8px 0; min-height:18px;"></div>
     <label>Líneas escaneadas (<span id="pdaNum">0</span>)</label>
     <div id="pdaLista"></div>
@@ -17343,11 +17343,23 @@ function renderPdaLista(){
 function pdaTecla(event){
   if(event.key !== 'Enter') return;
   event.preventDefault();
+  clearTimeout(pdaTimer);
+  pdaProcesarValor();
+}
+// Algunos escáneres no envían Enter: si con el teclado oculto (modo escáner) deja de llegar texto, se procesa solo.
+let pdaTimer = null;
+function pdaEntrada(){
+  const campo = document.getElementById('pdaInput');
+  if(!campo || campo.getAttribute('inputmode') !== 'none') return;
+  clearTimeout(pdaTimer);
+  pdaTimer = setTimeout(pdaProcesarValor, 300);
+}
+function pdaProcesarValor(){
   const campo = document.getElementById('pdaInput');
   const raw = ((campo && campo.value) || '').trim();
-  if(campo) campo.value = '';
   if(!raw) return;
   if(ventanaAbierta()){ pdaEstado('Termina el panel de lote y cantidad antes de escanear otro'); return; }
+  if(campo) campo.value = '';
   const partes = raw.split(';');
   const escrito = (partes[0] || '').trim();
   const oficial = buscarEnCatalogo(escrito);
