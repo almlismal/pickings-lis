@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1247</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1249</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -801,6 +801,7 @@
 
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" onclick="pausarPicking()">Pausar — seguir luego o que siga otra persona</button>
+    <button class="btn btn-outline" onclick="pickingParcial()">Picking parcial — guardo mi parte y lo suelto</button>
     <button class="btn btn-outline" id="btnPdaBip" onclick="abrirPantallaPda()" style="display:none; margin-top:18px;">Escanear con PDA</button>
     <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar escaneo →</button>
   </section>
@@ -11722,6 +11723,43 @@ function pausarPicking(){
   ir('realizar-inicio');
   renderPausados();
 }
+// Picking parcial: guarda mi parte y suelta el picking para quien lo siga.
+// La hoja parcial se saca luego desde la tarjeta del picking en "Pickings en curso".
+function pickingParcial(){
+  if(!sesionPicking){ toast('No hay picking abierto'); return; }
+  const yo = usuarioActual || '';
+  if(!yo){ toast('Identifícate primero'); return; }
+  const base = borradorActivoId ? buscarPausado(borradorActivoId) : null;
+  const autorDe = x => x.por || (base && base.creadoPor) || yo;
+  const hayMias = sesionPicking.componentes.concat(sesionPicking.incidencias)
+    .some(x => normalizarNombre(autorDe(x)) === normalizarNombre(yo));
+  if(!hayMias){ toast('Todavía no tienes líneas en este picking'); return; }
+  pausarPicking();
+  toast('Tu parte queda guardada');
+}
+
+// Hoja parcial de mi parte, sacada desde la tarjeta del picking en curso.
+function hojaParcialDePausado(id, ev){
+  if(ev) ev.stopPropagation();
+  const d = buscarPausado(id);
+  if(!d || d.fase !== 'bip' || !d.sesion) return;
+  const yo = usuarioActual || '';
+  const autorDe = x => x.por || d.creadoPor || '';
+  const mios = (d.sesion.componentes || []).filter(c => normalizarNombre(autorDe(c)) === normalizarNombre(yo));
+  const miasInc = (d.sesion.incidencias || []).filter(i => normalizarNombre(autorDe(i)) === normalizarNombre(yo));
+  if(!mios.length && !miasInc.length){ toast('No tienes líneas en este picking'); return; }
+  const semana = semanaISO(new Date());
+  toast('Generando tu hoja parcial…');
+  llamarBackend('hojaParcial', {
+    of: d.of, proyecto: d.proyecto, subproyecto: d.subproyecto, semana, nombre: yo,
+    componentes: conDescripciones(mios), incidencias: conDescripciones(miasInc)
+  }, 'parc_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo generar la hoja parcial'); return; }
+    mostrarHojaPicking({ of: d.of, proyecto: d.proyecto, subproyecto: d.subproyecto, semana,
+      hechoPor: yo, parcialDe: yo, componentes: mios, incidencias: miasInc, hojaPickingUrl: r.url }, 'ver', 'realizar-inicio');
+  });
+}
+
 function salirDeBipado(){
   // atrás en la pantalla de escaneo
   if(!sesionPicking){ ir('home'); return; }
@@ -11806,7 +11844,10 @@ function renderPausados(){
         <div class="ticket-proj" style="font-size:12px;">Empezó ${escapeHtml(d.creadoPor||'—')} · última actividad ${escapeHtml(haceTexto(d.actualizado))}${d.actualizadoPor && normalizarNombre(d.actualizadoPor)!==normalizarNombre(d.creadoPor) ? ' ('+escapeHtml(d.actualizadoPor)+')' : ''}</div>
         ${uso ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><i class="pt pt-c"></i> ${escapeHtml(d.enUsoPor)} lo está trabajando ahora</div>` : ''}
         ${viejo ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;">Lleva más de 2 días parado</div>` : ''}
-        <div style="text-align:right;"><span class="link-action" style="color:#B33A3A; font-size:12px;" onclick="event.stopPropagation(); descartarPausado('${escapeAtributo(d.id)}')">Descartar</span></div>
+        <div style="text-align:right; display:flex; justify-content:flex-end; gap:16px;">
+          ${d.fase==='bip' ? `<span class="link-action" style="font-size:12px;" onclick="hojaParcialDePausado('${escapeAtributo(d.id)}', event)">Hoja parcial mía</span>` : ''}
+          <span class="link-action" style="color:#B33A3A; font-size:12px;" onclick="event.stopPropagation(); descartarPausado('${escapeAtributo(d.id)}')">Descartar</span>
+        </div>
       </div>`;
     }).join('')}
     <div class="hint" style="margin:12px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">O empieza otro</div>`;
@@ -16772,6 +16813,17 @@ function continuarInicioPicking(){
   if(!of){ toast('Falta el número de OF'); return; }
   if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
   if(!proyecto){ toast('Falta el proyecto (es obligatorio)'); const cp = document.getElementById('rp_proyecto'); if(cp) cp.focus(); return; }
+  // Si esta OF ya tiene un picking en curso (otra persona o una parte pausada), se sigue ese: no se abre otro.
+  const enCurso = pausadosVisibles().find(d => d.fase === 'bip' && String(d.of) === of);
+  if(enCurso){
+    mostrarSheet(`
+      <h3>Esta OF ya tiene un picking en curso</h3>
+      <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">Lo empezó ${escapeHtml(enCurso.creadoPor || '—')}${enCurso.enUsoPor ? ' y lo trabaja ' + escapeHtml(enCurso.enUsoPor) + ' ahora' : ''}. Sigue ese mismo picking y añade tus líneas.</p>
+      <button class="btn btn-primary" onclick="retomarPausado('${escapeAtributo(enCurso.id)}')">Seguir ese picking</button>
+      <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+    `);
+    return;
+  }
   mostrarSheet(`
     <h3>¿Con qué escaneas?</h3>
     <button class="btn btn-primary" onclick="cerrarSheet(); empezarBipado(false)">Escanear con móvil</button>
@@ -17028,7 +17080,7 @@ function confirmarLineaBip(){
   if(!rpLineaPendiente || !sesionPicking) return;
   const lote = document.getElementById('lineaLote').value.trim().toUpperCase() || 'N/A';
   const cantidad = leerCantidadLinea();
-  sesionPicking.componentes.push({ codigo: rpLineaPendiente.codigo, lote, cantidad });
+  sesionPicking.componentes.push({ codigo: rpLineaPendiente.codigo, lote, cantidad, por: usuarioActual || '' });
   recordarLoteUso(rpLineaPendiente.codigo, lote);
   rpLineaPendiente = null;
   cerrarSheet();
@@ -17037,9 +17089,14 @@ function confirmarLineaBip(){
   iniciarBipCamara();
 }
 
+// Solo se cambian las líneas bipadas por una misma: las de los demás son de quien las bipó.
+function lineaDeOtro(c){
+  return !!(c && c.por && normalizarNombre(c.por) !== normalizarNombre(usuarioActual || ''));
+}
 function editarLineaBip(idx){
   const c = sesionPicking.componentes[idx];
   if(!c) return;
+  if(lineaDeOtro(c)){ toast('La bipó ' + c.por + ': solo puede cambiarla esa persona'); return; }
   mostrarSheet(`
     <h3>Editar ${escapeHtml(c.codigo)}</h3>
     ${catalogoListo() ? `<div class="hint" style="margin:-4px 0 8px; font-size:13px;">${descripcionCatalogoHtml(c.codigo)}</div>` : ''}
@@ -17061,6 +17118,7 @@ function guardarEdicionLineaBip(idx){
   refrescarBipUI();
 }
 function borrarLineaBip(idx){
+  if(lineaDeOtro(sesionPicking.componentes[idx])){ toast('La bipó ' + sesionPicking.componentes[idx].por + ': solo puede quitarla esa persona'); return; }
   sesionPicking.componentes.splice(idx,1);
   cerrarSheet();
   refrescarBipUI();
@@ -17087,7 +17145,8 @@ function renderLineasBip(){
         <span class="ticket-date">x${c.cantidad}</span>
       </div>
       ${catalogoListo() ? `<div class="ticket-proj" style="font-size:12px;">${descripcionCatalogoHtml(c.codigo)}</div>` : ''}
-      <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A — falta ponerlo</b>' : escapeHtml(c.lote)}</div>
+      ${c.por && normalizarNombre(c.por) !== normalizarNombre(usuarioActual || '') ? `<div class="ticket-proj" style="font-size:12px; color:var(--ink-soft);">Bipada por ${escapeHtml(c.por)}</div>` : ''}
+      <div class="ticket-proj">Lote:${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A — falta ponerlo</b>' : escapeHtml(c.lote)}</div>
     </div>
   `).join('');
   renderIncidenciasBip();
@@ -17294,7 +17353,7 @@ function confirmarIncidencia(){
   }
   if(!codigos.length){ toast('Escribe o escanea el PN'); return; }
   if(!motivoIncidenciaSeleccionado){ toast('Elige un motivo'); return; }
-  codigos.forEach(c => sesionPicking.incidencias.push({ codigo: c, motivo: motivoIncidenciaSeleccionado }));
+  codigos.forEach(c => sesionPicking.incidencias.push({ codigo: c, motivo: motivoIncidenciaSeleccionado, por: usuarioActual || '' }));
   incidenciaCodigosElegidos = [];
   cerrarSheet();
   toast(codigos.length > 1 ? codigos.length + ' incidencias registradas' : 'Incidencia registrada');
