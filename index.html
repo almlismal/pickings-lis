@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1249</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1250</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -552,8 +552,12 @@
         <span>Buscar una OF registrada y gestionar su entrega</span>
       </button>
       <button class="home-btn alt" id="btnRealizarPickingHome" onclick="nuevoRealizarPicking()">
-        <b>Realizar picking<span id="badgePausados"></span></b>
+        <b>Pickings planificados<span id="badgePausados"></span></b>
         <span>Escaneo de componentes durante el picking</span>
+      </button>
+      <button class="home-btn alt" id="btnPickingExtraHome" onclick="nuevoPickingExtra()">
+        <b>Pickings extra</b>
+        <span>Pickings de soporte o producción, entregados en el momento</span>
       </button>
     </div>
   </section>
@@ -756,9 +760,10 @@
   <section class="screen" id="screen-realizar-inicio">
     <div class="screen-title">
       <button class="back" onclick="ir('home')">←</button>
-      <h2>Realizar picking</h2>
+      <h2 id="rpInicioTitulo">Pickings planificados</h2>
     </div>
     <div id="rpPausados"></div>
+    <div id="extraPendientes"></div>
     <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
     <label>OF</label>
     <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
@@ -11610,6 +11615,7 @@ let rpDocVolverA = 'home';
 // puede seguirlo (cambio de turno, etc.). Si no hay conexión, todo queda en
 // el móvil y se sube cuando vuelva. Se conservan 7 días.
 const LS_BORRADOR_BIP = 'pickings_lis_borrador_bip_v1';   // formato antiguo (un solo borrador): se migra
+let rpModoExtra = false;   // true mientras se trabaja en "Pickings extra" (no planificado)
 const LS_PAUSADOS = 'pickings_lis_pausados_v1';
 const PAUSADOS_DIAS = 7;
 const EN_USO_MIN = 30; // minutos sin actividad a partir de los cuales ya no se considera "en uso"
@@ -11723,6 +11729,178 @@ function pausarPicking(){
   ir('realizar-inicio');
   renderPausados();
 }
+// ---- Pickings extra (soporte/producción): se entregan en el momento o se guardan sin firmar ----
+function nuevoPickingExtra(){
+  nuevoRealizarPicking();
+  rpModoExtra = true;
+  actualizarInicioExtra();
+  ir('realizar-inicio');
+}
+function actualizarInicioExtra(){
+  const titulo = document.getElementById('rpInicioTitulo');
+  if(titulo) titulo.textContent = rpModoExtra ? 'Pickings extra' : 'Pickings planificados';
+  const cont = document.getElementById('extraPendientes');
+  if(!cont) return;
+  if(!rpModoExtra){ cont.innerHTML = ''; return; }
+  cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">Cargando los pendientes de firma…</div>';
+  llamarBackend('listarPickingsExtra', {}, 'lista_ext_' + Date.now(), 30000).then(r => {
+    if(!rpModoExtra) return;
+    const pendientes = ((r && r.pickings) || []).filter(p => p.estado === 'pendiente');
+    if(!pendientes.length){ cont.innerHTML = ''; return; }
+    const yo = normalizarNombre(usuarioActual || '');
+    cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Pendientes de firma (${pendientes.length})</div>` + pendientes.map(p => {
+      const puede = normalizarNombre(p.creadoPor) === yo || yo === 'maria';
+      return `<div class="ticket">
+        <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${p.lineas} línea${p.lineas===1?'':'s'}</span></div>
+        <div class="ticket-proj">${escapeHtml(p.proyecto||'—')} · hecho el ${escapeHtml(p.fecha)} a las ${escapeHtml(p.hora)} por ${escapeHtml(p.creadoPor)}</div>
+        ${p.observaciones ? `<div class="ticket-proj" style="font-size:12px;">${escapeHtml(p.observaciones)}</div>` : ''}
+        <div style="display:flex; justify-content:flex-end; gap:16px; margin-top:6px;">
+          ${p.hojaUrl ? `<span class="link-action" onclick="window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}
+          ${puede ? `<span class="link-action" onclick="extraEntregarPendiente('${escapeAtributo(p.id)}')">Entregar y firmar</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }).catch(() => { cont.innerHTML = ''; });
+}
+let extraDatosPendientes = null, extraEnviando = false, extraPendienteId = null;
+function finalizarPickingExtra(){
+  if(!sesionPicking) return;
+  if(!sesionPicking.componentes.length){ toast('Escanea al menos un componente'); return; }
+  mostrarSheet(`
+    <h3>Picking extra · OF ${escapeHtml(sesionPicking.of)}</h3>
+    <label>Observación (quién lo pide)</label>
+    <input type="text" id="extraObs" placeholder="Ej. Pide: Pablo">
+    <button class="btn btn-primary" onclick="extraGuardar(true)">Entregar ahora (firmar)</button>
+    <button class="btn btn-outline" onclick="extraGuardar(false)">Guardar sin entregar</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Seguir escaneando</button>
+  `);
+}
+function extraDatos(){
+  if(!sesionPicking.idExtra) sesionPicking.idExtra = nuevoIdBorrador();
+  const obs = ((document.getElementById('extraObs') || {}).value || '').trim();
+  return {
+    id: sesionPicking.idExtra, of: sesionPicking.of, proyecto: sesionPicking.proyecto, subproyecto: sesionPicking.subproyecto,
+    quien: usuarioActual || '', iniciales: inicialesEquipo(usuarioActual || '', ''),
+    componentes: conDescripciones(sesionPicking.componentes), incidencias: conDescripciones(sesionPicking.incidencias),
+    observaciones: obs
+  };
+}
+function extraGuardar(conFirma){
+  const datos = extraDatos();
+  if(conFirma){ extraDatosPendientes = datos; extraFirmar(); return; }
+  extraEnviar(datos, null);
+}
+function extraFirmar(){
+  mostrarSheet(`
+    <h3>Firma digital</h3>
+    <p class="hint" style="margin:0 0 8px;">Firma dentro del recuadro y escribe el nombre de quien firma (DHV).</p>
+    <canvas id="firmaPad" width="600" height="300" style="width:100%; height:auto; aspect-ratio:600/300; border:2px dashed #9AA6B5; border-radius:10px; background:#fff; touch-action:none;"></canvas>
+    <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
+    <label>Nombre de quien firma</label>
+    <input type="text" id="firmaNombre" placeholder="Nombre de la persona de DHV">
+    <button class="btn btn-primary" onclick="extraFirmaGuardar()">✓ Entregar y firmar</button>
+    <button class="btn btn-outline" onclick="finalizarPickingExtra()">Volver</button>
+  `);
+  firmaPadIniciar();
+}
+function extraFirmaGuardar(){
+  const c = document.getElementById('firmaPad');
+  const nombre = ((document.getElementById('firmaNombre') || {}).value || '').trim();
+  if(!c || !c.dataset.dibujado){ toast('Firma dentro del recuadro'); return; }
+  if(!nombre){ toast('Escribe el nombre de quien firma'); return; }
+  extraEnviar(extraDatosPendientes, { png: c.toDataURL('image/png'), nombre: nombre });
+}
+function extraEnviar(datos, firma){
+  if(!datos || extraEnviando) return;
+  extraEnviando = true;
+  const payload = Object.assign({}, datos, firma ? { firma: firma } : {});
+  mostrarSheet(`<h3>${firma ? 'Entregando y firmando…' : 'Guardando…'}</h3><div class="hint">Un momento, se genera la hoja.</div>`);
+  llamarBackend('guardarPickingExtra', payload, 'ext_' + payload.id + '_' + Date.now(), 120000).then(r => {
+    extraEnviando = false;
+    if(!r || r.ok === false){ cerrarSheet(); toast((r && r.error) || 'No se guardó. Revisa la conexión y vuelve a intentarlo'); return; }
+    cerrarSheet();
+    sesionPicking = null; extraDatosPendientes = null;
+    resetIncidenciasEnCurso();
+    toast(firma ? 'Entregado y firmado' : 'Guardado. Queda pendiente de firma');
+    rpModoExtra = true;
+    ir('realizar-inicio');
+    actualizarInicioExtra();
+  });
+}
+function extraEntregarPendiente(id){
+  extraPendienteId = id;
+  mostrarSheet(`
+    <h3>Firma digital</h3>
+    <p class="hint" style="margin:0 0 8px;">Firma dentro del recuadro y escribe el nombre de quien firma (DHV).</p>
+    <canvas id="firmaPad" width="600" height="300" style="width:100%; height:auto; aspect-ratio:600/300; border:2px dashed #9AA6B5; border-radius:10px; background:#fff; touch-action:none;"></canvas>
+    <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
+    <label>Nombre de quien firma</label>
+    <input type="text" id="firmaNombre" placeholder="Nombre de la persona de DHV">
+    <button class="btn btn-primary" onclick="extraFirmaPendienteGuardar()">✓ Entregar y firmar</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+  firmaPadIniciar();
+}
+function extraFirmaPendienteGuardar(){
+  const c = document.getElementById('firmaPad');
+  const nombre = ((document.getElementById('firmaNombre') || {}).value || '').trim();
+  if(!c || !c.dataset.dibujado){ toast('Firma dentro del recuadro'); return; }
+  if(!nombre){ toast('Escribe el nombre de quien firma'); return; }
+  llamarBackend('entregarPickingExtra', { id: extraPendienteId, quien: usuarioActual || '', firma: { png: c.toDataURL('image/png'), nombre: nombre } }, 'entx_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo entregar. Revisa la conexión'); return; }
+    cerrarSheet();
+    toast('Entregado y firmado');
+    actualizarInicioExtra();
+  });
+}
+
+// ---- Informe de pickings extra (María / administración) ----
+function abrirInformeExtras(){
+  const hoy = new Date().toISOString().slice(0, 10);
+  const inicioMes = hoy.slice(0, 8) + '01';
+  mostrarSheet(`
+    <h3>Pickings extra · informe</h3>
+    <p class="hint" style="margin:0 0 8px;">Cuentan solo los pickings firmados, por el día en que se hicieron.</p>
+    <label>Desde</label>
+    <input type="date" id="infDesde" value="${inicioMes}">
+    <label>Hasta</label>
+    <input type="date" id="infHasta" value="${hoy}">
+    <button class="btn btn-primary" onclick="verInformeExtras()">Ver informe</button>
+    <div id="infResultado"></div>
+    <button class="btn btn-outline" onclick="enviarInformeExtrasMail()">Enviar Excel a María</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>
+  `);
+}
+function rangoInformeExtras(){
+  const desde = (document.getElementById('infDesde') || {}).value;
+  const hasta = (document.getElementById('infHasta') || {}).value;
+  if(!desde || !hasta){ toast('Elige las dos fechas'); return null; }
+  if(desde > hasta){ toast('La fecha de inicio es posterior a la de fin'); return null; }
+  return { desde: desde, hasta: hasta };
+}
+function verInformeExtras(){
+  const rango = rangoInformeExtras(); if(!rango) return;
+  llamarBackend('informeExtras', Object.assign({ quien: usuarioActual || '' }, rango), 'inf_' + Date.now(), 60000).then(r => {
+    const cont = document.getElementById('infResultado'); if(!cont) return;
+    if(!r || r.ok === false){ cont.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo cargar el informe')}</div>`; return; }
+    if(!(r.dias || []).length){ cont.innerHTML = `<div class="hint" style="margin-top:10px;">No hay pickings firmados en ese rango.</div>`; return; }
+    const filas = r.dias.map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
+    cont.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
+      <tr><th style="text-align:left;">Día</th><th style="text-align:right;">OF</th><th style="text-align:right;">Líneas</th></tr>
+      ${filas}
+      <tr><td><b>Total</b></td><td style="text-align:right;"><b>${r.total.ofs}</b></td><td style="text-align:right;"><b>${r.total.lineas}</b></td></tr>
+    </table>`;
+  });
+}
+function enviarInformeExtrasMail(){
+  const rango = rangoInformeExtras(); if(!rango) return;
+  if(!confirm('¿Enviar el Excel del ' + rango.desde + ' al ' + rango.hasta + ' a María?')) return;
+  llamarBackend('enviarInformeExtras', Object.assign({ quien: usuarioActual || '' }, rango), 'envinf_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo enviar'); return; }
+    toast('Informe enviado a María');
+  });
+}
+
 // Picking parcial: guarda mi parte y suelta el picking para quien lo siga.
 // La hoja parcial se saca luego desde la tarjeta del picking en "Pickings en curso".
 function pickingParcial(){
@@ -12741,6 +12919,7 @@ function entrarAAdmin(){
     adminBoton('', 'Acciones de administradores', "abrirRegistroAdmin('Registro admin')") +
     sec('Pruebas') +
     adminBoton('', 'Probar firma (temporal)', "abrirPruebaFirma()") +
+    adminBoton('', 'Pickings extra (informe)', "abrirInformeExtras()") +
     sec('Personas y seguridad') +
     adminBoton('', 'Usuarios', "ir('admin-usuarios')") +
     adminBoton('', 'Copia de seguridad', "confirmarCopiaSeguridad()");
@@ -16535,6 +16714,8 @@ function registrarDesdeEscaner(of){
    campos ya escritos, igual que hace abrirEdicion()). ========================= */
 
 function nuevoRealizarPicking(){
+  rpModoExtra = false;
+  actualizarInicioExtra();
   document.getElementById('rp_of').value = '';
   document.getElementById('rp_proyecto').value = '';
   document.getElementById('rp_subproyecto').value = '';
@@ -16762,7 +16943,7 @@ function empezarBipado(conPda){
   if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
   if(!proyecto){ toast('Falta el proyecto (es obligatorio)'); const cp = document.getElementById('rp_proyecto'); if(cp) cp.focus(); return; }
   borradorActivoId = null;
-  sesionPicking = { of, proyecto, subproyecto, componentes: [], incidencias: [] };
+  sesionPicking = { of, proyecto, subproyecto, componentes: [], incidencias: [], extra: !!rpModoExtra };
   document.getElementById('rpBipOf').textContent = of;
   document.getElementById('rp_codigoManual').value = '';
   renderLineasBip();
@@ -16814,7 +16995,7 @@ function continuarInicioPicking(){
   if(!/^\d{8}$/.test(of)){ toast('La OF debe tener 8 números — revisa que no falte o sobre ninguno'); return; }
   if(!proyecto){ toast('Falta el proyecto (es obligatorio)'); const cp = document.getElementById('rp_proyecto'); if(cp) cp.focus(); return; }
   // Si esta OF ya tiene un picking en curso (otra persona o una parte pausada), se sigue ese: no se abre otro.
-  const enCurso = pausadosVisibles().find(d => d.fase === 'bip' && String(d.of) === of);
+  const enCurso = rpModoExtra ? null : pausadosVisibles().find(d => d.fase === 'bip' && String(d.of) === of);
   if(enCurso){
     mostrarSheet(`
       <h3>Esta OF ya tiene un picking en curso</h3>
@@ -17440,6 +17621,7 @@ function pdaTecladoAlternar(){
 function irAResumenPicking(){
   if(!sesionPicking) return;
   detenerBipCamara();
+  if(sesionPicking.extra){ finalizarPickingExtra(); return; }
   ir('realizar-resumen');
   document.getElementById('rpResumenContenido').innerHTML = resumenPickingHtml();
 }
