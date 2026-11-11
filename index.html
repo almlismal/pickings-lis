@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1222</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1234</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -767,7 +767,8 @@
       <div><label>Proyecto <span style="color:#C62828;">*</span></label><input type="text" id="rp_proyecto" list="listaProyectos" onfocus="refrescarListaProyectos()" placeholder="Ej. 2024-275"></div>
       <div><label>Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
     </div>
-    <button class="btn btn-primary" onclick="empezarBipado()">Empezar a escanear</button>
+    <button class="btn btn-primary" onclick="empezarBipado()">Escanear con móvil</button>
+    <button class="btn btn-outline" id="btnPdaInicio" onclick="empezarBipado(true)" style="display:none; margin-top:10px;">Escanear con PDA</button>
     <div class="hint" id="rpCatInfo" style="margin-top:14px; text-align:center;"></div>
   </section>
 
@@ -12483,6 +12484,7 @@ function ir(pantalla, esVolver){
   if(anterior && anterior.id==='screen-realizar-bip' && pantalla!=='realizar-bip') detenerBipCamara();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+pantalla).classList.add('active');
+  if(pantalla === 'realizar-inicio') aplicarVisibilidadPda();
   // esVolver=true: se usa al volver atrás desde el Detalle — no se vuelve a
   // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
   // mismos resultados de búsqueda) y solo se restaura el scroll.
@@ -16705,7 +16707,7 @@ function resetIncidenciasEnCurso(){
   rpIncidenciaCodigoPendiente = '';
   rpModoIncidencia = false;
 }
-function empezarBipado(){
+function empezarBipado(conPda){
   resetIncidenciasEnCurso();
   cargarLotesRecordados();
   const of = document.getElementById('rp_of').value.trim();
@@ -16720,6 +16722,7 @@ function empezarBipado(){
   document.getElementById('rp_codigoManual').value = '';
   renderLineasBip();
   guardarBorradorBip('bip');
+  if(conPda === true){ abrirPantallaPda(); return; }   // PDA: su propia página, sin cámara
   ir('realizar-bip');
 }
 
@@ -17268,8 +17271,10 @@ function confirmarIncidencia(){
 /* ---- PDA (solo para Adrián, de prueba): misma sesión de picking, otra forma de escanear ---- */
 function esPruebaPda(){ return normalizarNombre(usuarioActual || '') === 'adrian'; }
 function aplicarVisibilidadPda(){
-  const b = document.getElementById('btnPdaBip');
-  if(b) b.style.display = esPruebaPda() ? '' : 'none';
+  ['btnPdaBip', 'btnPdaInicio'].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.style.display = esPruebaPda() ? '' : 'none';
+  });
 }
 function abrirPantallaPda(){
   if(!sesionPicking){ toast('Empieza primero el bipado de la OF'); return; }
