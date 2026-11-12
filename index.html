@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1269</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1270</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11802,21 +11802,76 @@ function nombresDePausado(d){
   return nombres.filter(Boolean);
 }
 // Hojas firmadas: María ve todas; cada persona, solo las que hizo (lo filtra el servidor).
+let firmadosExtraCache = [], extraAdminActual = null;
 function abrirFirmadosExtra(){
   llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'firm_' + Date.now(), 30000).then(r => {
     const firmados = ((r && r.pickings) || []).filter(p => p.estado === 'entregado')
       .sort((a, b) => ((b.fecha + b.hora) > (a.fecha + a.hora) ? 1 : -1));
+    firmadosExtraCache = firmados;
+    const esAdmin = esAdminSheet(usuarioActual);
     const filas = firmados.length ? firmados.map(p => `<div class="ticket" style="padding:10px 12px;">
         <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${escapeHtml(p.fecha)}</span></div>
         <div class="ticket-proj">${escapeHtml(p.proyecto || '—')} · ${p.lineas} línea${p.lineas === 1 ? '' : 's'} · hecho por ${escapeHtml(p.creadoPor)}</div>
         <div class="ticket-proj" style="font-size:12px;">Firmado por ${escapeHtml(p.firmadoPor || '—')} el ${escapeHtml(p.fechaEntrega || '—')}</div>
-        <div style="text-align:right; margin-top:6px;">${p.hojaUrl ? `<span class="link-action" onclick="window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}</div>
+        <div style="display:flex; justify-content:flex-end; gap:16px; margin-top:6px;">${esAdmin ? `<span class="link-action" onclick="abrirPickingExtraAdmin('${escapeAtributo(p.id)}')">Ver picking</span>` : ''}${p.hojaUrl ? `<span class="link-action" onclick="window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}</div>
       </div>`).join('') : `<div class="hint">No hay pickings extra firmados que puedas ver.</div>`;
     mostrarSheet(`<h3>Pickings extra firmados</h3><div style="max-height:60vh; overflow:auto;">${filas}</div>
       <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
   });
 }
 let extraDatosPendientes = null, extraEnviando = false, extraPendienteId = null;
+// Administrador: ver, editar o borrar un extra firmado
+function abrirPickingExtraAdmin(id){
+  const p = (firmadosExtraCache || []).find(x => x.id === id);
+  if(!p){ toast('No encuentro ese picking, actualiza la lista'); return; }
+  extraAdminActual = JSON.parse(JSON.stringify(p));
+  pintarPickingExtraAdmin();
+}
+function pintarPickingExtraAdmin(){
+  const p = extraAdminActual;
+  if(!p) return;
+  const filas = (p.componentes || []).map((c,i)=>`<div class="ticket" style="padding:10px 12px;">
+      <div class="ticket-top"><span class="ticket-of" style="font-size:15px;">${escapeHtml(c.codigo)}</span><span class="link-action" style="color:#B33A3A;" onclick="quitarLineaExtraAdmin(${i})">Quitar</span></div>
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <input type="number" min="0" step="any" value="${escapeAtributo(String(c.cantidad || ''))}" onchange="extraAdminActual.componentes[${i}].cantidad=this.value" style="width:110px;">
+        <input type="text" value="${escapeAtributo(c.lote || '')}" onchange="extraAdminActual.componentes[${i}].lote=this.value" style="flex:1;">
+      </div>
+    </div>`).join('') || '<div class="hint">Sin líneas</div>';
+  mostrarSheet(`
+    <h3>Picking extra · OF ${escapeHtml(p.of)}</h3>
+    <p class="hint" style="margin:0 0 8px;">${escapeHtml(p.proyecto || '—')} · hecho por ${escapeHtml(p.creadoPor)} · firmado por ${escapeHtml(p.firmadoPor || '—')}</p>
+    <div style="max-height:40vh; overflow:auto;">${filas}</div>
+    <label>Observación</label>
+    <input type="text" value="${escapeAtributo(p.observaciones || '')}" onchange="extraAdminActual.observaciones=this.value">
+    <button class="btn btn-primary" onclick="guardarPickingExtraAdmin(this)">Guardar cambios</button>
+    <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="borrarPickingExtraAdmin()">Borrar picking</button>
+    <button class="btn btn-outline" onclick="abrirFirmadosExtra()">Volver</button>`);
+}
+function quitarLineaExtraAdmin(i){
+  if(!extraAdminActual) return;
+  extraAdminActual.componentes.splice(i, 1);
+  pintarPickingExtraAdmin();
+}
+function guardarPickingExtraAdmin(btn){
+  if(!extraAdminActual) return;
+  if(!extraAdminActual.componentes.length){ toast('Deja al menos una línea'); return; }
+  marcarEsperando(btn, 'Guardando');
+  llamarBackend('adminEditarExtra', { id: extraAdminActual.id, quien: usuarioActual || '', componentes: extraAdminActual.componentes, observaciones: extraAdminActual.observaciones || '' }, 'aedx_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se guardaron los cambios'); pintarPickingExtraAdmin(); return; }
+    toast('Cambios guardados');
+    abrirFirmadosExtra();
+  });
+}
+function borrarPickingExtraAdmin(){
+  if(!extraAdminActual) return;
+  if(!confirm('¿Borrar este picking extra? Se borran su hoja y su firma, y deja de salir en los informes.')) return;
+  llamarBackend('adminBorrarExtra', { id: extraAdminActual.id, quien: usuarioActual || '' }, 'adex_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo borrar'); return; }
+    extraAdminActual = null;
+    toast('Picking borrado');
+    abrirFirmadosExtra();
+  });
+}
 function finalizarPickingExtra(){
   if(!sesionPicking) return;
   if(!sesionPicking.componentes.length){ toast('Escanea al menos un componente'); return; }
