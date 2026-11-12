@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1287</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1288</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12361,7 +12361,8 @@ function retomarPausado(id, confirmado){
   const yo = normalizarNombre(usuarioActual);
   const autorDeD = x => x.por || d.creadoPor || '';
   const ajenas = d.sesion ? (d.sesion.componentes || []).concat(d.sesion.incidencias || []).filter(x => normalizarNombre(autorDeD(x)) !== yo) : [];
-  const preguntar = !admin && (enUsoPorOtro(d) || ajenas.length > 0);
+  // Cualquiera (también un administrador) que entre en un parcial de otra persona responde la pregunta y solo ve lo suyo
+  const preguntar = enUsoPorOtro(d) || ajenas.length > 0;
   if(preguntar && !confirmado){
     // Solo se pregunta: no se muestra líneas, hoja ni contadores hasta confirmar
     const otro = enUsoPorOtro(d) ? d.enUsoPor : (ajenas.length ? autorDeD(ajenas[0]) : '');
