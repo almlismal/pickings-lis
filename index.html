@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1284</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1285</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -558,6 +558,14 @@
       <button class="home-btn alt" id="btnPickingExtraHome" onclick="nuevoPickingExtra()">
         <b>Pickings extra</b>
         <span>Pickings de soporte o producción, entregados en el momento</span>
+      </button>
+      <button class="home-btn alt" id="btnInformeExtrasHome" onclick="abrirInformeExtras()" style="display:none;">
+        <b>Informe de pickings extra</b>
+        <span>Resumen por día y total por persona (solo firmados)</span>
+      </button>
+      <button class="home-btn alt" id="btnInformePlanificadosHome" onclick="abrirInformePlanificados()" style="display:none;">
+        <b>Informe de pickings planificados</b>
+        <span>Resumen por día y total por persona (registrados y ubicados)</span>
       </button>
     </div>
   </section>
@@ -13149,6 +13157,12 @@ function actualizarVisibilidadAdmin(){
   if(btnInv) btnInv.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
   const btnAnt = document.getElementById('btnVerAntiguas');
   if(btnAnt) btnAnt.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
+  // Informes: en la pantalla principal, para administradores y María
+  const puedeInformes = esAdminSheet(usuarioActual) || normalizarNombre(usuarioActual || '') === 'maria';
+  ['btnInformeExtrasHome', 'btnInformePlanificadosHome'].forEach(id => {
+    const b = document.getElementById(id);
+    if(b) b.style.display = puedeInformes ? '' : 'none';
+  });
   try{ actualizarBadgeAntiguas(); }catch(e){}
   try{ actualizarBadgeDuplicadas(); }catch(e){}
   try{ actualizarBotonAdministrador(); }catch(e){}
@@ -13327,8 +13341,6 @@ function entrarAAdmin(){
     adminBoton('', 'Acciones de administradores', "abrirRegistroAdmin('Registro admin')") +
     sec('Pruebas') +
     adminBoton('', 'Probar firma (temporal)', "abrirPruebaFirma()") +
-    adminBoton('', 'Pickings extra (informe)', "abrirInformeExtras()") +
-    adminBoton('', 'Pickings planificados (informe)', "abrirInformePlanificados()") +
     sec('Personas y seguridad') +
     adminBoton('', 'Usuarios', "ir('admin-usuarios')") +
     adminBoton('', 'Copia de seguridad', "confirmarCopiaSeguridad()");
