@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1253</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1268</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -762,6 +762,7 @@
       <button class="back" onclick="ir('home')">←</button>
       <h2 id="rpInicioTitulo">Pickings planificados</h2>
     </div>
+    <input type="text" id="filtroPickings" placeholder="Buscar por OF o por nombre" oninput="filtrarPickingsEnCurso(this.value)" style="margin-bottom:10px;">
     <div id="rpPausados"></div>
     <div id="extraPendientes"></div>
     <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
@@ -806,9 +807,9 @@
 
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" onclick="pausarPicking()">Pausar</button>
-    <button class="btn btn-outline" onclick="pickingParcial()">Guardar picking parcial</button>
     <button class="btn btn-outline" id="btnPdaBip" onclick="abrirPantallaPda()" style="display:none; margin-top:18px;">Escanear con PDA</button>
-    <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar escaneo →</button>
+    <button class="btn btn-outline" onclick="pickingParcial()">Guardar picking parcial</button>
+    <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
   </section>
 
   <section class="screen" id="screen-realizar-pda" onclick="pdaRecuperarFoco()">
@@ -821,13 +822,16 @@
     <div id="pdaEstado" class="hint" style="text-align:center; margin:8px 0; min-height:18px;"></div>
     <label>Líneas escaneadas (<span id="pdaNum">0</span>)</label>
     <div id="pdaLista"></div>
+    <div id="pdaBloqueIncidencias"></div>
+    <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:14px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" id="pdaTecladoBtn" onclick="pdaTecladoAlternar()" style="margin-top:14px;">Escribir con teclado</button>
-    <button class="btn btn-primary" onclick="irAResumenPicking()">Terminar escaneo →</button>
+    <button class="btn btn-outline" onclick="pickingParcial()">Guardar picking parcial</button>
+    <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
   </section>
 
   <section class="screen" id="screen-realizar-resumen">
     <div class="screen-title">
-      <button class="back" onclick="ir('realizar-bip')">←</button>
+      <button class="back" onclick="volverDeResumenPicking()">←</button>
       <h2>Confirmar picking</h2>
     </div>
     <div id="rpResumenContenido"></div>
@@ -840,6 +844,7 @@
     </div>
     <div id="rpDocContenido"></div>
     <button class="btn btn-outline no-print" onclick="imprimirHojaPicking()">Guardar / imprimir como PDF</button>
+    <button class="btn btn-outline no-print" id="rpDocExcel" onclick="excelHojaActual(this)" style="display:none;">Excel para emitir</button>
     <button class="btn btn-primary no-print" id="rpDocContinuarBtn" onclick="guardarEnEsperaPickingRealizado()" style="display:none;">✓ Terminar el picking</button>
   </section>
 
@@ -11659,6 +11664,7 @@ function buscarPausado(id){ return pausados.find(d=>d.id===id); }
 
 // Guarda (o actualiza) el picking que se está trabajando.
 function guardarBorradorBip(fase, extra){
+  if(sesionPicking && sesionPicking.soloLectura) return;   // vista de administrador: no se guarda nada
   try{
     const ahoraISO = new Date().toISOString();
     if(fase === 'bip' && sesionPicking){
@@ -11734,6 +11740,7 @@ function nuevoPickingExtra(){
   nuevoRealizarPicking();
   rpModoExtra = true;
   actualizarInicioExtra();
+  renderPausados();
   ir('realizar-inicio');
 }
 function actualizarInicioExtra(){
@@ -11745,23 +11752,54 @@ function actualizarInicioExtra(){
   cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">Cargando los pendientes de firma…</div>';
   llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'lista_ext_' + Date.now(), 30000).then(r => {
     if(!rpModoExtra) return;
-    const pendientes = ((r && r.pickings) || []).filter(p => p.estado === 'pendiente');
-    const yo = normalizarNombre(usuarioActual || '');
-    const botonFirmados = `<button class="btn btn-outline" onclick="abrirFirmadosExtra()" style="margin-top:10px;">Ver pickings extra firmados</button>`;
-    if(!pendientes.length){ cont.innerHTML = botonFirmados; return; }
-    cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Pendientes de firma (${pendientes.length})</div>` + pendientes.map(p => {
-      const puede = normalizarNombre(p.creadoPor) === yo || yo === 'maria';
-      return `<div class="ticket">
-        <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${p.lineas} línea${p.lineas===1?'':'s'}</span></div>
-        <div class="ticket-proj">${escapeHtml(p.proyecto||'—')} · hecho el ${escapeHtml(p.fecha)} a las ${escapeHtml(p.hora)} por ${escapeHtml(p.creadoPor)}</div>
-        ${p.observaciones ? `<div class="ticket-proj" style="font-size:12px;">${escapeHtml(p.observaciones)}</div>` : ''}
-        <div style="display:flex; justify-content:flex-end; gap:16px; margin-top:6px;">
-          ${p.hojaUrl ? `<span class="link-action" onclick="window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}
-          ${puede ? `<span class="link-action" onclick="extraEntregarPendiente('${escapeAtributo(p.id)}')">Entregar y firmar</span>` : ''}
-        </div>
-      </div>`;
-    }).join('') + botonFirmados;
-  }).catch(() => { cont.innerHTML = botonFirmados; });
+    extrasPendientesCache = ((r && r.pickings) || []).filter(p => p.estado === 'pendiente');
+    renderExtrasPendientes();
+  }).catch(() => { cont.innerHTML = ''; });
+}
+let extrasPendientesCache = [];
+function renderExtrasPendientes(){
+  const cont = document.getElementById('extraPendientes');
+  if(!cont) return;
+  const botonFirmados = `<button class="btn btn-outline" onclick="abrirFirmadosExtra()" style="margin-top:10px;">Ver pickings extra firmados</button>`;
+  if(!extrasPendientesCache.length){ cont.innerHTML = botonFirmados; return; }
+  const yo = normalizarNombre(usuarioActual || '');
+  const lista = extrasPendientesCache.filter(p => coincideFiltroPickings(filtroPickingsTexto, p.of, [p.creadoPor, p.hechoPor]));
+  const tarjetas = lista.length ? lista.map(p => {
+    const puede = normalizarNombre(p.creadoPor) === yo || yo === 'maria';
+    return `<div class="ticket" style="cursor:pointer;" onclick="abrirDetalleExtra('${escapeAtributo(p.id)}')">
+      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${p.lineas} línea${p.lineas===1?'':'s'}</span></div>
+      <div class="ticket-proj">${escapeHtml(p.proyecto||'—')} · hecho el ${escapeHtml(p.fecha)} a las ${escapeHtml(p.hora)} por ${escapeHtml(p.creadoPor)}</div>
+      <div class="ticket-proj" style="font-size:12px;">${String(p.ubicacion||'').trim() ? 'Ubicado en ' + escapeHtml(p.ubicacion) + (p.bultos ? ' · ' + escapeHtml(p.bultos) : '') : '<b>Sin ubicar</b>'}</div>
+      ${p.observaciones ? `<div class="ticket-proj" style="font-size:12px;">${escapeHtml(p.observaciones)}</div>` : ''}
+      <div style="display:flex; justify-content:flex-end; gap:16px; margin-top:6px;">
+        ${p.hojaUrl ? `<span class="link-action" onclick="event.stopPropagation(); window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}
+        <span class="link-action" onclick="event.stopPropagation(); descargarExcelPicking('${escapeAtributo(p.of)}', (p.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || p.hechoPor })), this)">Excel para emitir</span>
+      </div>
+    </div>`;
+  }).join('') : `<div class="hint">Ninguno coincide con la búsqueda</div>`;
+  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Pendientes de firma (${lista.length})</div>` + tarjetas + botonFirmados;
+}
+// ---- búsqueda en las listas: por número de OF o por nombre de cualquiera que tenga líneas ----
+let filtroPickingsTexto = '';
+function filtrarPickingsEnCurso(t){
+  filtroPickingsTexto = String(t || '').trim().toLowerCase();
+  renderPausados();
+  renderExtrasPendientes();
+}
+function coincideFiltroPickings(texto, of, nombres){
+  if(!texto) return true;
+  if(String(of || '').toLowerCase().indexOf(texto) !== -1) return true;
+  const t = normalizarNombre(texto);
+  return (nombres || []).some(n => normalizarNombre(n).indexOf(t) !== -1);
+}
+function nombresDePausado(d){
+  const sesion = d.fase === 'bip' ? d.sesion : d.pendiente;
+  const nombres = [d.creadoPor, d.actualizadoPor, d.enUsoPor];
+  if(sesion){
+    (sesion.componentes || []).forEach(c => nombres.push(c.por));
+    (sesion.incidencias || []).forEach(i => nombres.push(i.por));
+  }
+  return nombres.filter(Boolean);
 }
 // Hojas firmadas: María ve todas; cada persona, solo las que hizo (lo filtra el servidor).
 function abrirFirmadosExtra(){
@@ -11844,7 +11882,68 @@ function extraEnviar(datos, firma){
     actualizarInicioExtra();
   });
 }
+// Detalle de un extra pendiente: ubicar primero y después firmar y entregar
+function abrirDetalleExtra(id){
+  const p = (extrasPendientesCache || []).find(x => x.id === id);
+  if(!p){ toast('No encuentro ese picking, actualiza la pantalla'); return; }
+  const yo = normalizarNombre(usuarioActual || '');
+  const puede = normalizarNombre(p.creadoPor) === yo || yo === 'maria';
+  const ubicado = !!String(p.ubicacion || '').trim();
+  mostrarSheet(`
+    <h3>Picking extra · OF ${escapeHtml(p.of)}</h3>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">${escapeHtml(p.proyecto || '—')} · hecho por ${escapeHtml(p.creadoPor)}</p>
+    <p style="font-size:14px; margin:0 0 12px;"><b>Ubicación:</b> ${ubicado ? escapeHtml(p.ubicacion) + (p.bultos ? ' · ' + escapeHtml(p.bultos) : '') : 'sin ubicar'}</p>
+    ${puede ? `<button class="btn btn-outline" onclick="ubicarExtraPendiente('${escapeAtributo(p.id)}')">${ubicado ? 'Cambiar ubicación' : 'Ubicar'}</button>` : ''}
+    ${puede ? (ubicado
+      ? `<button class="btn btn-primary" onclick="extraEntregarPendiente('${escapeAtributo(p.id)}')">Firmar y entregar</button>`
+      : `<div class="hint" style="margin:6px 0 10px;">Ubícalo antes de firmar y entregar.</div>`) : ''}
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+}
+// Primero qué lleva (caja o bolsas y cuántas) y después el mismo selector de ubicación
+function ubicarExtraPendiente(id){
+  const p = (extrasPendientesCache || []).find(x => x.id === id);
+  if(!p) return;
+  mostrarSheet(`
+    <h3>¿Qué lleva el picking extra?</h3>
+    <div style="display:flex; gap:10px; margin-bottom:10px;">
+      <button class="btn btn-primary" onclick="ubicarExtraTipo('${escapeAtributo(id)}', 'Caja')">Caja</button>
+      <button class="btn btn-primary" onclick="ubicarExtraTipo('${escapeAtributo(id)}', 'Bolsas')">Bolsas</button>
+    </div>
+    <button class="btn btn-outline" onclick="abrirDetalleExtra('${escapeAtributo(id)}')">Volver</button>`);
+}
+function ubicarExtraTipo(id, tipo){
+  const p = (extrasPendientesCache || []).find(x => x.id === id);
+  if(!p) return;
+  mostrarSheet(`
+    <h3>¿Cuántas ${tipo === 'Caja' ? 'cajas' : 'bolsas'}?</h3>
+    <input type="number" id="extraNumBultos" min="1" value="1" inputmode="numeric" style="font-size:20px; text-align:center;">
+    <button class="btn btn-primary" onclick="ubicarExtraCantidad('${escapeAtributo(id)}', '${tipo}')">Seguir</button>
+    <button class="btn btn-outline" onclick="ubicarExtraPendiente('${escapeAtributo(id)}')">Volver</button>`);
+}
+function ubicarExtraCantidad(id, tipo){
+  const p = (extrasPendientesCache || []).find(x => x.id === id);
+  const n = Math.max(1, parseInt((document.getElementById('extraNumBultos') || {}).value, 10) || 1);
+  if(!p) return;
+  const bultos = n + ' ' + (tipo === 'Caja' ? (n === 1 ? 'caja' : 'cajas') : (n === 1 ? 'bolsa' : 'bolsas'));
+  abrirSelectorUbicacion({
+    item: tipo === 'Caja' ? 'Cajas' : 'Bolsas', proyecto: p.proyecto, of: p.of, actual: p.ubicacion || '',
+    titulo: 'picking extra OF ' + p.of + ' · ' + bultos, cajas: tipo === 'Caja' ? n : 0,
+    cb: v => guardarUbicacionExtra(id, v, bultos),
+    alCancelar: () => abrirDetalleExtra(id)
+  });
+}
+async function guardarUbicacionExtra(id, v, bultos){
+  const r = await llamarBackend('ubicarPickingExtra', { id, quien: usuarioActual || '', ubicacion: v, bultos: bultos || '' }, 'uxt_' + Date.now(), 60000);
+  if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo guardar la ubicación'); return; }
+  const p = (extrasPendientesCache || []).find(x => x.id === id);
+  if(p){ p.ubicacion = v; p.bultos = bultos || ''; }
+  toast('Ubicado en ' + v);
+  renderExtrasPendientes();
+  abrirDetalleExtra(id);
+}
 function extraEntregarPendiente(id){
+  const pend = (extrasPendientesCache || []).find(x => x.id === id);
+  if(pend && !String(pend.ubicacion || '').trim()){ toast('Primero hay que ubicar el picking'); return; }
   extraPendienteId = id;
   mostrarSheet(`
     <h3>Firma digital</h3>
@@ -11921,6 +12020,46 @@ function enviarInformeExtrasMail(btn){
   });
 }
 
+// Terminar picking: el picking no se continúa. Va al resumen y de ahí a registrar.
+// Si la OF tiene partes de otras personas, el resumen muestra las hojas y ubicar.
+function terminarPicking(){
+  if(!sesionPicking) return;
+  irAResumenPicking();
+}
+
+// Autor de una línea; las antiguas sin "por" se atribuyen al creador del borrador.
+function autorDeLinea(x){
+  const base = borradorActivoId ? buscarPausado(borradorActivoId) : null;
+  return x.por || (sesionPicking && sesionPicking.creadoPor) || (base && base.creadoPor) || usuarioActual || '';
+}
+// Personas que tienen líneas en la sesión actual (sin repetir).
+function personasDeSesion(){
+  if(!sesionPicking) return [];
+  const nombres = [], vistos = {};
+  sesionPicking.componentes.concat(sesionPicking.incidencias).forEach(x => {
+    const n = autorDeLinea(x), k = normalizarNombre(n);
+    if(n && !vistos[k]){ vistos[k] = 1; nombres.push(n); }
+  });
+  return nombres;
+}
+// Hoja parcial de una persona concreta, sacada desde el resumen de la OF.
+function verHojaDePersona(nombre){
+  if(!sesionPicking) return;
+  const k = normalizarNombre(nombre);
+  const mios = sesionPicking.componentes.filter(c => normalizarNombre(autorDeLinea(c)) === k);
+  const miasInc = sesionPicking.incidencias.filter(i => normalizarNombre(autorDeLinea(i)) === k);
+  const semana = semanaISO(new Date());
+  toast('Generando la hoja de ' + nombre + '…');
+  llamarBackend('hojaParcial', {
+    of: sesionPicking.of, proyecto: sesionPicking.proyecto, subproyecto: sesionPicking.subproyecto, semana, nombre,
+    componentes: conDescripciones(mios), incidencias: conDescripciones(miasInc)
+  }, 'parc_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo generar la hoja'); return; }
+    mostrarHojaPicking({ of: sesionPicking.of, proyecto: sesionPicking.proyecto, subproyecto: sesionPicking.subproyecto, semana,
+      hechoPor: nombre, parcialDe: nombre, componentes: mios, incidencias: miasInc, hojaPickingUrl: r.url }, 'ver', 'realizar-resumen');
+  });
+}
+
 // Picking parcial: guarda mi parte y suelta el picking para quien lo siga.
 // La hoja parcial se saca luego desde la tarjeta del picking en "Pickings en curso".
 function pickingParcial(){
@@ -11932,8 +12071,20 @@ function pickingParcial(){
   const hayMias = sesionPicking.componentes.concat(sesionPicking.incidencias)
     .some(x => normalizarNombre(autorDe(x)) === normalizarNombre(yo));
   if(!hayMias){ toast('Todavía no tienes líneas en este picking'); return; }
+  if(sesionPicking.extra){ toast('Los pickings extra se entregan al terminar'); return; }
+  // Si ya hay líneas de otra persona, este es el segundo parcial: la OF está completa y se cierra (registro normal con todo).
+  const hayDeOtro = sesionPicking.componentes.concat(sesionPicking.incidencias)
+    .some(x => x.por && normalizarNombre(x.por) !== normalizarNombre(yo));
+  if(hayDeOtro){
+    toast('Las dos partes están completas: se cierra la OF');
+    irAResumenPicking();
+    return;
+  }
+  // Primer parcial: se guarda y queda abierta para que la siga la otra persona.
+  // Al terminar se abre mi hoja parcial, para imprimirla y emitir en SAP.
+  const idParte = borradorActivoId || (sesionPicking && sesionPicking.draftId);
   pausarPicking();
-  toast('Tu parte queda guardada');
+  if(idParte) hojaParcialDePausado(idParte);
 }
 
 // Hoja parcial de mi parte, sacada desde la tarjeta del picking en curso.
@@ -11987,13 +12138,28 @@ function enUsoPorOtro(d){
   const t = new Date(d.actualizado||d.enUsoDesde||0).getTime();
   return t && (Date.now()-t) < EN_USO_MIN*60000;
 }
-function retomarPausado(id){
+function retomarPausado(id, confirmado){
   const d = buscarPausado(id);
   if(!d || d.borrado) return;
   if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
-  if(enUsoPorOtro(d)){
-    if(!confirm(d.enUsoPor + ' lo está trabajando ' + haceTexto(d.actualizado) + '. ¿Seguirlo tú de todas formas?')) return;
+  const admin = esAdminSheet(usuarioActual);
+  if(enUsoPorOtro(d) && admin){ abrirPausadoSoloLectura(d); return; }
+  const yo = normalizarNombre(usuarioActual);
+  const autorDeD = x => x.por || d.creadoPor || '';
+  const ajenas = d.sesion ? (d.sesion.componentes || []).concat(d.sesion.incidencias || []).filter(x => normalizarNombre(autorDeD(x)) !== yo) : [];
+  const preguntar = !admin && (enUsoPorOtro(d) || ajenas.length > 0);
+  if(preguntar && !confirmado){
+    // Solo se pregunta: no se muestra líneas, hoja ni contadores hasta confirmar
+    const otro = enUsoPorOtro(d) ? d.enUsoPor : (ajenas.length ? autorDeD(ajenas[0]) : '');
+    mostrarSheet(`
+      <h3>OF ${escapeHtml(d.of || '')}</h3>
+      <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">${enUsoPorOtro(d) ? 'Lo está preparando' : 'Ya tiene una parte guardada de'} ${escapeHtml(otro || 'otra persona')}.</p>
+      <p style="font-size:15px; margin:0 0 12px;"><b>¿Vas a completar un picking parcial de esta OF?</b></p>
+      <button class="btn btn-primary" onclick="retomarPausado('${escapeAtributo(d.id)}', true)">Sí, entrar a hacer mi parte</button>
+      <button class="btn btn-outline" onclick="cerrarSheet()">No</button>`);
+    return;
   }
+  const soloMias = preguntar;   // entra como parcial: solo ve sus propias líneas
   cerrarSheet();
   borradorActivoId = d.id;
   d.enUsoPor = usuarioActual; d.enUsoDesde = new Date().toISOString(); d.actualizadoPor = usuarioActual; d.actualizado = d.enUsoDesde; d.sync = 'sucio';
@@ -12001,6 +12167,7 @@ function retomarPausado(id){
   programarSincPausados(1500);
   if(d.fase === 'bip' && d.sesion){
     sesionPicking = JSON.parse(JSON.stringify(d.sesion));
+    sesionPicking.soloMias = soloMias;
     resetIncidenciasEnCurso();
     sesionPicking.draftId = d.id;
     document.getElementById('rpBipOf').textContent = sesionPicking.of;
@@ -12024,27 +12191,47 @@ function retomarPausado(id){
   }
   actualizarBadgePausados();
 }
+// Administrador: ve una OF que otra persona está trabajando, sólo en lectura (sin escanear ni guardar).
+function abrirPausadoSoloLectura(d){
+  if(d.fase !== 'bip' || !d.sesion){ toast('Esta OF está pendiente de ubicar, no se puede abrir ahora'); return; }
+  sesionPicking = JSON.parse(JSON.stringify(d.sesion));
+  sesionPicking.soloLectura = true;
+  sesionPicking.creadoPor = d.creadoPor || '';
+  borradorActivoId = null;
+  document.getElementById('rpResumenContenido').innerHTML = resumenPickingHtml();
+  ir('realizar-resumen');
+}
+function volverDeResumenPicking(){
+  if(sesionPicking && sesionPicking.soloLectura){ sesionPicking = null; ir('realizar-inicio'); renderPausados(); return; }
+  ir('realizar-bip');
+}
+
 // Lista de la pantalla "Realizar picking"
 function renderPausados(){
   const cont = document.getElementById('rpPausados');
   if(!cont) return;
-  const lista = pausadosVisibles();
+  // Planificados en Planificados, extra en Extra: cada pantalla sólo muestra los suyos
+  const lista = pausadosVisibles()
+    .filter(d => (!!(d.sesion && d.sesion.extra)) === !!rpModoExtra)
+    .filter(d => coincideFiltroPickings(filtroPickingsTexto, d.of, nombresDePausado(d)));
   if(!lista.length){ cont.innerHTML = ''; return; }
   cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Pickings en curso (${lista.length}) — toca uno para seguir</div>
     ${lista.map(d=>{
       const nLin = d.fase==='bip' ? ((d.sesion&&d.sesion.componentes)||[]).length : ((d.pendiente&&d.pendiente.componentes)||[]).length;
       const nInc = d.fase==='bip' ? ((d.sesion&&d.sesion.incidencias)||[]).length : ((d.pendiente&&d.pendiente.incidencias)||[]).length;
       const uso = enUsoPorOtro(d);
+      const bloqueado = uso && !esAdminSheet(usuarioActual);
       const viejo = (Date.now() - new Date(d.actualizado||0).getTime()) > 2*86400000;
       return `<div class="ticket" style="cursor:pointer;" onclick="retomarPausado('${escapeAtributo(d.id)}')">
-        <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(d.of||'—')}</span><span class="ticket-date">${nLin} línea${nLin===1?'':'s'}${nInc ? ' · '+nInc+' incid.' : ''}</span></div>
+        <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(d.of||'—')}</span><span class="ticket-date">${bloqueado ? '' : `${nLin} línea${nLin===1?'':'s'}${nInc ? ' · '+nInc+' incid.' : ''}`}</span></div>
         <div class="ticket-proj">${escapeHtml(d.proyecto||'—')}${d.subproyecto ? ' · '+escapeHtml(d.subproyecto) : ''}${d.fase==='registro' ? ' · <b>hoja hecha, falta ubicar la caja</b>' : ''}</div>
-        <div class="ticket-proj" style="font-size:12px;">Empezó ${escapeHtml(d.creadoPor||'—')} · última actividad ${escapeHtml(haceTexto(d.actualizado))}${d.actualizadoPor && normalizarNombre(d.actualizadoPor)!==normalizarNombre(d.creadoPor) ? ' ('+escapeHtml(d.actualizadoPor)+')' : ''}</div>
+        <div class="ticket-proj" style="font-size:14px; margin-top:4px;"><b>Iniciado por:</b> ${escapeHtml(d.creadoPor||'—')}</div>
+        <div class="ticket-proj" style="font-size:12px;">Última actividad: ${escapeHtml(haceTexto(d.actualizado))}${d.actualizadoPor ? ' por ' + escapeHtml(d.actualizadoPor) : ''}</div>
         ${uso ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><i class="pt pt-c"></i> ${escapeHtml(d.enUsoPor)} lo está trabajando ahora</div>` : ''}
         ${viejo ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;">Lleva más de 2 días parado</div>` : ''}
         <div style="text-align:right; display:flex; justify-content:flex-end; gap:16px;">
-          ${d.fase==='bip' ? `<span class="link-action" style="font-size:12px;" onclick="hojaParcialDePausado('${escapeAtributo(d.id)}', event)">Hoja parcial mía</span>` : ''}
-          <span class="link-action" style="color:#B33A3A; font-size:12px;" onclick="event.stopPropagation(); descartarPausado('${escapeAtributo(d.id)}')">Descartar</span>
+          ${d.fase==='bip' && !bloqueado ? `<button class="btn btn-outline" style="width:auto; padding:8px 14px; font-size:13px; margin:0;" onclick="hojaParcialDePausado('${escapeAtributo(d.id)}', event)">Ver hoja parcial</button>` : ''}
+          ${bloqueado ? '' : `<span class="link-action" style="color:#B33A3A; font-size:12px;" onclick="event.stopPropagation(); descartarPausado('${escapeAtributo(d.id)}')">Descartar</span>`}
         </div>
       </div>`;
     }).join('')}
@@ -16789,13 +16976,20 @@ async function refrescarRegistroRealizados(){
     const n = (x.datos && x.datos.componentes) ? x.datos.componentes.length : 0;
     const hecho = x.hechoPor || (x.datos && x.datos.hechoPor) || '—';
     const termino = x.terminadoPor || '';
-    return `<div class="ticket" style="cursor:pointer;" onclick="cargarRealizadoEnFormulario('${escapeAtributo(x.id)}')">
+    const personas = personasDeRealizado(x);
+    const idAt = escapeAtributo(x.id);
+    return `<div class="ticket">
       <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(x.of)}</span><span class="ticket-date">${n} línea${n===1?'':'s'}</span></div>
       <div class="ticket-proj">${escapeHtml(x.proyecto||'—')}${x.subproyecto ? ' · '+escapeHtml(x.subproyecto) : ''}</div>
       <div class="ticket-proj" style="font-size:13px;"><b>Hecho por ${escapeHtml(hecho)}</b>${termino && termino !== hecho ? ' · terminado por '+escapeHtml(termino) : ''}</div>
-      <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))} · toca para ubicar y registrar</div>
-      ${x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaRealizado('${escapeAtributo(x.id)}')">Ver hoja para imprimir</button>` : ''}
+      <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))} · pendiente de ubicar</div>
+      ${personas.length > 1
+        ? personas.map(pn => `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaDePersonaRealizado('${idAt}', '${escapeAtributo(pn)}')">Ver hoja de ${escapeHtml(pn)}</button>`).join('')
+        : (x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaRealizado('${idAt}')">Ver hoja para imprimir</button>` : '')}
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); descargarExcelPicking('${escapeAtributo(x.of)}', ((x.datos && x.datos.componentes) || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || x.hechoPor })), this)">Excel para emitir</button>
+      <button class="btn btn-primary" style="margin-top:8px;" onclick="event.stopPropagation(); cargarRealizadoEnFormulario('${idAt}')">Ubicar picking</button>
       <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); elegirModoEscaneo('empezarBipadoParaRealizado', '${escapeAtributo(x.id)}')">Editar hoja (añadir o quitar)</button>
+
     </div>`;
   }).join('') + `<div class="hint" style="margin:6px 0 14px;">O escribe la OF abajo; si ya tiene el picking hecho, te lo avisará.</div>`;
 }
@@ -16885,6 +17079,33 @@ function verHojaRealizado(id){
   if(!x || !x.hojaPickingUrl){ toast('Esta OF no tiene hoja todavía'); return; }
   const w = window.open(x.hojaPickingUrl, '_blank');
   if(!w) toast('El navegador ha bloqueado la hoja: permite las ventanas emergentes para esta app');
+}
+// Personas que han bipado en una OF pendiente de ubicar (sin repetir).
+function personasDeRealizado(x){
+  const d = x.datos || {}, nombres = [], vistos = {};
+  (d.componentes || []).concat(d.incidencias || []).forEach(c => {
+    const n = c.por || x.hechoPor || '', k = normalizarNombre(n);
+    if(n && !vistos[k]){ vistos[k] = 1; nombres.push(n); }
+  });
+  return nombres;
+}
+// Hoja de la parte de una persona en una OF pendiente de ubicar.
+function verHojaDePersonaRealizado(id, nombre){
+  const x = (realizadosEsperaCache || []).find(r => r.id === id);
+  if(!x){ toast('No encuentro esa OF, actualiza la pantalla'); return; }
+  const d = x.datos || {}, k = normalizarNombre(nombre);
+  const esSuya = c => normalizarNombre(c.por || x.hechoPor || '') === k;
+  const mios = (d.componentes || []).filter(esSuya), miasInc = (d.incidencias || []).filter(esSuya);
+  const semana = semanaISO(new Date());
+  toast('Generando la hoja de ' + nombre + '…');
+  llamarBackend('hojaParcial', {
+    of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto, semana, nombre,
+    componentes: conDescripciones(mios), incidencias: conDescripciones(miasInc)
+  }, 'parc_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo generar la hoja'); return; }
+    mostrarHojaPicking({ of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto, semana,
+      hechoPor: nombre, parcialDe: nombre, componentes: mios, incidencias: miasInc, hojaPickingUrl: r.url }, 'ver', 'realizar-inicio');
+  });
 }
 // Carga una OF terminada en el formulario de registro, con su hoja y sus líneas.
 function cargarRealizadoEnFormulario(id){
@@ -17297,7 +17518,7 @@ function lineaDeOtro(c){
 function editarLineaBip(idx){
   const c = sesionPicking.componentes[idx];
   if(!c) return;
-  if(lineaDeOtro(c)){ toast('La bipó ' + c.por + ': solo puede cambiarla esa persona'); return; }
+  if(lineaDeOtro(c) && !confirm('La bipó ' + c.por + '. ¿Seguro que quieres cambiarla?')) return;
   mostrarSheet(`
     <h3>Editar ${escapeHtml(c.codigo)}</h3>
     ${catalogoListo() ? `<div class="hint" style="margin:-4px 0 8px; font-size:13px;">${descripcionCatalogoHtml(c.codigo)}</div>` : ''}
@@ -17319,7 +17540,7 @@ function guardarEdicionLineaBip(idx){
   refrescarBipUI();
 }
 function borrarLineaBip(idx){
-  if(lineaDeOtro(sesionPicking.componentes[idx])){ toast('La bipó ' + sesionPicking.componentes[idx].por + ': solo puede quitarla esa persona'); return; }
+  if(lineaDeOtro(sesionPicking.componentes[idx]) && !confirm('La bipó ' + sesionPicking.componentes[idx].por + '. ¿Seguro que quieres quitarla?')) return;
   sesionPicking.componentes.splice(idx,1);
   cerrarSheet();
   refrescarBipUI();
@@ -17329,17 +17550,24 @@ function editarLineaBipDesdeResumen(idx){
   editarLineaBip(idx);
 }
 
+// Entrando como parcial solo se ven las líneas propias (las demás se conservan y se unen al ubicar)
+function esMiaSesion(x){
+  return !sesionPicking || !sesionPicking.soloMias || normalizarNombre(autorDeLinea(x)) === normalizarNombre(usuarioActual || '');
+}
 function renderLineasBip(){
   aplicarVisibilidadPda();
   const cont = document.getElementById('rpListaLineas');
   const num = document.getElementById('rpNumLineas');
   if(!sesionPicking || !cont) return;
-  if(num) num.textContent = sesionPicking.componentes.length;
-  if(!sesionPicking.componentes.length){
+  const vistas = sesionPicking.componentes.map((c,i)=>({c,i})).filter(({c}) => esMiaSesion(c));
+  if(num) num.textContent = vistas.length;
+  if(!vistas.length){
     cont.innerHTML = `<div class="empty">Todavía no se ha escaneado ningún componente</div>`;
+    renderPdaLista(); renderIncidenciasBip();
     return;
   }
-  cont.innerHTML = sesionPicking.componentes.map((c,i)=>`
+  renderPdaLista();
+  cont.innerHTML = vistas.map(({c,i})=>`
     <div class="ticket" style="cursor:pointer;" onclick="editarLineaBip(${i})">
       <div class="ticket-top">
         <span class="ticket-of">${escapeHtml(c.codigo)}</span>
@@ -17354,11 +17582,9 @@ function renderLineasBip(){
 }
 // Incidencias del picking en la pantalla principal: se ven, se cambia su motivo o se quitan
 function renderIncidenciasBip(){
-  const bloque = document.getElementById('rpBloqueIncidencias');
-  if(!bloque || !sesionPicking) return;
-  const lista = sesionPicking.incidencias || [];
-  if(!lista.length){ bloque.innerHTML = ''; return; }
-  bloque.innerHTML = `<label>Incidencias (${lista.length})</label>` + lista.map((i,n)=>`
+  if(!sesionPicking) return;
+  const lista = (sesionPicking.incidencias || []).map((i,n)=>({i,n})).filter(({i}) => esMiaSesion(i));
+  const html = !lista.length ? '' : `<label>Incidencias (${lista.length})</label>` + lista.map(({i,n})=>`
     <div class="ticket" style="padding:10px 12px;">
       <div class="ticket-top"><span class="ticket-of" style="font-size:15px;">${escapeHtml(i.codigo)}</span></div>
       <div class="ticket-proj" style="margin-top:4px;">Motivo: <b>${escapeHtml(i.motivo)}</b></div>
@@ -17367,6 +17593,7 @@ function renderIncidenciasBip(){
         <span class="link-action" style="color:#B33A3A;" onclick="quitarIncidenciaBip(${n})">Quitar</span>
       </div>
     </div>`).join('');
+  ['rpBloqueIncidencias','pdaBloqueIncidencias'].forEach(id => { const el = document.getElementById(id); if(el) el.innerHTML = html; });
 }
 function abrirCambiarMotivoIncidencia(n){
   const i = sesionPicking && sesionPicking.incidencias[n];
@@ -17594,10 +17821,11 @@ function renderPdaLista(){
   const num = document.getElementById('pdaNum');
   const cont = document.getElementById('pdaLista');
   if(!sesionPicking || !cont) return;
-  if(num) num.textContent = sesionPicking.componentes.length;
-  const ultimas = sesionPicking.componentes.slice(-15).reverse();
+  const vistasPda = sesionPicking.componentes.map((c,i)=>({c,i})).filter(({c}) => esMiaSesion(c));
+  if(num) num.textContent = vistasPda.length;
+  const ultimas = vistasPda.slice(-15).reverse();
   cont.innerHTML = ultimas.length
-    ? ultimas.map(c => `<div class="ticket" style="padding:8px 12px;"><div class="ticket-top"><span class="ticket-of" style="font-size:15px;">${escapeHtml(c.codigo)}</span><span class="ticket-date">${escapeHtml(String(c.cantidad))} · ${escapeHtml(c.lote)}</span></div></div>`).join('')
+    ? ultimas.map(({c,i}) => `<div class="ticket" style="padding:8px 12px; cursor:pointer;" onclick="editarLineaBip(${i})"><div class="ticket-top"><span class="ticket-of" style="font-size:15px;">${escapeHtml(c.codigo)}</span><span class="ticket-date">x${escapeHtml(String(c.cantidad))} · ${escapeHtml(c.lote)}</span></div></div>`).join('')
     : `<div class="empty">Todavía no hay líneas</div>`;
 }
 function pdaTecla(event){
@@ -17647,6 +17875,7 @@ function irAResumenPicking(){
 }
 function resumenPickingHtml(){
   const s = sesionPicking;
+  const lectura = !!s.soloLectura;
   const faltaLote = s.componentes.filter(c=>c.lote==='N/A').length;
   return `
     <div class="detail-block">
@@ -17654,9 +17883,10 @@ function resumenPickingHtml(){
       <div class="detail-sub">${escapeHtml(s.proyecto||'—')}${s.subproyecto ? ' · '+escapeHtml(s.subproyecto) : ''}</div>
       <div class="hint" style="margin-top:10px;">Cantidad de líneas: <b>${s.componentes.length}</b></div>
     </div>
-    ${faltaLote ? `<div class="attn-banner"><span class="dot">!</span><span>${faltaLote} línea${faltaLote>1?'s':''} sin lote — se guardará${faltaLote>1?'n':''} como N/A. Toca la línea para editarla antes de seguir.</span></div>` : ''}
+    ${lectura ? `<div class="attn-banner"><span class="dot">!</span><span>Solo lectura: la OF la está trabajando otra persona ahora mismo. No se puede añadir ni modificar.</span></div>` : ''}
+    ${faltaLote && !lectura ? `<div class="attn-banner"><span class="dot">!</span><span>${faltaLote} línea${faltaLote>1?'s':''} sin lote — se guardará${faltaLote>1?'n':''} como N/A. Toca la línea para editarla antes de seguir.</span></div>` : ''}
     <div id="rpListaResumen">${s.componentes.map((c,i)=>`
-      <div class="ticket" style="cursor:pointer;" onclick="editarLineaBipDesdeResumen(${i})">
+      <div class="ticket" ${lectura ? '' : `style="cursor:pointer;" onclick="editarLineaBipDesdeResumen(${i})"`}>
         <div class="ticket-top"><span class="ticket-of">${escapeHtml(c.codigo)}</span><span class="ticket-date">x${c.cantidad}</span></div>
         ${catalogoListo() ? `<div class="ticket-proj" style="font-size:12px;">${descripcionCatalogoHtml(c.codigo)}</div>` : ''}
         <div class="ticket-proj">Lote: ${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A</b>' : escapeHtml(c.lote)}</div>
@@ -17665,8 +17895,13 @@ function resumenPickingHtml(){
     ${s.incidencias.length ? `<label>Material faltante (${s.incidencias.length})</label>
     <div class="obs-box">${materialFaltanteAgrupadoHtml(s.incidencias)}</div>
     <div class="hint" style="margin:4px 0 10px;">Para cambiar un motivo o quitar una incidencia, vuelve a la pantalla principal.</div>` : ''}
-    <button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>
-    ${s.idRealizado
+    ${lectura ? '' : `<button class="btn btn-outline" onclick="ir('realizar-bip')">← Seguir escaneando</button>`}
+    ${lectura
+      ? personasDeSesion().map(p => `<button class="btn btn-outline" onclick="verHojaDePersona('${escapeAtributo(p)}')">Ver hoja de ${escapeHtml(p)}</button>`).join('')
+      : !s.idRealizado && !s.idExistente && personasDeSesion().length > 1
+      ? `${personasDeSesion().map(p => `<button class="btn btn-outline" onclick="verHojaDePersona('${escapeAtributo(p)}')">Ver hoja de ${escapeHtml(p)}</button>`).join('')}
+         <button class="btn btn-primary" onclick="registrarPickingRealizado()">Ubicar picking</button>`
+      : s.idRealizado
       ? `<button class="btn btn-primary" onclick="revisarAmpliacionRealizado()">✓ Revisar la hoja de la OF ${escapeHtml(s.of)} antes de guardar</button>`
       : s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ ${(()=>{ const q = DB.find(x=>x.id===s.idExistente); return (q && !q.hojaPickingUrl && !(q.componentesPicking||[]).length) ? 'Generar la hoja de la OF ' : 'Añadir a la OF '; })()}${escapeHtml(s.of)}</button>`
@@ -17900,6 +18135,24 @@ function hojaPendienteEntrega(p){
 // Al terminar, el propio botón vuelve a su texto (textContent lo reemplaza y quita los puntos).
 function esperandoHtml(texto){
   return escapeHtml(texto) + '<span class="dots-carga" aria-hidden="true"><i></i><i></i><i></i></span>';
+}
+// Excel solo para emitir: se descarga al dispositivo y no se guarda en Drive.
+async function descargarExcelPicking(of, filas, btn){
+  if(btn) btn.disabled = true;
+  try{
+    const r = await llamarBackend('excelPicking', { of: of, filas: filas }, 'xl_' + Date.now(), 120000);
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo preparar el Excel'); return; }
+    const bin = atob(r.base64);
+    const arr = new Uint8Array(bin.length);
+    for(let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = r.nombre || ('OF ' + of + '.xlsx');
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch(e){ toast('No se pudo preparar el Excel'); }
+  finally{ if(btn) btn.disabled = false; }
 }
 function marcarEsperando(btn, texto){
   if(!btn) return;
@@ -18157,10 +18410,18 @@ function mostrarHojaPicking(datos, modo, volverA){
   document.getElementById('rpDocContenido').innerHTML = generarHojaPickingHtml(datos);
   const btnContinuar = document.getElementById('rpDocContinuarBtn');
   if(btnContinuar) btnContinuar.style.display = (modo==='previo') ? '' : 'none';
+  const bx = document.getElementById('rpDocExcel');
+  if(bx) bx.style.display = datos.parcialDe ? '' : 'none';
   ir('realizar-doc');
 }
 function volverDesdeHojaPicking(){
   ir(rpDocVolverA);
+}
+// Excel de la hoja que se está viendo (solo para emitir, se descarga al dispositivo)
+function excelHojaActual(btn){
+  const d = rpDocDatosActuales;
+  if(!d) return;
+  descargarExcelPicking(d.of, (d.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || d.hechoPor })), btn);
 }
 function imprimirHojaPicking(){
   if(!rpDocDatosActuales) return;
