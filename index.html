@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1270</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1272</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11773,7 +11773,7 @@ function renderExtrasPendientes(){
       ${p.observaciones ? `<div class="ticket-proj" style="font-size:12px;">${escapeHtml(p.observaciones)}</div>` : ''}
       <div style="display:flex; justify-content:flex-end; gap:16px; margin-top:6px;">
         ${p.hojaUrl ? `<span class="link-action" onclick="event.stopPropagation(); window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}
-        <span class="link-action" onclick="event.stopPropagation(); descargarExcelPicking('${escapeAtributo(p.of)}', (p.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || p.hechoPor })), this)">Excel para emitir</span>
+        <span class="link-action" onclick="event.stopPropagation(); descargarExcelExtra('${escapeAtributo(p.id)}', this)">Excel para emitir</span>
       </div>
     </div>`;
   }).join('') : `<div class="hint">Ninguno coincide con la búsqueda</div>`;
@@ -12060,10 +12060,22 @@ function verInformeExtras(){
     if(!r || r.ok === false){ cont.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo cargar el informe')}</div>`; return; }
     if(!(r.dias || []).length){ cont.innerHTML = `<div class="hint" style="margin-top:10px;">No hay pickings firmados en ese rango.</div>`; return; }
     const filas = r.dias.map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
+    const detalle = (r.detalle || []).map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td>${escapeHtml(x.of)}</td><td>${escapeHtml(x.hechoPor)}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
+    const personas = (r.porPersona || []).map(x => `<tr><td>${escapeHtml(x.nombre)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
     cont.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
       <tr><th style="text-align:left;">Día</th><th style="text-align:right;">OF</th><th style="text-align:right;">Líneas</th></tr>
       ${filas}
       <tr><td><b>Total</b></td><td style="text-align:right;"><b>${r.total.ofs}</b></td><td style="text-align:right;"><b>${r.total.lineas}</b></td></tr>
+    </table>
+    <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Detalle</div>
+    <table style="width:100%; font-size:14px;">
+      <tr><th style="text-align:left;">Día</th><th style="text-align:left;">OF</th><th style="text-align:left;">Hecho por</th><th style="text-align:right;">Líneas</th></tr>
+      ${detalle}
+    </table>
+    <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Total por persona</div>
+    <table style="width:100%; font-size:14px;">
+      <tr><th style="text-align:left;">Hecho por</th><th style="text-align:right;">OF</th><th style="text-align:right;">Líneas</th></tr>
+      ${personas}
     </table>`;
   });
 }
@@ -17044,7 +17056,7 @@ async function refrescarRegistroRealizados(){
       ${personas.length > 1
         ? personas.map(pn => `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaDePersonaRealizado('${idAt}', '${escapeAtributo(pn)}')">Ver hoja de ${escapeHtml(pn)}</button>`).join('')
         : (x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); verHojaRealizado('${idAt}')">Ver hoja para imprimir</button>` : '')}
-      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); descargarExcelPicking('${escapeAtributo(x.of)}', ((x.datos && x.datos.componentes) || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || x.hechoPor })), this)">Excel para emitir</button>
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); descargarExcelRealizado('${idAt}', this)">Excel para emitir</button>
       <button class="btn btn-primary" style="margin-top:8px;" onclick="event.stopPropagation(); cargarRealizadoEnFormulario('${idAt}')">Ubicar picking</button>
       <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); elegirModoEscaneo('empezarBipadoParaRealizado', '${escapeAtributo(x.id)}')">Editar hoja (añadir o quitar)</button>
 
@@ -18193,6 +18205,18 @@ function hojaPendienteEntrega(p){
 // Al terminar, el propio botón vuelve a su texto (textContent lo reemplaza y quita los puntos).
 function esperandoHtml(texto){
   return escapeHtml(texto) + '<span class="dots-carga" aria-hidden="true"><i></i><i></i><i></i></span>';
+}
+// Excel de un planificado pendiente de ubicar (todas sus líneas, con quién las hizo)
+function descargarExcelRealizado(id, btn){
+  const x = (realizadosEsperaCache || []).find(r => r.id === id);
+  if(!x){ toast('No encuentro esa OF, actualiza la pantalla'); return; }
+  descargarExcelPicking(x.of, ((x.datos && x.datos.componentes) || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || x.hechoPor })), btn);
+}
+// Excel de un extra pendiente de firma
+function descargarExcelExtra(id, btn){
+  const p = (extrasPendientesCache || []).find(x => x.id === id);
+  if(!p){ toast('No encuentro ese picking, actualiza la pantalla'); return; }
+  descargarExcelPicking(p.of, (p.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || p.hechoPor })), btn);
 }
 // Excel solo para emitir: se descarga al dispositivo y no se guarda en Drive.
 async function descargarExcelPicking(of, filas, btn){
