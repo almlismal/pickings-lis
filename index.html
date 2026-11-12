@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1283</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1284</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12149,17 +12149,11 @@ function verInformeExtras(){
     if(!r || r.ok === false){ cont.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo cargar el informe')}</div>`; return; }
     if(!(r.dias || []).length){ cont.innerHTML = `<div class="hint" style="margin-top:10px;">No hay pickings firmados en ese rango.</div>`; return; }
     const filas = r.dias.map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
-    const detalle = (r.detalle || []).map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td>${escapeHtml(x.of)}</td><td>${escapeHtml(x.hechoPor)}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
     const personas = (r.porPersona || []).map(x => `<tr><td>${escapeHtml(x.nombre)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
     cont.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
       <tr><th style="text-align:left;">Día</th><th style="text-align:right;">OF</th><th style="text-align:right;">Líneas</th></tr>
       ${filas}
       <tr><td><b>Total</b></td><td style="text-align:right;"><b>${r.total.ofs}</b></td><td style="text-align:right;"><b>${r.total.lineas}</b></td></tr>
-    </table>
-    <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Detalle</div>
-    <table style="width:100%; font-size:14px;">
-      <tr><th style="text-align:left;">Día</th><th style="text-align:left;">OF</th><th style="text-align:left;">Hecho por</th><th style="text-align:right;">Líneas</th></tr>
-      ${detalle}
     </table>
     <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Total por persona</div>
     <table style="width:100%; font-size:14px;">
@@ -12203,17 +12197,11 @@ function verInformePlanificados(){
     if(!r || r.ok === false){ cont.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo cargar el informe')}</div>`; return; }
     if(!(r.dias || []).length){ cont.innerHTML = `<div class="hint" style="margin-top:10px;">No hay pickings planificados registrados y ubicados en ese rango.</div>`; return; }
     const filas = r.dias.map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
-    const detalle = (r.detalle || []).map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td>${escapeHtml(x.of)}</td><td>${escapeHtml(x.hechoPor)}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
     const personas = (r.porPersona || []).map(x => `<tr><td>${escapeHtml(x.nombre)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
     cont.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
       <tr><th style="text-align:left;">Día</th><th style="text-align:right;">OF</th><th style="text-align:right;">Líneas</th></tr>
       ${filas}
       <tr><td><b>Total</b></td><td style="text-align:right;"><b>${r.total.ofs}</b></td><td style="text-align:right;"><b>${r.total.lineas}</b></td></tr>
-    </table>
-    <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Detalle</div>
-    <table style="width:100%; font-size:14px;">
-      <tr><th style="text-align:left;">Día</th><th style="text-align:left;">OF</th><th style="text-align:left;">Hecho por</th><th style="text-align:right;">Líneas</th></tr>
-      ${detalle}
     </table>
     <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Total por persona</div>
     <table style="width:100%; font-size:14px;">
