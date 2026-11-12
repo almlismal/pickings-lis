@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1282</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1283</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11824,20 +11824,17 @@ function abrirFirmadosExtra(){
       .sort((a, b) => ((b.fecha + b.hora) > (a.fecha + a.hora) ? 1 : -1));
     firmadosExtraCache = firmados;
     const esAdmin = esAdminSheet(usuarioActual);
-    const puedeEmitir = esAdmin || normalizarNombre(usuarioActual || '') === 'maria';
-    const filas = firmados.length ? firmados.map(p => {
+        const filas = firmados.length ? firmados.map(p => {
         const yo = normalizarNombre(p.creadoPor) === normalizarNombre(usuarioActual || '');
         const botones = [
           (esAdmin || yo) ? botonMini('Ver y editar', `abrirPickingExtraAdmin('${escapeAtributo(p.id)}')`) : '',
           p.hojaUrl ? botonMini('PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : '',
           botonMini('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32'),
-          puedeEmitir ? (p.emitido ? botonMini('Quitar emitido', `marcarEmitidoExtra('${escapeAtributo(p.id)}', false)`, '#8A5A00') : botonMini('Marcar emitido', `marcarEmitidoExtra('${escapeAtributo(p.id)}', true)`, '#2E7D32')) : ''
         ].join('');
         return `<div class="ticket" style="padding:10px 12px;">
         <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${escapeHtml(p.fecha)}</span></div>
         <div class="ticket-proj">${escapeHtml(p.proyecto || '—')} · ${p.lineas} línea${p.lineas === 1 ? '' : 's'} · hecho por ${escapeHtml(p.creadoPor)}</div>
         <div class="ticket-proj" style="font-size:12px;">Firmado por ${escapeHtml(p.firmadoPor || '—')} el ${escapeHtml(p.fechaEntrega || '—')}</div>
-        <div class="ticket-proj" style="font-size:12px; font-weight:600; color:${p.emitido ? '#2E7D32' : '#8A5A00'};">${p.emitido ? 'Emitido por ' + escapeHtml(p.emitidoPor || '—') + ' el ' + escapeHtml(p.emitido) : 'Sin emitir'}</div>
         <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin-top:8px;">${botones}</div>
       </div>`;
       }).join('') : `<div class="hint">No hay pickings extra firmados que puedas ver.</div>`;
