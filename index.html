@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1268</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1269</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11822,8 +11822,6 @@ function finalizarPickingExtra(){
   if(!sesionPicking.componentes.length){ toast('Escanea al menos un componente'); return; }
   mostrarSheet(`
     <h3>Picking extra · OF ${escapeHtml(sesionPicking.of)}</h3>
-    <label>Observación (quién lo pide)</label>
-    <input type="text" id="extraObs" placeholder="Ej. Pide: Pablo">
     <button class="btn btn-primary" onclick="extraGuardar(true)">Entregar ahora (firmar)</button>
     <button class="btn btn-outline" onclick="extraGuardar(false, this)">Guardar sin entregar</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Seguir escaneando</button>
@@ -11831,12 +11829,11 @@ function finalizarPickingExtra(){
 }
 function extraDatos(){
   if(!sesionPicking.idExtra) sesionPicking.idExtra = nuevoIdBorrador();
-  const obs = ((document.getElementById('extraObs') || {}).value || '').trim();
   return {
     id: sesionPicking.idExtra, of: sesionPicking.of, proyecto: sesionPicking.proyecto, subproyecto: sesionPicking.subproyecto,
     quien: usuarioActual || '', iniciales: inicialesEquipo(usuarioActual || '', ''),
     componentes: conDescripciones(sesionPicking.componentes), incidencias: conDescripciones(sesionPicking.incidencias),
-    observaciones: obs
+    observaciones: ''
   };
 }
 function extraGuardar(conFirma, btn){
@@ -11853,6 +11850,8 @@ function extraFirmar(){
     <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
     <label>Nombre de quien firma</label>
     <input type="text" id="firmaNombre" placeholder="Nombre de la persona de DHV">
+    <label>Observación</label>
+    <input type="text" id="extraObs">
     <button class="btn btn-primary" onclick="extraFirmaGuardar(this)">✓ Entregar y firmar</button>
     <button class="btn btn-outline" onclick="finalizarPickingExtra()">Volver</button>
   `);
@@ -11863,8 +11862,9 @@ function extraFirmaGuardar(btn){
   const nombre = ((document.getElementById('firmaNombre') || {}).value || '').trim();
   if(!c || !c.dataset.dibujado){ toast('Firma dentro del recuadro'); return; }
   if(!nombre){ toast('Escribe el nombre de quien firma'); return; }
+  const obs = ((document.getElementById('extraObs') || {}).value || '').trim();
   marcarEsperando(btn, 'Entregando y firmando');
-  extraEnviar(extraDatosPendientes, { png: c.toDataURL('image/png'), nombre: nombre });
+  extraEnviar(Object.assign({}, extraDatosPendientes, { observaciones: obs }), { png: c.toDataURL('image/png'), nombre: nombre });
 }
 function extraEnviar(datos, firma){
   if(!datos || extraEnviando) return;
@@ -11952,6 +11952,8 @@ function extraEntregarPendiente(id){
     <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
     <label>Nombre de quien firma</label>
     <input type="text" id="firmaNombre" placeholder="Nombre de la persona de DHV">
+    <label>Observación</label>
+    <input type="text" id="extraObs" value="${escapeAtributo((extrasPendientesCache || []).find(x => x.id === extraPendienteId) ? (extrasPendientesCache.find(x => x.id === extraPendienteId).observaciones || '') : '')}">
     <button class="btn btn-primary" onclick="extraFirmaPendienteGuardar(this)">✓ Entregar y firmar</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
   `);
@@ -11962,8 +11964,9 @@ function extraFirmaPendienteGuardar(btn){
   const nombre = ((document.getElementById('firmaNombre') || {}).value || '').trim();
   if(!c || !c.dataset.dibujado){ toast('Firma dentro del recuadro'); return; }
   if(!nombre){ toast('Escribe el nombre de quien firma'); return; }
+  const obs = ((document.getElementById('extraObs') || {}).value || '').trim();
   marcarEsperando(btn, 'Entregando y firmando');
-  llamarBackend('entregarPickingExtra', { id: extraPendienteId, quien: usuarioActual || '', firma: { png: c.toDataURL('image/png'), nombre: nombre } }, 'entx_' + Date.now(), 120000).then(r => {
+  llamarBackend('entregarPickingExtra', { id: extraPendienteId, quien: usuarioActual || '', observaciones: obs, firma: { png: c.toDataURL('image/png'), nombre: nombre } }, 'entx_' + Date.now(), 120000).then(r => {
     if(!r || r.ok === false){ cerrarSheet(); toast((r && r.error) || 'No se pudo entregar. Revisa la conexión'); return; }
     cerrarSheet();
     toast('Entregado y firmado');
