@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1285</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1287</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -558,14 +558,6 @@
       <button class="home-btn alt" id="btnPickingExtraHome" onclick="nuevoPickingExtra()">
         <b>Pickings extra</b>
         <span>Pickings de soporte o producción, entregados en el momento</span>
-      </button>
-      <button class="home-btn alt" id="btnInformeExtrasHome" onclick="abrirInformeExtras()" style="display:none;">
-        <b>Informe de pickings extra</b>
-        <span>Resumen por día y total por persona (solo firmados)</span>
-      </button>
-      <button class="home-btn alt" id="btnInformePlanificadosHome" onclick="abrirInformePlanificados()" style="display:none;">
-        <b>Informe de pickings planificados</b>
-        <span>Resumen por día y total por persona (registrados y ubicados)</span>
       </button>
     </div>
   </section>
@@ -11782,6 +11774,7 @@ function renderExtrasPendientes(){
       <div style="display:flex; justify-content:flex-end; gap:16px; margin-top:6px;">
         ${p.hojaUrl ? `<span class="link-action" onclick="event.stopPropagation(); window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}
         <span class="link-action" onclick="event.stopPropagation(); descargarExcelExtra('${escapeAtributo(p.id)}', this)">Excel para emitir</span>
+        ${puede ? botonMini('Borrar', `event.stopPropagation(); borrarExtraUsuario('${escapeAtributo(p.id)}', false)`, '#B33A3A') : ''}
       </div>
     </div>`;
   }).join('') : `<div class="hint">Ninguno coincide con la búsqueda</div>`;
@@ -11838,6 +11831,7 @@ function abrirFirmadosExtra(){
           (esAdmin || yo) ? botonMini('Ver y editar', `abrirPickingExtraAdmin('${escapeAtributo(p.id)}')`) : '',
           p.hojaUrl ? botonMini('PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : '',
           botonMini('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32'),
+          (esAdmin || normalizarNombre(usuarioActual || '') === 'maria' || yo) ? botonMini('Borrar', `borrarExtraUsuario('${escapeAtributo(p.id)}', true)`, '#B33A3A') : '',
         ].join('');
         return `<div class="ticket" style="padding:10px 12px;">
         <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${escapeHtml(p.fecha)}</span></div>
@@ -11889,7 +11883,7 @@ function pintarPickingExtraAdmin(){
     <input type="text" value="${escapeAtributo(p.observaciones || '')}" onchange="extraAdminActual.observaciones=this.value">
     <button class="btn btn-primary" onclick="guardarPickingExtraAdmin(this)">Guardar cambios</button>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
-      ${esAdm ? botonMini('Borrar picking', 'borrarPickingExtraAdmin()', '#B33A3A') : ''}
+      ${(esAdm || normalizarNombre(usuarioActual || '') === 'maria' || normalizarNombre(p.creadoPor) === normalizarNombre(usuarioActual || '')) ? botonMini('Borrar picking', 'borrarPickingExtraAdmin()', '#B33A3A') : ''}
       ${botonMini('Volver', 'abrirFirmadosExtra()', '#5A6573')}
     </div>`);
 }
@@ -11956,6 +11950,17 @@ function guardarPickingExtraAdmin(btn){
     if(!r || r.ok === false){ toast((r && r.error) || 'No se guardaron los cambios'); pintarPickingExtraAdmin(); return; }
     toast('Cambios guardados');
     abrirFirmadosExtra();
+  });
+}
+// Borrar un picking extra: lo puede hacer quien lo registró, María o un administrador
+function borrarExtraUsuario(id, volverAFirmados){
+  if(!confirm('¿Borrar este picking extra? Se borran su hoja y su firma, y deja de salir en los informes. No se puede deshacer.')) return;
+  llamarBackend('adminBorrarExtra', { id: id, quien: usuarioActual || '' }, 'adex_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo borrar'); return; }
+    cerrarSheet();
+    extraAdminActual = null;
+    toast('Picking borrado');
+    if(volverAFirmados) abrirFirmadosExtra(); else actualizarInicioExtra();
   });
 }
 function borrarPickingExtraAdmin(){
@@ -13157,12 +13162,6 @@ function actualizarVisibilidadAdmin(){
   if(btnInv) btnInv.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
   const btnAnt = document.getElementById('btnVerAntiguas');
   if(btnAnt) btnAnt.style.display = esAdminSheet(usuarioActual) ? '' : 'none';
-  // Informes: en la pantalla principal, para administradores y María
-  const puedeInformes = esAdminSheet(usuarioActual) || normalizarNombre(usuarioActual || '') === 'maria';
-  ['btnInformeExtrasHome', 'btnInformePlanificadosHome'].forEach(id => {
-    const b = document.getElementById(id);
-    if(b) b.style.display = puedeInformes ? '' : 'none';
-  });
   try{ actualizarBadgeAntiguas(); }catch(e){}
   try{ actualizarBadgeDuplicadas(); }catch(e){}
   try{ actualizarBotonAdministrador(); }catch(e){}
@@ -13293,7 +13292,7 @@ function actualizarBotonAdministrador(){
   let b = document.getElementById('btnAdministrador');
   if(!esAdm){ if(b) b.remove(); return; }
   if(!b){
-    const sec = document.getElementById('screen-buscar');
+    const sec = document.querySelector('#screen-home .home-grid') || document.getElementById('screen-home');
     if(!sec) return;
     b = document.createElement('button');
     b.className = 'btn btn-admin'; b.id = 'btnAdministrador';
@@ -13341,6 +13340,8 @@ function entrarAAdmin(){
     adminBoton('', 'Acciones de administradores', "abrirRegistroAdmin('Registro admin')") +
     sec('Pruebas') +
     adminBoton('', 'Probar firma (temporal)', "abrirPruebaFirma()") +
+    adminBoton('', 'Pickings extra (informe)', "abrirInformeExtras()") +
+    adminBoton('', 'Pickings planificados (informe)', "abrirInformePlanificados()") +
     sec('Personas y seguridad') +
     adminBoton('', 'Usuarios', "ir('admin-usuarios')") +
     adminBoton('', 'Copia de seguridad', "confirmarCopiaSeguridad()");
