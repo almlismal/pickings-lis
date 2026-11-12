@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1281</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1282</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11830,7 +11830,7 @@ function abrirFirmadosExtra(){
         const botones = [
           (esAdmin || yo) ? botonMini('Ver y editar', `abrirPickingExtraAdmin('${escapeAtributo(p.id)}')`) : '',
           p.hojaUrl ? botonMini('PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : '',
-          botonMini('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32', '#2E7D32'),
+          botonMini('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32'),
           puedeEmitir ? (p.emitido ? botonMini('Quitar emitido', `marcarEmitidoExtra('${escapeAtributo(p.id)}', false)`, '#8A5A00') : botonMini('Marcar emitido', `marcarEmitidoExtra('${escapeAtributo(p.id)}', true)`, '#2E7D32')) : ''
         ].join('');
         return `<div class="ticket" style="padding:10px 12px;">
@@ -11870,7 +11870,7 @@ function pintarPickingExtraAdmin(){
     <p class="hint" style="margin:0 0 8px;">${escapeHtml(p.proyecto || '—')} · hecho por ${escapeHtml(p.creadoPor)} · firmado por ${escapeHtml(p.firmadoPor || '—')}</p>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
       ${p.hojaUrl ? botonMini('Ver PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : ''}
-      ${botonMini('Excel', 'descargarExcelExtraFirmadoEditando(this)', '#2E7D32', '#2E7D32')}
+      ${botonMini('Excel', 'descargarExcelExtraFirmadoEditando(this)', '#2E7D32')}
     </div>
     <div style="max-height:34vh; overflow:auto;">${filas}</div>
     <label>Añadir línea</label>
