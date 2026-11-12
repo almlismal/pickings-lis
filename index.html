@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1273</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1274</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -18225,22 +18225,23 @@ function descargarExcelExtra(id, btn){
   if(!p){ toast('No encuentro ese picking, actualiza la pantalla'); return; }
   descargarExcelPicking(p.of, (p.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || p.hechoPor })), btn);
 }
-// Excel solo para emitir: se descarga al dispositivo y no se guarda en Drive.
+// Excel para emitir: se abre por enlace (Drive). Se abre la pestaña antes para que el móvil no la bloquee.
 async function descargarExcelPicking(of, filas, btn){
+  const ventana = window.open('', '_blank');
   if(btn) btn.disabled = true;
   try{
     const r = await llamarBackend('excelPicking', { of: of, filas: filas }, 'xl_' + Date.now(), 120000);
-    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo preparar el Excel'); return; }
-    const bin = atob(r.base64);
-    const arr = new Uint8Array(bin.length);
-    for(let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = r.nombre || ('OF ' + of + '.xlsx');
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-  } catch(e){ toast('No se pudo preparar el Excel'); }
+    if(!r || r.ok === false || !r.url){
+      if(ventana) ventana.close();
+      toast((r && r.error) || 'No se pudo preparar el Excel');
+      return;
+    }
+    if(ventana) ventana.location.href = r.url;
+    else window.open(r.url, '_blank');
+  } catch(e){
+    if(ventana) ventana.close();
+    toast('No se pudo preparar el Excel');
+  }
   finally{ if(btn) btn.disabled = false; }
 }
 function marcarEsperando(btn, texto){
