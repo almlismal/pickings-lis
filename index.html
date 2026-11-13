@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1315</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1316</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13758,8 +13758,39 @@ function abrirTiemposDiag(){
     <p class="hint" style="margin:0 0 8px;">Registros guardados en este móvil: ${lista.length}.</p>
     ${resumenExtra}
     ${filas ? `<table style="width:100%; font-size:13px; margin-top:10px;"><tr><th style="text-align:left;">Acción</th><th style="text-align:right;">Nº</th><th style="text-align:right;">Mediana</th><th style="text-align:right;">Máx.</th><th style="text-align:right;">Fallos</th></tr>${filas}</table>` : '<div class="hint">Todavía no hay datos.</div>'}
+    <button class="btn btn-primary" onclick="verDiagnosticoTodos()">Ver todos los móviles</button>
     <button class="btn btn-outline" onclick="try{localStorage.removeItem(LS_TIEMPOS);localStorage.removeItem(LS_EVENTOS);}catch(e){} abrirTiemposDiag();">Borrar datos</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+}
+// Diagnóstico de todos los móviles, leído de la hoja (solo administradores)
+function verDiagnosticoTodos(){
+  mostrarSheet(`<h3>Todos los móviles</h3><div id="diagTodos" class="hint">Cargando…</div>
+    <button class="btn btn-outline" onclick="abrirTiemposDiag()">Volver</button>`);
+  llamarBackend('leerDiagnostico', { quien: usuarioActual || '' }, 'leerDiag_' + Date.now(), 60000).then(r => {
+    const cont = document.getElementById('diagTodos'); if(!cont) return;
+    if(!r || r.ok === false){ cont.innerHTML = escapeHtml((r && r.error) || 'No se pudo cargar'); return; }
+    const filas = r.filas || [];
+    if(!filas.length){ cont.innerHTML = 'Todavía no hay datos en la hoja.'; return; }
+    const porUsuario = {};
+    filas.forEach(f => { const u = f.usuario || '—'; (porUsuario[u] = porUsuario[u] || []).push(f); });
+    const mediana = arr => { const o = arr.slice().sort((a,b)=>a-b); return o[Math.floor(o.length/2)]; };
+    const bloques = Object.keys(porUsuario).sort().map(u => {
+      const reg = porUsuario[u];
+      const errs = reg.filter(f => f.tipo === 'error');
+      const tiempos = reg.filter(f => f.tipo === '' && f.ms !== '');
+      const porAccion = {};
+      tiempos.forEach(f => { (porAccion[f.a] = porAccion[f.a] || []).push(Number(f.ms)); });
+      const lineas = Object.keys(porAccion).sort().map(a => `<div style="font-size:12px;">${escapeHtml(a)}: mediana ${mediana(porAccion[a])} ms · máx ${Math.max(...porAccion[a])} ms · ${porAccion[a].length}</div>`).join('');
+      const erroresHtml = errs.slice(-5).map(f => `<div style="font-size:12px; color:#B33A3A;">${escapeHtml(String(f.recibido).slice(11,16))} · ${escapeHtml(f.a)} · ${escapeHtml(f.msg)}</div>`).join('');
+      const ultimo = reg.map(f => String(f.recibido)).sort().pop() || '';
+      return `<div class="ticket" style="cursor:default; padding:10px 12px;">
+        <div class="ticket-top"><span class="ticket-of">${escapeHtml(u)}</span><span class="ticket-date">${errs.length} error${errs.length===1?'':'es'}</span></div>
+        ${lineas || '<div class="hint">Sin tiempos</div>'}${erroresHtml}
+        <div class="hint" style="margin-top:4px;">Último envío: ${escapeHtml(ultimo.slice(0,16).replace('T',' '))}</div>
+      </div>`;
+    }).join('');
+    cont.innerHTML = `<div class="hint" style="margin-bottom:8px;">${filas.length} registros de ${Object.keys(porUsuario).length} personas (últimos 1500)</div>` + bloques;
+  }).catch(() => { const cont = document.getElementById('diagTodos'); if(cont) cont.textContent = 'No se pudo cargar.'; });
 }
 function confirmarReiniciarLotes(){
   mostrarSheet(`<h3>Lotes recordados</h3>
