@@ -527,7 +527,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1305</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1306</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11772,6 +11772,10 @@ function botonFirmadosExtra(){
   return `<button class="btn btn-outline" onclick="abrirFirmadosExtra()" style="margin-top:10px;">Ver pickings extra firmados</button>`;
 }
 let extrasPendientesCache = [];
+// Título de las listas de pickings en curso y pendientes (mismo aspecto en planificados y extra)
+function tituloListaPickings(texto, margen){
+  return `<div class="hint" style="margin:${margen || '0 0 6px'}; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">${texto}</div>`;
+}
 function renderExtrasPendientes(){
   const cont = document.getElementById('extraPendientes');
   if(!cont) return;
@@ -11793,7 +11797,7 @@ function renderExtrasPendientes(){
       </div>
     </div>`;
   }).join('') : `<div class="hint">Ninguno coincide con la búsqueda</div>`;
-  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Pendientes de firma (${lista.length})</div>` + tarjetas + botonFirmados;
+  cont.innerHTML = tituloListaPickings(`Pendientes de firma (${lista.length})`) + tarjetas + botonFirmados;
 }
 // ---- búsqueda en las listas: por número de OF o por nombre de cualquiera que tenga líneas ----
 let filtroPickingsTexto = '';
@@ -12488,7 +12492,7 @@ function renderPausados(){
     .filter(d => (!!(d.sesion && d.sesion.extra)) === !!rpModoExtra)
     .filter(d => coincideFiltroPickings(filtroPickingsTexto, d.of, nombresDePausado(d)));
   if(!lista.length){ cont.innerHTML = ''; return; }
-  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Pickings en curso (${lista.length}) — toca uno para seguir</div>
+  cont.innerHTML = `${tituloListaPickings(`Pickings en curso (${lista.length}) — toca uno para seguir`)}
     ${lista.map(d=>{
       const nLin = d.fase==='bip' ? ((d.sesion&&d.sesion.componentes)||[]).length : ((d.pendiente&&d.pendiente.componentes)||[]).length;
       const nInc = d.fase==='bip' ? ((d.sesion&&d.sesion.incidencias)||[]).length : ((d.pendiente&&d.pendiente.incidencias)||[]).length;
@@ -12508,7 +12512,7 @@ function renderPausados(){
         </div>
       </div>`;
     }).join('')}
-    <div class="hint" style="margin:12px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">O empieza otro</div>`;
+    ${tituloListaPickings('O empieza otro', '12px 0 4px')}`;
 }
 // Etiqueta informativa del estado de un picking en curso (solo informa)
 function estadoPausadoHtml(d, uso){
