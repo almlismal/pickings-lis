@@ -526,7 +526,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1296</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1297</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11683,6 +11683,7 @@ function guardarBorradorBip(fase, extra){
       let d = buscarPausado(borradorActivoId);
       if(!d){ d = { id: borradorActivoId, creadoPor: usuarioActual||'', creado: ahoraISO }; pausados.push(d); }
       d.fase = 'bip'; d.of = sesionPicking.of; d.proyecto = sesionPicking.proyecto||''; d.subproyecto = sesionPicking.subproyecto||'';
+      if(!Array.isArray(sesionPicking.parciales)) sesionPicking.parciales = [];
       d.sesion = JSON.parse(JSON.stringify(sesionPicking)); delete d.pendiente; d.borrado = false;
       d.actualizadoPor = usuarioActual||''; d.actualizado = ahoraISO; d.enUsoPor = usuarioActual||''; d.enUsoDesde = d.enUsoDesde || ahoraISO; d.sync = 'sucio';
     } else if(fase === 'registro' && pickingPendienteDatos){
@@ -12341,8 +12342,9 @@ function pickingParcial(){
   // Guardar solo mi parte: queda marcada como guardada y la OF sigue abierta.
   // La OF no se puede terminar hasta que todas las partes estén guardadas (ver terminarPicking).
   const idParte = borradorActivoId || (sesionPicking && sesionPicking.draftId);
-  if(!sesionPicking.parciales) sesionPicking.parciales = [];
-  if(!yaGuardoParte(sesionPicking, yo)) sesionPicking.parciales.push(yo);
+  const creador = (base && base.creadoPor) || yo;
+  if(!Array.isArray(sesionPicking.parciales)) sesionPicking.parciales = parcialesDe(sesionPicking, creador).slice();
+  if(!yaGuardoParte(sesionPicking, yo, creador)) sesionPicking.parciales.push(yo);
   pausarPicking();
   if(idParte) hojaParcialDePausado(idParte);
 }
@@ -12355,11 +12357,16 @@ function autoresDeSesion(s, creador){
   (s.incidencias||[]).forEach(i=>add(i.por||creador));
   return nombres;
 }
-function yaGuardoParte(s, nombre){
-  return (s.parciales||[]).some(n=>normalizarNombre(n)===normalizarNombre(nombre));
+// Partes ya guardadas. Los pickings de antes de la versión 1296 no tienen la lista:
+// en ese caso se considera guardada la parte de cada autor que ya tiene líneas.
+function parcialesDe(s, creador){
+  return Array.isArray(s.parciales) ? s.parciales : autoresDeSesion(s, creador);
+}
+function yaGuardoParte(s, nombre, creador){
+  return parcialesDe(s, creador).some(n=>normalizarNombre(n)===normalizarNombre(nombre));
 }
 function partesPendientesDe(s, creador){
-  return autoresDeSesion(s, creador).filter(n=>!yaGuardoParte(s, n));
+  return autoresDeSesion(s, creador).filter(n=>!yaGuardoParte(s, n, creador));
 }
 
 // Hoja parcial de mi parte, sacada desde la tarjeta del picking en curso.
@@ -12443,6 +12450,7 @@ function retomarPausado(id, confirmado){
   programarSincPausados(1500);
   if(d.fase === 'bip' && d.sesion){
     sesionPicking = JSON.parse(JSON.stringify(d.sesion));
+    if(!Array.isArray(sesionPicking.parciales)) sesionPicking.parciales = parcialesDe(d.sesion, d.creadoPor).slice();
     sesionPicking.soloMias = soloMias;
     resetIncidenciasEnCurso();
     sesionPicking.draftId = d.id;
@@ -12517,7 +12525,7 @@ function renderPausados(){
 function estadoPausadoHtml(d, uso){
   if(uso) return `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><b>● En curso</b> · lo está haciendo ${escapeHtml(d.enUsoPor)}</div>`;
   if(d.fase !== 'bip' || !d.sesion) return '';
-  const guardadas = d.sesion.parciales || [];
+  const guardadas = parcialesDe(d.sesion, d.creadoPor);
   if(!guardadas.length) return `<div class="ticket-proj" style="color:var(--ink-soft); font-size:12px;"><b>❚❚ Pausado</b> · nadie ha guardado su parte</div>`;
   const faltan = partesPendientesDe(d.sesion, d.creadoPor);
   const texto = faltan.length
