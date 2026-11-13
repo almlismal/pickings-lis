@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1316</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1317</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13768,9 +13768,11 @@ function verDiagnosticoTodos(){
     <button class="btn btn-outline" onclick="abrirTiemposDiag()">Volver</button>`);
   llamarBackend('leerDiagnostico', { quien: usuarioActual || '' }, 'leerDiag_' + Date.now(), 60000).then(r => {
     const cont = document.getElementById('diagTodos'); if(!cont) return;
-    if(!r || r.ok === false){ cont.innerHTML = escapeHtml((r && r.error) || 'No se pudo cargar'); return; }
+    // Respuesta tal cual la devuelve el servidor, para ver la causa si no aparece nada
+    const crudo = `<div style="font-size:11px; color:#5B6573; word-break:break-all; margin-top:10px;">Respuesta del servidor: ${escapeHtml(JSON.stringify(r).slice(0, 300))}</div>`;
+    if(!r || r.ok === false){ cont.innerHTML = escapeHtml((r && r.error) || 'No se pudo cargar') + crudo; return; }
     const filas = r.filas || [];
-    if(!filas.length){ cont.innerHTML = 'Todavía no hay datos en la hoja.'; return; }
+    if(!filas.length){ cont.innerHTML = 'No hay filas que mostrar.' + crudo; return; }
     const porUsuario = {};
     filas.forEach(f => { const u = f.usuario || '—'; (porUsuario[u] = porUsuario[u] || []).push(f); });
     const mediana = arr => { const o = arr.slice().sort((a,b)=>a-b); return o[Math.floor(o.length/2)]; };
