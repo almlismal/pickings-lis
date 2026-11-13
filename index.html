@@ -522,12 +522,16 @@
 .btn-subiendo{background:linear-gradient(90deg,#0F5257,#D9822B,#1F4E79,#0F5257) !important; background-size:300% 100% !important; border-color:transparent !important; color:#fff !important; animation:barraSubida 2.4s linear infinite;}
 @keyframes barraSubida{from{background-position:0% 50%;} to{background-position:300% 50%;}}
   .acciones-tarjeta{ display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  /* ---- pulido final: foco visible y área táctil cómoda, sin cambiar la forma de nada ---- */
+  .btn:focus-visible, .home-btn:focus-visible, .ticket:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .acciones-tarjeta .btn{ min-height:38px; }
+  .ticket-proj{ line-height:1.35; }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1309</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1310</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
