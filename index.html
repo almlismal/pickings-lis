@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1311</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1315</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11086,7 +11086,41 @@ function comprobarCierreSesionPorTurno(){
   }
 }
 
+// ---- diagnóstico silencioso: cuánto tarda cada petición al servidor (solo en este móvil, sin cambiar nada en pantalla) ----
+const LS_TIEMPOS = 'lis_tiempos_diag';
+function registrarTiempo(etiqueta, ms, ok){
+  try{
+    const lista = JSON.parse(localStorage.getItem(LS_TIEMPOS) || '[]');
+    lista.push({ t: new Date().toISOString(), a: etiqueta, ms: Math.round(ms), ok: !!ok });
+    localStorage.setItem(LS_TIEMPOS, JSON.stringify(lista.slice(-400)));
+  }catch(e){}
+}
+// Eventos técnicos: errores, cambios de pantalla y datos del móvil. Nunca guarda códigos ni nombres de picking.
+// Eventos en su propio registro, para que las pantallas abiertas no empujen fuera los tiempos
+const LS_EVENTOS = 'lis_eventos_diag';
+function registrarEvento(tipo, datos){
+  try{
+    const lista = JSON.parse(localStorage.getItem(LS_EVENTOS) || '[]');
+    lista.push(Object.assign({ t: new Date().toISOString(), tipo: tipo }, datos || {}));
+    localStorage.setItem(LS_EVENTOS, JSON.stringify(lista.slice(-400)));
+  }catch(e){}
+}
+window.addEventListener('error', e => registrarEvento('error', { a: 'js', msg: String(e.message || '').slice(0, 200) }));
+window.addEventListener('unhandledrejection', e => registrarEvento('error', { a: 'promesa', msg: String((e.reason && e.reason.message) || e.reason || '').slice(0, 200) }));
+registrarEvento('movil', { a: navigator.userAgent.slice(0, 160), ancho: window.innerWidth, alto: window.innerHeight, pixeles: window.devicePixelRatio, online: navigator.onLine });
+function etiquetaPeticion(url, opciones){
+  try{ if(opciones && opciones.body) return String(JSON.parse(opciones.body).accion || 'post'); }catch(e){}
+  const m = String(url).match(/[?&](\w+)=/);
+  return m ? 'get:' + m[1] : 'get';
+}
 function fetchConLimite(url, opciones, msLimite){
+  const t0 = Date.now();
+  const etiqueta = etiquetaPeticion(url, opciones);
+  return fetchConLimiteBase(url, opciones, msLimite).then(
+    r => { registrarTiempo(etiqueta, Date.now() - t0, true); return r; },
+    e => { registrarTiempo(etiqueta, Date.now() - t0, false); throw e; });
+}
+function fetchConLimiteBase(url, opciones, msLimite){
   // Se usa XMLHttpRequest en vez de fetch(): Safari/iOS tiene un fallo
   // conocido ("Load failed") al pedir URLs de Apps Script con fetch(),
   // por cómo Google redirige internamente la petición. XHR no tiene ese problema.
@@ -13201,6 +13235,7 @@ function cargarNombres(){
 
 /* ---------- navegación ---------- */
 function ir(pantalla, esVolver){
+  registrarEvento('pantalla', { a: pantalla });
   const anterior = document.querySelector('.screen.active');
   if(anterior && anterior.id==='screen-escanear' && pantalla!=='escanear'){ detenerEscaner(); escanerParaInicio = false; }
   if(anterior && anterior.id==='screen-realizar-bip' && pantalla!=='realizar-bip') detenerBipCamara();
@@ -13426,6 +13461,7 @@ function entrarAAdmin(){
     adminBoton('', 'Pickings planificados (informe)', "abrirInformePlanificados()") +
     sec('Personas y seguridad') +
     adminBoton('', 'Usuarios', "ir('admin-usuarios')") +
+    adminBoton('', 'Tiempos de respuesta (diagnóstico)', "abrirTiemposDiag()") +
     adminBoton('', 'Copia de seguridad', "confirmarCopiaSeguridad()") +
     adminBoton('', 'Lotes recordados (reiniciar)', "confirmarReiniciarLotes()");
   try{ actualizarBadgeAntiguas(); }catch(e){}
@@ -13693,6 +13729,38 @@ function adminVerActividad(i, hojaReg){
 }
 
 /* ---------- lotes recordados: reiniciar ---------- */
+// Lectura de los tiempos guardados en este móvil: mediana y máximo por tipo de petición
+function abrirTiemposDiag(){
+  let lista = [];
+  try{
+    lista = JSON.parse(localStorage.getItem(LS_TIEMPOS) || '[]')
+      .concat(JSON.parse(localStorage.getItem(LS_EVENTOS) || '[]'));
+  }catch(e){}
+  const grupos = {};
+  lista.filter(x => x.ms !== undefined).forEach(x => { (grupos[x.a] = grupos[x.a] || []).push(x); });
+  const mediana = arr => { const o = arr.slice().sort((a,b)=>a-b); return o[Math.floor(o.length/2)]; };
+  const filas = Object.keys(grupos).sort().map(k => {
+    const ms = grupos[k].map(x => x.ms), fallos = grupos[k].filter(x => !x.ok).length;
+    return `<tr><td>${escapeHtml(k)}</td><td style="text-align:right;">${ms.length}</td><td style="text-align:right;">${mediana(ms)} ms</td><td style="text-align:right;">${Math.max(...ms)} ms</td><td style="text-align:right;">${fallos}</td></tr>`;
+  }).join('');
+  const errores = lista.filter(x => x.tipo === 'error');
+  const pantallas = {};
+  lista.filter(x => x.tipo === 'pantalla').forEach(x => { pantallas[x.a] = (pantallas[x.a] || 0) + 1; });
+  const movil = lista.filter(x => x.tipo === 'movil').pop();
+  const resumenExtra = `
+    <div class="hint" style="margin:10px 0 4px; font-weight:700;">Móvil</div>
+    <div style="font-size:12px; word-break:break-all;">${movil ? escapeHtml(movil.a + ' · ' + movil.ancho + '×' + movil.alto + ' · ' + movil.pixeles + 'x') : 'sin datos'}</div>
+    <div class="hint" style="margin:10px 0 4px; font-weight:700;">Errores (${errores.length})</div>
+    ${errores.length ? errores.slice(-10).map(x => `<div style="font-size:12px;">${escapeHtml(x.t.slice(11,19))} · ${escapeHtml(x.a)} · ${escapeHtml(x.msg || '')}</div>`).join('') : '<div style="font-size:12px;">Ninguno</div>'}
+    <div class="hint" style="margin:10px 0 4px; font-weight:700;">Pantallas abiertas</div>
+    <div style="font-size:12px;">${Object.keys(pantallas).sort().map(k => escapeHtml(k) + ': ' + pantallas[k]).join(' · ') || 'Ninguna'}</div>`;
+  mostrarSheet(`<h3>Tiempos de respuesta</h3>
+    <p class="hint" style="margin:0 0 8px;">Registros guardados en este móvil: ${lista.length}.</p>
+    ${resumenExtra}
+    ${filas ? `<table style="width:100%; font-size:13px; margin-top:10px;"><tr><th style="text-align:left;">Acción</th><th style="text-align:right;">Nº</th><th style="text-align:right;">Mediana</th><th style="text-align:right;">Máx.</th><th style="text-align:right;">Fallos</th></tr>${filas}</table>` : '<div class="hint">Todavía no hay datos.</div>'}
+    <button class="btn btn-outline" onclick="try{localStorage.removeItem(LS_TIEMPOS);localStorage.removeItem(LS_EVENTOS);}catch(e){} abrirTiemposDiag();">Borrar datos</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+}
 function confirmarReiniciarLotes(){
   mostrarSheet(`<h3>Lotes recordados</h3>
     <p style="font-size:14px; margin:0 0 12px;">Los lotes que se usan para cada PN se recuerdan en este móvil para ofrecerlos al bipear. Aquí puedes borrarlos cuando queden obsoletos. No cambia ninguna OF ni ninguna hoja ya hecha, y solo afecta a este móvil.</p>
@@ -19878,8 +19946,27 @@ function confirmarAmpliacion(){
 }
 
 /* ---------- init ---------- */
+// Envío silencioso del diagnóstico a la hoja (como mucho cada hora, solo lo nuevo, sin bloquear nada)
+let ultimoEnvioDiag = 0;
+function enviarDiagnosticoSiToca(){
+  if(!usuarioActual || navigator.onLine === false) return;
+  if(Date.now() - ultimoEnvioDiag < 3600000) return;
+  ultimoEnvioDiag = Date.now();
+  let lista = [], desde = 0;
+  try{
+    lista = JSON.parse(localStorage.getItem(LS_TIEMPOS) || '[]').concat(JSON.parse(localStorage.getItem(LS_EVENTOS) || '[]'));
+    desde = Number(localStorage.getItem('lis_diag_enviado_hasta') || 0);
+  }catch(e){}
+  const nuevas = lista.filter(x => new Date(x.t).getTime() > desde);
+  if(!nuevas.length) return;
+  const hasta = Math.max(...nuevas.map(x => new Date(x.t).getTime()));
+  llamarBackend('enviarDiagnostico', { usuario: usuarioActual, movil: navigator.userAgent.slice(0, 160), filas: nuevas.slice(-400) }, 'diag_' + Date.now(), 30000)
+    .then(r => { if(r && r.ok !== false){ try{ localStorage.setItem('lis_diag_enviado_hasta', String(hasta)); }catch(e){} } })
+    .catch(() => {});
+}
 async function iniciar(){
   window.__appListo = true;
+  setTimeout(enviarDiagnosticoSiToca, 8000);
   try{ iniciarCatalogo(); }catch(e){}
   try{ cargarPausados(); actualizarBadgePausados(); programarSincPausados(3000); }catch(e){}
   try{ setTimeout(procesarRegenHojas, 5000); }catch(e){}
@@ -19921,6 +20008,7 @@ async function iniciar(){
     if(activa === 'screen-entregados') cargarEntregadosYActualizar().then(renderEntregados).catch(()=>{});
   }, 20000);
   document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible') enviarDiagnosticoSiToca();
     if(document.visibilityState === 'hidden'){
       camPausadaPorSegundoPlano = rpEscaneando ? 'bip' : (escanerEscaneando ? 'escanear' : '');
       if(camPausadaPorSegundoPlano){ detenerBipCamara(); detenerEscaner(); }
