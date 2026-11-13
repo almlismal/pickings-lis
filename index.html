@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1310</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1311</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -766,7 +766,7 @@
         <span>Picking de una OF planificada</span>
       </button>
       <button class="home-btn" id="btnPickingExtraHome" onclick="nuevoPickingExtra()">
-        <b>Extra</b>
+        <b>Extra<span id="badgePausadosExtra"></span></b>
         <span>Soporte o producción, entregados en el momento</span>
       </button>
     </div>
@@ -12529,10 +12529,15 @@ function estadoPausadoHtml(d, uso){
   if(faltan.length) html += `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><b>Falta que ${escapeHtml(faltan.join(' y '))} guarde su parte</b></div>`;
   return html;
 }
+// Contador de cada botón: planificados y extra por separado (cada uno cuenta solo los suyos)
 function actualizarBadgePausados(){
+  const esExtra = d => !!(d.sesion && d.sesion.extra);
+  const planificados = pausadosVisibles().filter(d => !esExtra(d)).length;
+  const extras = pausadosVisibles().filter(esExtra).length;
   const el = document.getElementById('badgePausados');
-  const n = pausadosVisibles().length;
-  if(el) el.textContent = n ? ' · ' + n + ' en curso' : '';
+  if(el) el.textContent = planificados ? ' · ' + planificados + ' en curso' : '';
+  const elExtra = document.getElementById('badgePausadosExtra');
+  if(elExtra) elExtra.textContent = extras ? ' · ' + extras + ' en curso' : '';
 }
 
 // ---- sincronización con la hoja ----
