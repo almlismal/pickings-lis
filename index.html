@@ -456,7 +456,8 @@
   .toast.show{ opacity:1; }
 
   .screen{ display:none; }
-  .screen.active{ display:block; }
+  .screen.active{ display:block; animation: pantallaEntra .22s ease-out; }
+  @keyframes pantallaEntra{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
 
   /* ---- hoja de picking imprimible (dentro de "Realizar picking") ----
      Calca el diseño de la hoja de picking en papel: caja de cabecera con
@@ -525,7 +526,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1290</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1295</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -759,7 +760,7 @@
         <b>Planificado<span id="badgePausados"></span></b>
         <span>Picking de una OF planificada</span>
       </button>
-      <button class="home-btn alt" id="btnPickingExtraHome" onclick="nuevoPickingExtra()">
+      <button class="home-btn" id="btnPickingExtraHome" onclick="nuevoPickingExtra()">
         <b>Extra</b>
         <span>Soporte o producción, entregados en el momento</span>
       </button>
@@ -11758,18 +11759,21 @@ function actualizarInicioExtra(){
   const cont = document.getElementById('extraPendientes');
   if(!cont) return;
   if(!rpModoExtra){ cont.innerHTML = ''; return; }
-  cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">Cargando los pendientes de firma…</div>';
+  cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">Cargando los pendientes de firma…</div>' + botonFirmadosExtra();
   llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'lista_ext_' + Date.now(), 30000).then(r => {
     if(!rpModoExtra) return;
     extrasPendientesCache = ((r && r.pickings) || []).filter(p => p.estado === 'pendiente');
     renderExtrasPendientes();
-  }).catch(() => { cont.innerHTML = ''; });
+  }).catch(() => { cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">No se pudo cargar la lista de pendientes.</div>' + botonFirmadosExtra(); });
+}
+function botonFirmadosExtra(){
+  return `<button class="btn btn-outline" onclick="abrirFirmadosExtra()" style="margin-top:10px;">Ver pickings extra firmados</button>`;
 }
 let extrasPendientesCache = [];
 function renderExtrasPendientes(){
   const cont = document.getElementById('extraPendientes');
   if(!cont) return;
-  const botonFirmados = `<button class="btn btn-outline" onclick="abrirFirmadosExtra()" style="margin-top:10px;">Ver pickings extra firmados</button>`;
+  const botonFirmados = botonFirmadosExtra();
   if(!extrasPendientesCache.length){ cont.innerHTML = botonFirmados; return; }
   const yo = normalizarNombre(usuarioActual || '');
   const lista = extrasPendientesCache.filter(p => coincideFiltroPickings(filtroPickingsTexto, p.of, [p.creadoPor, p.hechoPor]));
@@ -11828,13 +11832,9 @@ function marcarEmitidoExtra(id, emitido){
     abrirFirmadosExtra();
   });
 }
-function abrirFirmadosExtra(){
-  llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'firm_' + Date.now(), 30000).then(r => {
-    const firmados = ((r && r.pickings) || []).filter(p => p.estado === 'entregado')
-      .sort((a, b) => ((b.fecha + b.hora) > (a.fecha + a.hora) ? 1 : -1));
-    firmadosExtraCache = firmados;
+// Una tarjeta de picking extra firmado
+function tarjetaFirmado(p){
     const esAdmin = esAdminSheet(usuarioActual);
-        const filas = firmados.length ? firmados.map(p => {
         const yo = normalizarNombre(p.creadoPor) === normalizarNombre(usuarioActual || '');
         const botones = [
           (esAdmin || yo) ? botonMini('Ver y editar', `abrirPickingExtraAdmin('${escapeAtributo(p.id)}')`) : '',
@@ -11842,16 +11842,44 @@ function abrirFirmadosExtra(){
           botonMini('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32'),
           (esAdmin || normalizarNombre(usuarioActual || '') === 'maria' || yo) ? botonMini('Borrar', `borrarExtraUsuario('${escapeAtributo(p.id)}', true)`, '#B33A3A') : '',
         ].join('');
-        return `<div class="ticket" style="padding:10px 12px;">
+    return `<div class="ticket" style="padding:10px 12px;">
         <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${escapeHtml(p.fecha)}</span></div>
         <div class="ticket-proj">${escapeHtml(p.proyecto || '—')} · ${p.lineas} línea${p.lineas === 1 ? '' : 's'} · hecho por ${escapeHtml(p.creadoPor)}</div>
         <div class="ticket-proj" style="font-size:12px;">Firmado por ${escapeHtml(p.firmadoPor || '—')} el ${escapeHtml(p.fechaEntrega || '—')}</div>
         <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin-top:8px;">${botones}</div>
       </div>`;
-      }).join('') : `<div class="hint">No hay pickings extra firmados que puedas ver.</div>`;
-    mostrarSheet(`<h3>Pickings extra firmados</h3><div style="max-height:60vh; overflow:auto;">${filas}</div>
+}
+function abrirFirmadosExtra(){
+  llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'firm_' + Date.now(), 30000).then(r => {
+    const firmados = ((r && r.pickings) || []).filter(p => p.estado === 'entregado')
+      .sort((a, b) => ((b.fecha + b.hora) > (a.fecha + a.hora) ? 1 : -1));
+    firmadosExtraCache = firmados;
+    const dias = [...new Set(firmados.map(p => p.fecha))].sort().reverse();
+    const ultimo = dias[0] || '';
+    mostrarSheet(`<h3>Pickings extra firmados</h3>
+      <div style="display:flex; align-items:center; gap:10px; margin:4px 0 10px;">
+        <input type="date" id="firmadosDia" value="${escapeAtributo(ultimo)}" ${dias.length ? `min="${escapeAtributo(dias[dias.length-1])}" max="${escapeAtributo(dias[0])}"` : ''} onchange="pintarFirmadosDia(this.value)"
+          style="padding:9px 12px; font-size:15px; font-weight:600; color:#1F4E79; background:#fff; border:1px solid #1F4E79; border-radius:10px;">
+        <span class="hint" style="margin:0;">${dias.length ? 'Último día con firmados: ' + escapeHtml(ultimo) : ''}</span>
+      </div>
+      ${puedeFiltrarPorNombre() ? `<input type="text" id="firmadosNombre" placeholder="Filtrar por nombre" oninput="pintarFirmadosDia(document.getElementById('firmadosDia').value)" style="margin-bottom:8px;">` : ''}
+      <div id="firmadosLista" style="max-height:56vh; overflow:auto;"></div>
       <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+    pintarFirmadosDia(ultimo);
   });
+}
+// Filtrar la lista de firmados por nombre: Adrián, María y los administradores
+function puedeFiltrarPorNombre(){
+  return esAdminSheet(usuarioActual) || normalizarNombre(usuarioActual || '') === 'maria' || esDeAdrianUI(usuarioActual);
+}
+function esDeAdrianUI(n){ return normalizarNombre(n || '').indexOf('adrian') !== -1; }
+function pintarFirmadosDia(dia){
+  const cont = document.getElementById('firmadosLista');
+  if(!cont) return;
+  const filtro = normalizarNombre(((document.getElementById('firmadosNombre') || {}).value || '').trim());
+  const coincide = p => !filtro || [p.creadoPor, p.firmadoPor, p.hechoPor].concat((p.componentes || []).map(c => c.por || '')).some(n => normalizarNombre(n || '').indexOf(filtro) !== -1);
+  const lista = (firmadosExtraCache || []).filter(p => p.fecha === dia && coincide(p));
+  cont.innerHTML = lista.length ? lista.map(tarjetaFirmado).join('') : `<div class="hint">No hay pickings firmados ese día.</div>`;
 }
 let extraDatosPendientes = null, extraEnviando = false, extraPendienteId = null;
 // Administrador: ver, editar o borrar un extra firmado
@@ -15937,6 +15965,14 @@ async function guardarPicking(){
 
 function mostrarConfirmacionRegistro(datos, verificada){
   pendienteRegistro = datos;
+  // Si el picking ya trae líneas de otras personas, ya sabemos quién lo hizo: no se vuelve a preguntar
+  const registrador = datos.registradoPor || usuarioActual || '';
+  const comps = datos.componentes || (pickingPendienteDatos && pickingPendienteDatos.componentes) || [];
+  const autores = [];
+  comps.forEach(c => { const a = String(c.por || '').trim(); if(a && !autores.some(x => normalizarNombre(x) === normalizarNombre(a))) autores.push(a); });
+  const otros = autores.filter(a => normalizarNombre(a) !== normalizarNombre(registrador));
+  if(otros.length && !datos.segundaPersona) datos.segundaPersona = otros[0];
+  const quienes = (autores.length ? autores : [registrador]).join(' y ');
   segundaModo = 'registro'; segundaElegida = datos.segundaPersona || '';
   mostrarSheet(`
     <h3>Confirmar registro</h3>
@@ -15949,8 +15985,10 @@ function mostrarConfirmacionRegistro(datos, verificada){
     <p style="font-size:14px; color:var(--ink-soft); text-align:center; margin:0 0 4px;">
       Proyecto <b style="color:var(--ink);">${datos.proyecto || '—'}</b>${datos.subproyecto ? ` · FM <b style="color:var(--ink);">${datos.subproyecto}</b>` : ''}
     </p>
-    <label>Otra persona que lo hizo (opcional)</label>
-    <div id="segundaPersonaBurbujas" style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px;">${burbujasSegundaPersona(datos.segundaPersona || '', datos.registradoPor || usuarioActual)}</div>
+    ${otros.length
+      ? `<div class="hint" style="margin:0 0 12px;"><b>Lo hicieron:</b> ${escapeHtml(quienes)}</div>`
+      : `<label>Otra persona que lo hizo (opcional)</label>
+    <div id="segundaPersonaBurbujas" style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px;">${burbujasSegundaPersona(datos.segundaPersona || '', datos.registradoPor || usuarioActual)}</div>`}
     <button class="btn btn-primary" onclick="confirmarPasoRegistro(false)">✓ Está bien, registrar</button>
     <button class="btn btn-outline" onclick="confirmarPasoRegistro(true)">Registrar y añadir otra OF de este proyecto</button>
     ${!verificada ? `<button class="btn btn-outline" onclick="verificarOfConCamara()">Escanear la etiqueta para comprobar la OF</button>` : ''}
@@ -17197,31 +17235,40 @@ async function refrescarRegistroRealizados(){
   await cargarRealizadosEspera();
   const lista = realizadosEsperaCache || [];
   if(!lista.length){ cont.innerHTML = ''; return; }
-  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Picking ya hecho, pendiente de ubicar (${lista.length})</div>` + lista.map(x=>{
-    const n = (x.datos && x.datos.componentes) ? x.datos.componentes.length : 0;
-    const hecho = x.hechoPor || (x.datos && x.datos.hechoPor) || '—';
-    const termino = x.terminadoPor || '';
-    const personas = personasDeRealizado(x);
-    const idAt = escapeAtributo(x.id);
-    return `<div class="ticket">
-      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(x.of)}</span><span class="ticket-date">${n} línea${n===1?'':'s'}</span></div>
+  cont.innerHTML = `<div class="hint" style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">Picking ya hecho, pendiente de ubicar (${lista.length})</div>` + lista.map(tarjetaRealizadoEspera).join('') + `<div class="hint" style="margin:6px 0 14px;">O escribe la OF abajo; si ya tiene el picking hecho, te lo avisará.</div>`;
+}
+// Tarjeta de un picking hecho y pendiente de ubicar: un bloque por persona (líneas y sus botones)
+function tarjetaRealizadoEspera(x){
+  const MINI = 'margin:0; flex:1; padding:8px 6px; font-size:13px; min-height:0;';
+  const comps = (x.datos && x.datos.componentes) || [];
+  const hecho = x.hechoPor || (x.datos && x.datos.hechoPor) || '—';
+  const termino = x.terminadoPor || '';
+  const personas = personasDeRealizado(x);
+  const varias = personas.length > 1;
+  const idAt = escapeAtributo(x.id);
+  const lineasDe = pn => comps.filter(c => normalizarNombre(c.por || hecho) === normalizarNombre(pn)).length;
+  const bloque = pn => {
+    const k = varias ? lineasDe(pn) : comps.length;
+    const pnAt = escapeAtributo(pn);
+    return `<div style="border:1px solid #D5DCE4; border-radius:10px; padding:8px 10px; margin-top:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+          <b style="font-size:14px;">${varias ? escapeHtml(pn) : 'Hecho por ' + escapeHtml(pn)}</b>
+          <span style="font-size:13px; color:#5A6573;">${k} línea${k===1?'':'s'}</span>
+        </div>
+        <div style="display:flex; gap:6px;">
+          ${varias || x.hojaPickingUrl ? `<button class="btn btn-outline" style="${MINI}" onclick="event.stopPropagation(); ${varias ? `verHojaDePersonaRealizado('${idAt}', '${pnAt}')` : `verHojaRealizado('${idAt}')`}">Ver hoja</button>` : ''}
+          <button class="btn" style="${MINI} background:#2E7D32; color:#fff; border-color:#2E7D32;" onclick="event.stopPropagation(); descargarExcelRealizado('${idAt}', this${varias ? `, '${pnAt}'` : ''})">Excel para emitir</button>
+        </div>
+      </div>`;
+  };
+  return `<div class="ticket">
+      <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(x.of)}</span><span class="ticket-date">${comps.length} línea${comps.length===1?'':'s'}</span></div>
       <div class="ticket-proj">${escapeHtml(x.proyecto||'—')}${x.subproyecto ? ' · '+escapeHtml(x.subproyecto) : ''}</div>
-      <div class="ticket-proj" style="font-size:13px;"><b>Hecho por ${escapeHtml(hecho)}</b>${termino && termino !== hecho ? ' · terminado por '+escapeHtml(termino) : ''}</div>
-      <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))} · pendiente de ubicar</div>
-      ${personas.length > 1
-        ? personas.map(pn => `<div style="display:flex; gap:8px; margin-top:8px;">
-            <button class="btn btn-outline" style="margin:0; flex:1;" onclick="event.stopPropagation(); verHojaDePersonaRealizado('${idAt}', '${escapeAtributo(pn)}')">Ver hoja de ${escapeHtml(pn)}</button>
-            <button class="btn" style="margin:0; flex:1; background:#2E7D32; color:#fff; border-color:#2E7D32;" onclick="event.stopPropagation(); descargarExcelRealizado('${idAt}', this, '${escapeAtributo(pn)}')">Excel para emitir</button>
-          </div>`).join('')
-        : `<div style="display:flex; gap:8px; margin-top:8px;">
-            ${x.hojaPickingUrl ? `<button class="btn btn-outline" style="margin:0; flex:1;" onclick="event.stopPropagation(); verHojaRealizado('${idAt}')">Ver hoja</button>` : ''}
-            <button class="btn" style="margin:0; flex:1; background:#2E7D32; color:#fff; border-color:#2E7D32;" onclick="event.stopPropagation(); descargarExcelRealizado('${idAt}', this)">Excel para emitir</button>
-          </div>`}
-      <button class="btn btn-primary" style="margin-top:8px;" onclick="event.stopPropagation(); cargarRealizadoEnFormulario('${idAt}')">Ubicar picking</button>
-      <button class="btn btn-outline" style="margin-top:8px;" onclick="event.stopPropagation(); elegirModoEscaneo('empezarBipadoParaRealizado', '${escapeAtributo(x.id)}')">Editar hoja (añadir o quitar)</button>
-
+      <div class="ticket-proj" style="font-size:12px;">${escapeHtml(haceTexto(x.fecha))}${termino && termino !== hecho ? ' · terminado por '+escapeHtml(termino) : ''} · pendiente de ubicar</div>
+      ${(varias ? personas : [hecho]).map(bloque).join('')}
+      <button class="btn btn-primary" style="margin-top:10px;" onclick="event.stopPropagation(); cargarRealizadoEnFormulario('${idAt}')">Ubicar picking</button>
+      <button class="btn btn-outline" style="margin-top:6px; padding:8px; font-size:13px;" onclick="event.stopPropagation(); elegirModoEscaneo('empezarBipadoParaRealizado', '${escapeAtributo(x.id)}')">Editar hoja (añadir o quitar)</button>
     </div>`;
-  }).join('') + `<div class="hint" style="margin:6px 0 14px;">O escribe la OF abajo; si ya tiene el picking hecho, te lo avisará.</div>`;
 }
 // ---- añadir líneas a un picking YA hecho y en espera (todavía sin OF registrada) ----
 function empezarBipadoParaRealizado(id, conPda){
