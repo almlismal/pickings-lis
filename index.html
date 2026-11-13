@@ -525,7 +525,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1288</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1290</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -539,25 +539,17 @@
   <!-- ============ HOME ============ -->
   <section class="screen active" id="screen-home">
     <div class="home-grid">
-      <button class="home-btn" onclick="ir('escanear')">
-        <b>Escanear etiqueta</b>
-        <span>Lee la etiqueta y ofrece registrar, consultar o entregar</span>
+      <button class="home-btn" id="btnRealizarPickingHome" onclick="ir('realizar-menu')">
+        <b>Realizar picking</b>
+        <span>Planificados o extra: escanear los componentes del picking</span>
       </button>
-      <button class="home-btn" onclick="nuevoPicking()">
-        <b>Registrar OF</b>
+      <button class="home-btn alt" onclick="nuevoPicking()">
+        <b>Ubicar OF</b>
         <span>OF terminada: cajas y componentes fuera de caja</span>
       </button>
       <button class="home-btn alt" onclick="ir('buscar')">
         <b>Buscar / Entregar</b>
         <span>Buscar una OF registrada y gestionar su entrega</span>
-      </button>
-      <button class="home-btn alt" id="btnRealizarPickingHome" onclick="nuevoRealizarPicking()">
-        <b>Pickings planificados<span id="badgePausados"></span></b>
-        <span>Escaneo de componentes durante el picking</span>
-      </button>
-      <button class="home-btn alt" id="btnPickingExtraHome" onclick="nuevoPickingExtra()">
-        <b>Pickings extra</b>
-        <span>Pickings de soporte o producción, entregados en el momento</span>
       </button>
     </div>
   </section>
@@ -566,7 +558,7 @@
   <section class="screen" id="screen-registro">
     <div class="screen-title">
       <button class="back" onclick="ir('home')">←</button>
-      <h2 id="formTitle">Registrar OF</h2>
+      <h2 id="formTitle">Ubicar OF</h2>
     </div>
     <div id="registroRealizadosEspera"></div>
 
@@ -598,7 +590,7 @@
     <label>Observaciones</label>
     <textarea id="f_obs" placeholder="Detalles relevantes para quien realice la entrega"></textarea>
 
-    <button class="btn btn-primary" onclick="guardarPicking()" id="btnGuardarPicking">Registrar OF</button>
+    <button class="btn btn-primary" onclick="guardarPicking()" id="btnGuardarPicking">Guardar</button>
   </section>
 
   <!-- ============ BUSCAR ============ -->
@@ -757,9 +749,26 @@
   </section>
 
   <!-- ============ REALIZAR PICKING (bipado en vivo) — prueba, aparte de todo lo demás ============ -->
-  <section class="screen" id="screen-realizar-inicio">
+  <section class="screen" id="screen-realizar-menu">
     <div class="screen-title">
       <button class="back" onclick="ir('home')">←</button>
+      <h2>Realizar picking</h2>
+    </div>
+    <div class="home-grid">
+      <button class="home-btn" onclick="nuevoRealizarPicking()">
+        <b>Planificado<span id="badgePausados"></span></b>
+        <span>Picking de una OF planificada</span>
+      </button>
+      <button class="home-btn alt" id="btnPickingExtraHome" onclick="nuevoPickingExtra()">
+        <b>Extra</b>
+        <span>Soporte o producción, entregados en el momento</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-realizar-inicio">
+    <div class="screen-title">
+      <button class="back" onclick="ir('realizar-menu')">←</button>
       <h2 id="rpInicioTitulo">Pickings planificados</h2>
     </div>
     <input type="text" id="filtroPickings" placeholder="Buscar por OF o por nombre" oninput="filtrarPickingsEnCurso(this.value)" style="margin-bottom:10px;">
@@ -12396,8 +12405,8 @@ function retomarPausado(id, confirmado){
     editingId = null;
     ir('registro');
     resetFormRegistro();
-    document.getElementById('formTitle').textContent = 'Registrar OF';
-    document.getElementById('btnGuardarPicking').textContent = 'Registrar OF';
+    document.getElementById('formTitle').textContent = 'Ubicar OF';
+    document.getElementById('btnGuardarPicking').textContent = 'Guardar';
     document.getElementById('f_of').value = d.of || '';
     document.getElementById('f_proyecto').value = d.proyecto || '';
     document.getElementById('f_subproyecto').value = d.subproyecto || '';
@@ -14475,8 +14484,8 @@ function nuevoPicking(){
   editingId = null;
   ir('registro');
   resetFormRegistro();
-  document.getElementById('formTitle').textContent = 'Registrar OF';
-  document.getElementById('btnGuardarPicking').textContent = 'Registrar OF';
+  document.getElementById('formTitle').textContent = 'Ubicar OF';
+  document.getElementById('btnGuardarPicking').textContent = 'Guardar';
   // Se sincroniza por detrás mientras se rellena el formulario, así el
   // aviso de OF duplicada usa datos frescos sin haber hecho esperar al abrir.
   sincronizar().catch(()=>{});
@@ -14491,8 +14500,8 @@ function continuarMismoProyecto(proyecto){
   ir('registro');
   resetFormRegistro(true);
   document.getElementById('f_proyecto').value = proyecto || '';
-  document.getElementById('formTitle').textContent = 'Registrar OF';
-  document.getElementById('btnGuardarPicking').textContent = 'Registrar OF';
+  document.getElementById('formTitle').textContent = 'Ubicar OF';
+  document.getElementById('btnGuardarPicking').textContent = 'Guardar';
   const campoOf = document.getElementById('f_of');
   if(campoOf) campoOf.focus();
   sincronizar().catch(()=>{});
@@ -17361,6 +17370,15 @@ function usarRealizadoEnEspera(id){
   };
   toast('Hoja de la OF ' + x.of + ' cargada: elige la ubicación y registra');
 }
+// Desde el resumen: genera la hoja para emitir y la deja en espera. No ubica ni registra la OF.
+function terminarPickingDesdeResumen(){
+  const s = sesionPicking;
+  if(!s) return;
+  if(!s.componentes.length){ toast('Escanea al menos un componente'); return; }
+  rpDocDatosActuales = { of: s.of, proyecto: s.proyecto, subproyecto: s.subproyecto, semana: semanaISO(new Date()),
+    hechoPor: usuarioActual || 'Sin identificar', componentes: s.componentes, incidencias: s.incidencias || [] };
+  guardarEnEsperaPickingRealizado();
+}
 // «Terminar el picking»: guarda la hoja en espera. No registra la OF ni pregunta por la entrega.
 async function guardarEnEsperaPickingRealizado(){
   const datos = rpDocDatosActuales;
@@ -18192,12 +18210,12 @@ function resumenPickingHtml(){
       ? personasDeSesion().map(p => `<button class="btn btn-outline" onclick="verHojaDePersona('${escapeAtributo(p)}')">Ver hoja de ${escapeHtml(p)}</button>`).join('')
       : !s.idRealizado && !s.idExistente && personasDeSesion().length > 1
       ? `${personasDeSesion().map(p => `<button class="btn btn-outline" onclick="verHojaDePersona('${escapeAtributo(p)}')">Ver hoja de ${escapeHtml(p)}</button>`).join('')}
-         <button class="btn btn-primary" onclick="registrarPickingRealizado()">Ubicar picking</button>`
+         <button class="btn btn-primary" onclick="terminarPickingDesdeResumen()">✓ Terminar el picking y generar la hoja</button>`
       : s.idRealizado
       ? `<button class="btn btn-primary" onclick="revisarAmpliacionRealizado()">✓ Revisar la hoja de la OF ${escapeHtml(s.of)} antes de guardar</button>`
       : s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ ${(()=>{ const q = DB.find(x=>x.id===s.idExistente); return (q && !q.hojaPickingUrl && !(q.componentesPicking||[]).length) ? 'Generar la hoja de la OF ' : 'Añadir a la OF '; })()}${escapeHtml(s.of)}</button>`
-      : `<button class="btn btn-primary" onclick="registrarPickingRealizado()">✓ Registrar OF y generar hoja</button>`}
+      : `<button class="btn btn-primary" onclick="terminarPickingDesdeResumen()">✓ Terminar el picking y generar la hoja</button>`}
   `;
 }
 // Mismo formato que el PDF: una línea por motivo, con sus PN separados por comas
@@ -18799,8 +18817,8 @@ function continuarARegistroDesdeDoc(){
   guardarBorradorBip('registro', { of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto });
   ir('registro');
   resetFormRegistro();
-  document.getElementById('formTitle').textContent = 'Registrar OF';
-  document.getElementById('btnGuardarPicking').textContent = 'Registrar OF';
+  document.getElementById('formTitle').textContent = 'Ubicar OF';
+  document.getElementById('btnGuardarPicking').textContent = 'Guardar';
   document.getElementById('f_of').value = datos.of;
   document.getElementById('f_proyecto').value = datos.proyecto || '';
   document.getElementById('f_subproyecto').value = datos.subproyecto || '';
