@@ -527,7 +527,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1304</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1305</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -819,7 +819,7 @@
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" onclick="pausarPicking()">Pausar</button>
     <button class="btn btn-outline" id="btnPdaBip" onclick="abrirPantallaPda()" style="display:none; margin-top:18px;">Escanear con PDA</button>
-    <button class="btn btn-outline" onclick="pickingParcial()">Guardar mi parte</button>
+    <button class="btn btn-outline" onclick="pickingParcial(this)">Guardar mi parte</button>
     <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
   </section>
 
@@ -836,7 +836,7 @@
     <div id="pdaBloqueIncidencias"></div>
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:14px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" id="pdaTecladoBtn" onclick="pdaTecladoAlternar()" style="margin-top:14px;">Escribir con teclado</button>
-    <button class="btn btn-outline" onclick="pickingParcial()">Guardar mi parte</button>
+    <button class="btn btn-outline" onclick="pickingParcial(this)">Guardar mi parte</button>
     <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
   </section>
 
@@ -12309,7 +12309,16 @@ function verHojaDePersona(nombre){
 
 // Picking parcial: guarda mi parte y suelta el picking para quien lo siga.
 // La hoja parcial se saca luego desde la tarjeta del picking en "Pickings en curso".
-function pickingParcial(){
+function pickingParcial(btnPulsado){
+  if(!btnPulsado){ pickingParcialAhora(); return; }
+  const textoBoton = btnPulsado.innerHTML;
+  marcarEsperando(btnPulsado, 'Guardando tu parte');
+  setTimeout(()=>{
+    try{ pickingParcialAhora(); }
+    finally{ if(btnPulsado.isConnected){ btnPulsado.disabled = false; btnPulsado.innerHTML = textoBoton; } }
+  }, 300);
+}
+function pickingParcialAhora(){
   if(!sesionPicking){ toast('No hay picking abierto'); return; }
   const yo = usuarioActual || '';
   if(!yo){ toast('Identifícate primero'); return; }
@@ -17432,22 +17441,23 @@ function usarRealizadoEnEspera(id){
   toast('Hoja de la OF ' + x.of + ' cargada: elige la ubicación y registra');
 }
 // Desde el resumen: genera la hoja para emitir y la deja en espera. No ubica ni registra la OF.
-function terminarPickingDesdeResumen(){
+function terminarPickingDesdeResumen(btnPulsado){
   const s = sesionPicking;
   if(!s) return;
   if(!s.componentes.length){ toast('Escanea al menos un componente'); return; }
   rpDocDatosActuales = { of: s.of, proyecto: s.proyecto, subproyecto: s.subproyecto, semana: semanaISO(new Date()),
     hechoPor: usuarioActual || 'Sin identificar', componentes: s.componentes, incidencias: s.incidencias || [] };
-  guardarEnEsperaPickingRealizado();
+  guardarEnEsperaPickingRealizado(btnPulsado);
 }
 // «Terminar el picking»: guarda la hoja en espera. No registra la OF ni pregunta por la entrega.
-async function guardarEnEsperaPickingRealizado(){
+async function guardarEnEsperaPickingRealizado(btnPulsado){
   const datos = rpDocDatosActuales;
   if(!datos){ toast('No hay hoja que guardar'); return; }
   if(!usuarioActual){ abrirCambioUsuario(); toast('Primero identifícate'); return; }
   const id = 'rz_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
-  const btn = document.getElementById('rpDocContinuarBtn');
-  if(btn){ marcarEsperando(btn, 'Guardando la hoja…'); }
+  const btn = btnPulsado || document.getElementById('rpDocContinuarBtn');
+  const textoBoton = btn ? btn.innerHTML : '';
+  if(btn){ marcarEsperando(btn, 'Guardando la hoja'); }
   try{
     const res = await llamarBackend('guardarPickingRealizado', {
       id: id, of: datos.of, proyecto: datos.proyecto, subproyecto: datos.subproyecto,
@@ -17464,7 +17474,7 @@ async function guardarEnEsperaPickingRealizado(){
   }catch(err){
     toast('No se pudo guardar la hoja: ' + (err && err.message ? err.message : 'error') + '. Reintenta; no se ha perdido nada.');
   } finally {
-    if(btn){ btn.disabled = false; btn.textContent = '✓ Terminar el picking'; }
+    if(btn){ btn.disabled = false; btn.innerHTML = textoBoton; }
   }
 }
 
@@ -18271,12 +18281,12 @@ function resumenPickingHtml(){
       ? personasDeSesion().map(p => `<button class="btn btn-outline" onclick="verHojaDePersona('${escapeAtributo(p)}')">Ver hoja de ${escapeHtml(p)}</button>`).join('')
       : !s.idRealizado && !s.idExistente && personasDeSesion().length > 1
       ? `${personasDeSesion().map(p => `<button class="btn btn-outline" onclick="verHojaDePersona('${escapeAtributo(p)}')">Ver hoja de ${escapeHtml(p)}</button>`).join('')}
-         <button class="btn btn-primary" onclick="terminarPickingDesdeResumen()">✓ Terminar el picking y generar la hoja</button>`
+         <button class="btn btn-primary" onclick="terminarPickingDesdeResumen(this)">✓ Terminar el picking y generar la hoja</button>`
       : s.idRealizado
       ? `<button class="btn btn-primary" onclick="revisarAmpliacionRealizado()">✓ Revisar la hoja de la OF ${escapeHtml(s.of)} antes de guardar</button>`
       : s.idExistente
       ? `<button class="btn btn-primary" onclick="preguntarComoActualizarHoja()">✓ ${(()=>{ const q = DB.find(x=>x.id===s.idExistente); return (q && !q.hojaPickingUrl && !(q.componentesPicking||[]).length) ? 'Generar la hoja de la OF ' : 'Añadir a la OF '; })()}${escapeHtml(s.of)}</button>`
-      : `<button class="btn btn-primary" onclick="terminarPickingDesdeResumen()">✓ Terminar el picking y generar la hoja</button>`}
+      : `<button class="btn btn-primary" onclick="terminarPickingDesdeResumen(this)">✓ Terminar el picking y generar la hoja</button>`}
   `;
 }
 // Mismo formato que el PDF: una línea por motivo, con sus PN separados por comas
