@@ -526,7 +526,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1295</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1296</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -818,7 +818,7 @@
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" onclick="pausarPicking()">Pausar</button>
     <button class="btn btn-outline" id="btnPdaBip" onclick="abrirPantallaPda()" style="display:none; margin-top:18px;">Escanear con PDA</button>
-    <button class="btn btn-outline" onclick="pickingParcial()">Guardar picking parcial</button>
+    <button class="btn btn-outline" onclick="pickingParcial()">Guardar mi parte</button>
     <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
   </section>
 
@@ -835,7 +835,7 @@
     <div id="pdaBloqueIncidencias"></div>
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:14px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" id="pdaTecladoBtn" onclick="pdaTecladoAlternar()" style="margin-top:14px;">Escribir con teclado</button>
-    <button class="btn btn-outline" onclick="pickingParcial()">Guardar picking parcial</button>
+    <button class="btn btn-outline" onclick="pickingParcial()">Guardar mi parte</button>
     <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
   </section>
 
@@ -12275,6 +12275,21 @@ function enviarInformePlanificadosMail(btn){
 // Si la OF tiene partes de otras personas, el resumen muestra las hojas y ubicar.
 function terminarPicking(){
   if(!sesionPicking) return;
+  if(!sesionPicking.extra){
+    const yo = usuarioActual || '';
+    const base = sesionPicking.draftId ? buscarPausado(sesionPicking.draftId) : null;
+    const creador = (base && base.creadoPor) || yo;
+    // Mis líneas cuentan como guardadas al terminar; las de los demás deben estar guardadas antes
+    const faltan = partesPendientesDe(sesionPicking, creador)
+      .filter(n=>normalizarNombre(n)!==normalizarNombre(yo));
+    if(faltan.length){
+      mostrarSheet(`
+        <h3>Todavía no se puede terminar</h3>
+        <p style="font-size:14px; color:var(--ink-soft); margin:0 0 12px;">Falta que guarde su parte <b>${escapeHtml(faltan.join(' y '))}</b>. Hasta entonces solo puedes guardar la tuya con «Guardar mi parte».</p>
+        <button class="btn btn-primary" onclick="cerrarSheet()">Entendido</button>`);
+      return;
+    }
+  }
   irAResumenPicking();
 }
 
@@ -12323,19 +12338,28 @@ function pickingParcial(){
     .some(x => normalizarNombre(autorDe(x)) === normalizarNombre(yo));
   if(!hayMias){ toast('Todavía no tienes líneas en este picking'); return; }
   if(sesionPicking.extra){ toast('Los pickings extra se entregan al terminar'); return; }
-  // Si ya hay líneas de otra persona, este es el segundo parcial: la OF está completa y se cierra (registro normal con todo).
-  const hayDeOtro = sesionPicking.componentes.concat(sesionPicking.incidencias)
-    .some(x => x.por && normalizarNombre(x.por) !== normalizarNombre(yo));
-  if(hayDeOtro){
-    toast('Las dos partes están completas: se cierra la OF');
-    irAResumenPicking();
-    return;
-  }
-  // Primer parcial: se guarda y queda abierta para que la siga la otra persona.
-  // Al terminar se abre mi hoja parcial, para imprimirla y emitir en SAP.
+  // Guardar solo mi parte: queda marcada como guardada y la OF sigue abierta.
+  // La OF no se puede terminar hasta que todas las partes estén guardadas (ver terminarPicking).
   const idParte = borradorActivoId || (sesionPicking && sesionPicking.draftId);
+  if(!sesionPicking.parciales) sesionPicking.parciales = [];
+  if(!yaGuardoParte(sesionPicking, yo)) sesionPicking.parciales.push(yo);
   pausarPicking();
   if(idParte) hojaParcialDePausado(idParte);
+}
+
+// Partes guardadas: autores de las líneas (o el creador si la línea no tiene "por")
+function autoresDeSesion(s, creador){
+  const nombres = [];
+  const add = n => { n = (n||'').trim(); if(n && !nombres.some(x=>normalizarNombre(x)===normalizarNombre(n))) nombres.push(n); };
+  (s.componentes||[]).forEach(c=>add(c.por||creador));
+  (s.incidencias||[]).forEach(i=>add(i.por||creador));
+  return nombres;
+}
+function yaGuardoParte(s, nombre){
+  return (s.parciales||[]).some(n=>normalizarNombre(n)===normalizarNombre(nombre));
+}
+function partesPendientesDe(s, creador){
+  return autoresDeSesion(s, creador).filter(n=>!yaGuardoParte(s, n));
 }
 
 // Hoja parcial de mi parte, sacada desde la tarjeta del picking en curso.
@@ -12479,7 +12503,7 @@ function renderPausados(){
         <div class="ticket-proj">${escapeHtml(d.proyecto||'—')}${d.subproyecto ? ' · '+escapeHtml(d.subproyecto) : ''}${d.fase==='registro' ? ' · <b>hoja hecha, falta ubicar la caja</b>' : ''}</div>
         <div class="ticket-proj" style="font-size:14px; margin-top:4px;"><b>Iniciado por:</b> ${escapeHtml(d.creadoPor||'—')}</div>
         <div class="ticket-proj" style="font-size:12px;">Última actividad: ${escapeHtml(haceTexto(d.actualizado))}${d.actualizadoPor ? ' por ' + escapeHtml(d.actualizadoPor) : ''}</div>
-        ${uso ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><i class="pt pt-c"></i> ${escapeHtml(d.enUsoPor)} lo está trabajando ahora</div>` : ''}
+        ${estadoPausadoHtml(d, uso)}
         ${viejo ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;">Lleva más de 2 días parado</div>` : ''}
         <div style="text-align:right; display:flex; justify-content:flex-end; gap:16px;">
           ${d.fase==='bip' && !bloqueado ? `<button class="btn btn-outline" style="width:auto; padding:8px 14px; font-size:13px; margin:0;" onclick="hojaParcialDePausado('${escapeAtributo(d.id)}', event)">Ver hoja parcial</button>` : ''}
@@ -12488,6 +12512,18 @@ function renderPausados(){
       </div>`;
     }).join('')}
     <div class="hint" style="margin:12px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size:11px;">O empieza otro</div>`;
+}
+// Etiqueta informativa del estado de un picking en curso (solo informa)
+function estadoPausadoHtml(d, uso){
+  if(uso) return `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><b>● En curso</b> · lo está haciendo ${escapeHtml(d.enUsoPor)}</div>`;
+  if(d.fase !== 'bip' || !d.sesion) return '';
+  const guardadas = d.sesion.parciales || [];
+  if(!guardadas.length) return `<div class="ticket-proj" style="color:var(--ink-soft); font-size:12px;"><b>❚❚ Pausado</b> · nadie ha guardado su parte</div>`;
+  const faltan = partesPendientesDe(d.sesion, d.creadoPor);
+  const texto = faltan.length
+    ? `✔ Guardado: parte de ${escapeHtml(guardadas.join(' y '))} · falta la de ${escapeHtml(faltan.join(' y '))}`
+    : `✔ Partes guardadas · listo para terminar`;
+  return `<div class="ticket-proj" style="color:#2F7A4A; font-size:12px;"><b>${texto}</b></div>`;
 }
 function actualizarBadgePausados(){
   const el = document.getElementById('badgePausados');
