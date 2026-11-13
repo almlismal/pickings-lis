@@ -526,7 +526,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1297</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1299</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12523,15 +12523,14 @@ function renderPausados(){
 }
 // Etiqueta informativa del estado de un picking en curso (solo informa)
 function estadoPausadoHtml(d, uso){
-  if(uso) return `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><b>● En curso</b> · lo está haciendo ${escapeHtml(d.enUsoPor)}</div>`;
+  if(uso) return `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><b>● Lo está haciendo ${escapeHtml(d.enUsoPor)} ahora</b></div>`;
   if(d.fase !== 'bip' || !d.sesion) return '';
-  const guardadas = parcialesDe(d.sesion, d.creadoPor);
-  if(!guardadas.length) return `<div class="ticket-proj" style="color:var(--ink-soft); font-size:12px;"><b>❚❚ Pausado</b> · nadie ha guardado su parte</div>`;
+  const hechas = parcialesDe(d.sesion, d.creadoPor);
+  if(!hechas.length) return `<div class="ticket-proj" style="color:var(--ink-soft); font-size:12px;"><b>❚❚ Pausado</b></div>`;
   const faltan = partesPendientesDe(d.sesion, d.creadoPor);
-  const texto = faltan.length
-    ? `✔ Guardado: parte de ${escapeHtml(guardadas.join(' y '))} · falta la de ${escapeHtml(faltan.join(' y '))}`
-    : `✔ Partes guardadas · listo para terminar`;
-  return `<div class="ticket-proj" style="color:#2F7A4A; font-size:12px;"><b>${texto}</b></div>`;
+  let html = `<div class="ticket-proj" style="color:#2F7A4A; font-size:12px;"><b>✔ Guardado por ${escapeHtml(hechas.join(' y '))}</b></div>`;
+  if(faltan.length) html += `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><b>Falta que ${escapeHtml(faltan.join(' y '))} guarde su parte</b></div>`;
+  return html;
 }
 function actualizarBadgePausados(){
   const el = document.getElementById('badgePausados');
