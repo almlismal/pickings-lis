@@ -521,12 +521,13 @@
 @keyframes puntosCarga{0%,80%,100%{opacity:.25; transform:translateY(0);} 40%{opacity:1; transform:translateY(-3px);}}
 .btn-subiendo{background:linear-gradient(90deg,#0F5257,#D9822B,#1F4E79,#0F5257) !important; background-size:300% 100% !important; border-color:transparent !important; color:#fff !important; animation:barraSubida 2.4s linear infinite;}
 @keyframes barraSubida{from{background-position:0% 50%;} to{background-position:300% 50%;}}
+  .acciones-tarjeta{ display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:8px; }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1299</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1304</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11785,10 +11786,10 @@ function renderExtrasPendientes(){
       <div class="ticket-proj">${escapeHtml(p.proyecto||'—')} · hecho el ${escapeHtml(p.fecha)} a las ${escapeHtml(p.hora)} por ${escapeHtml(p.creadoPor)}</div>
       <div class="ticket-proj" style="font-size:12px;">${String(p.ubicacion||'').trim() ? 'Ubicado en ' + escapeHtml(p.ubicacion) + (p.bultos ? ' · ' + escapeHtml(p.bultos) : '') : '<b>Sin ubicar</b>'}</div>
       ${p.observaciones ? `<div class="ticket-proj" style="font-size:12px;">${escapeHtml(p.observaciones)}</div>` : ''}
-      <div style="display:flex; justify-content:flex-end; gap:16px; margin-top:6px;">
-        ${p.hojaUrl ? `<span class="link-action" onclick="event.stopPropagation(); window.open('${escapeAtributo(p.hojaUrl)}','_blank')">Ver hoja</span>` : ''}
-        <span class="link-action" onclick="event.stopPropagation(); descargarExcelExtra('${escapeAtributo(p.id)}', this)">Excel para emitir</span>
-        ${puede ? botonMini('Borrar', `event.stopPropagation(); borrarExtraUsuario('${escapeAtributo(p.id)}', false)`, '#B33A3A') : ''}
+      <div class="acciones-tarjeta">
+        ${p.hojaUrl ? botonTarjeta('Ver hoja', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : ''}
+        ${botonTarjeta('Excel para emitir', `descargarExcelExtra('${escapeAtributo(p.id)}', this)`, '#2E7D32')}
+        ${puede ? botonTarjeta('Borrar', `borrarExtraUsuario('${escapeAtributo(p.id)}', false)`, '#B33A3A') : ''}
       </div>
     </div>`;
   }).join('') : `<div class="hint">Ninguno coincide con la búsqueda</div>`;
@@ -11819,6 +11820,11 @@ function nombresDePausado(d){
 // Hojas firmadas: María ve todas; cada persona, solo las que hizo (lo filtra el servidor).
 let firmadosExtraCache = [], extraAdminActual = null;
 // Botón pequeño (para listas y pantallas de edición)
+// Botón de acción de las tarjetas de pickings: mismo tamaño y estilo en planificados, extra y firmados
+function botonTarjeta(texto, accionJs, color){
+  const estilo = color ? `color:${color}; border-color:${color};` : '';
+  return `<button type="button" class="btn btn-outline" style="width:auto; padding:8px 14px; font-size:13px; margin:0; ${estilo}" onclick="event.stopPropagation(); ${accionJs}">${texto}</button>`;
+}
 function botonMini(texto, accionJs, color, fondo){
   const c = color || '#1F4E79', f = fondo || '#fff';
   return `<button type="button" style="padding:6px 10px; font-size:13px; font-weight:600; line-height:1.2; border-radius:8px; border:1px solid ${c}; background:${f}; color:${c}; cursor:pointer;" onclick="${accionJs}">${texto}</button>`;
@@ -11838,16 +11844,16 @@ function tarjetaFirmado(p){
     const esAdmin = esAdminSheet(usuarioActual);
         const yo = normalizarNombre(p.creadoPor) === normalizarNombre(usuarioActual || '');
         const botones = [
-          (esAdmin || yo) ? botonMini('Ver y editar', `abrirPickingExtraAdmin('${escapeAtributo(p.id)}')`) : '',
-          p.hojaUrl ? botonMini('PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : '',
-          botonMini('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32'),
-          (esAdmin || normalizarNombre(usuarioActual || '') === 'maria' || yo) ? botonMini('Borrar', `borrarExtraUsuario('${escapeAtributo(p.id)}', true)`, '#B33A3A') : '',
+          (esAdmin || yo) ? botonTarjeta('Ver y editar', `abrirPickingExtraAdmin('${escapeAtributo(p.id)}')`) : '',
+          p.hojaUrl ? botonTarjeta('PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : '',
+          botonTarjeta('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32'),
+          (esAdmin || normalizarNombre(usuarioActual || '') === 'maria' || yo) ? botonTarjeta('Borrar', `borrarExtraUsuario('${escapeAtributo(p.id)}', true)`, '#B33A3A') : '',
         ].join('');
     return `<div class="ticket" style="padding:10px 12px;">
         <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${escapeHtml(p.fecha)}</span></div>
         <div class="ticket-proj">${escapeHtml(p.proyecto || '—')} · ${p.lineas} línea${p.lineas === 1 ? '' : 's'} · hecho por ${escapeHtml(p.creadoPor)}</div>
         <div class="ticket-proj" style="font-size:12px;">Firmado por ${escapeHtml(p.firmadoPor || '—')} el ${escapeHtml(p.fechaEntrega || '—')}</div>
-        <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin-top:8px;">${botones}</div>
+        <div class="acciones-tarjeta">${botones}</div>
       </div>`;
 }
 function abrirFirmadosExtra(){
@@ -12170,22 +12176,42 @@ function extraFirmaPendienteGuardar(btn){
 }
 
 // ---- Informe de pickings extra (María / administración) ----
-function abrirInformeExtras(){
+// ---- Informes de pickings extra y planificados: misma pantalla, distinta configuración ----
+const INFORMES = {
+  extra: {
+    titulo: 'Pickings extra · informe',
+    nota: 'Cuentan solo los pickings firmados, por el día en que se hicieron.',
+    accion: 'informeExtras', envio: 'enviarInformeExtras', clave: 'inf', claveEnvio: 'envinf',
+    vacio: 'No hay pickings firmados en ese rango.',
+    confirmar: '¿Enviar el Excel del', exito: 'Informe enviado a María'
+  },
+  planificados: {
+    titulo: 'Pickings planificados · informe',
+    nota: 'Cuentan solo los pickings registrados y ubicados, por el día en que se registraron.',
+    accion: 'informePlanificados', envio: 'enviarInformePlanificados', clave: 'infpl', claveEnvio: 'envinfpl',
+    vacio: 'No hay pickings planificados registrados y ubicados en ese rango.',
+    confirmar: '¿Enviar el Excel de pickings planificados del', exito: 'Informe de planificados enviado a María'
+  }
+};
+function abrirInforme(tipo){
+  const c = INFORMES[tipo];
   const hoy = new Date().toISOString().slice(0, 10);
   const inicioMes = hoy.slice(0, 8) + '01';
   mostrarSheet(`
-    <h3>Pickings extra · informe</h3>
-    <p class="hint" style="margin:0 0 8px;">Cuentan solo los pickings firmados, por el día en que se hicieron.</p>
+    <h3>${c.titulo}</h3>
+    <p class="hint" style="margin:0 0 8px;">${c.nota}</p>
     <label>Desde</label>
     <input type="date" id="infDesde" value="${inicioMes}">
     <label>Hasta</label>
     <input type="date" id="infHasta" value="${hoy}">
-    <button class="btn btn-primary" onclick="verInformeExtras()">Ver informe</button>
+    <button class="btn btn-primary" onclick="verInforme('${tipo}')">Ver informe</button>
     <div id="infResultado"></div>
-    <button class="btn btn-outline" onclick="enviarInformeExtrasMail(this)">Enviar Excel a María</button>
+    <button class="btn btn-outline" onclick="enviarInformeMail('${tipo}', this)">Enviar Excel a María</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>
   `);
 }
+function abrirInformeExtras(){ abrirInforme('extra'); }
+function abrirInformePlanificados(){ abrirInforme('planificados'); }
 function rangoInformeExtras(){
   const desde = (document.getElementById('infDesde') || {}).value;
   const hasta = (document.getElementById('infHasta') || {}).value;
@@ -12193,12 +12219,13 @@ function rangoInformeExtras(){
   if(desde > hasta){ toast('La fecha de inicio es posterior a la de fin'); return null; }
   return { desde: desde, hasta: hasta };
 }
-function verInformeExtras(){
+function verInforme(tipo){
+  const c = INFORMES[tipo];
   const rango = rangoInformeExtras(); if(!rango) return;
-  llamarBackend('informeExtras', Object.assign({ quien: usuarioActual || '' }, rango), 'inf_' + Date.now(), 60000).then(r => {
+  llamarBackend(c.accion, Object.assign({ quien: usuarioActual || '' }, rango), c.clave + '_' + Date.now(), 60000).then(r => {
     const cont = document.getElementById('infResultado'); if(!cont) return;
     if(!r || r.ok === false){ cont.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo cargar el informe')}</div>`; return; }
-    if(!(r.dias || []).length){ cont.innerHTML = `<div class="hint" style="margin-top:10px;">No hay pickings firmados en ese rango.</div>`; return; }
+    if(!(r.dias || []).length){ cont.innerHTML = `<div class="hint" style="margin-top:10px;">${c.vacio}</div>`; return; }
     const filas = r.dias.map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
     const personas = (r.porPersona || []).map(x => `<tr><td>${escapeHtml(x.nombre)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
     cont.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
@@ -12213,62 +12240,15 @@ function verInformeExtras(){
     </table>`;
   });
 }
-function enviarInformeExtrasMail(btn){
+function enviarInformeMail(tipo, btn){
+  const c = INFORMES[tipo];
   const rango = rangoInformeExtras(); if(!rango) return;
-  if(!confirm('¿Enviar el Excel del ' + rango.desde + ' al ' + rango.hasta + ' a María?')) return;
+  if(!confirm(c.confirmar + ' ' + rango.desde + ' al ' + rango.hasta + ' a María?')) return;
   marcarEsperando(btn, 'Enviando');
-  llamarBackend('enviarInformeExtras', Object.assign({ quien: usuarioActual || '' }, rango), 'envinf_' + Date.now(), 120000).then(r => {
-    if(!r || r.ok === false){ abrirInformeExtras(); toast((r && r.error) || 'No se pudo enviar'); return; }
+  llamarBackend(c.envio, Object.assign({ quien: usuarioActual || '' }, rango), c.claveEnvio + '_' + Date.now(), 120000).then(r => {
+    if(!r || r.ok === false){ abrirInforme(tipo); toast((r && r.error) || 'No se pudo enviar'); return; }
     cerrarSheet();
-    toast('Informe enviado a María');
-  });
-}
-
-// ---- Informe de pickings planificados (registrados y ubicados), separado del de extras ----
-function abrirInformePlanificados(){
-  const hoy = new Date().toISOString().slice(0, 10);
-  const inicioMes = hoy.slice(0, 8) + '01';
-  mostrarSheet(`
-    <h3>Pickings planificados · informe</h3>
-    <p class="hint" style="margin:0 0 8px;">Cuentan solo los pickings registrados y ubicados, por el día en que se registraron.</p>
-    <label>Desde</label>
-    <input type="date" id="infDesde" value="${inicioMes}">
-    <label>Hasta</label>
-    <input type="date" id="infHasta" value="${hoy}">
-    <button class="btn btn-primary" onclick="verInformePlanificados()">Ver informe</button>
-    <div id="infResultado"></div>
-    <button class="btn btn-outline" onclick="enviarInformePlanificadosMail(this)">Enviar Excel a María</button>
-    <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>
-  `);
-}
-function verInformePlanificados(){
-  const rango = rangoInformeExtras(); if(!rango) return;
-  llamarBackend('informePlanificados', Object.assign({ quien: usuarioActual || '' }, rango), 'infpl_' + Date.now(), 60000).then(r => {
-    const cont = document.getElementById('infResultado'); if(!cont) return;
-    if(!r || r.ok === false){ cont.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo cargar el informe')}</div>`; return; }
-    if(!(r.dias || []).length){ cont.innerHTML = `<div class="hint" style="margin-top:10px;">No hay pickings planificados registrados y ubicados en ese rango.</div>`; return; }
-    const filas = r.dias.map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
-    const personas = (r.porPersona || []).map(x => `<tr><td>${escapeHtml(x.nombre)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
-    cont.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
-      <tr><th style="text-align:left;">Día</th><th style="text-align:right;">OF</th><th style="text-align:right;">Líneas</th></tr>
-      ${filas}
-      <tr><td><b>Total</b></td><td style="text-align:right;"><b>${r.total.ofs}</b></td><td style="text-align:right;"><b>${r.total.lineas}</b></td></tr>
-    </table>
-    <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Total por persona</div>
-    <table style="width:100%; font-size:14px;">
-      <tr><th style="text-align:left;">Hecho por</th><th style="text-align:right;">OF</th><th style="text-align:right;">Líneas</th></tr>
-      ${personas}
-    </table>`;
-  });
-}
-function enviarInformePlanificadosMail(btn){
-  const rango = rangoInformeExtras(); if(!rango) return;
-  if(!confirm('¿Enviar el Excel de pickings planificados del ' + rango.desde + ' al ' + rango.hasta + ' a María?')) return;
-  marcarEsperando(btn, 'Enviando');
-  llamarBackend('enviarInformePlanificados', Object.assign({ quien: usuarioActual || '' }, rango), 'envinfpl_' + Date.now(), 120000).then(r => {
-    if(!r || r.ok === false){ abrirInformePlanificados(); toast((r && r.error) || 'No se pudo enviar'); return; }
-    cerrarSheet();
-    toast('Informe de planificados enviado a María');
+    toast(c.exito);
   });
 }
 
@@ -12513,9 +12493,9 @@ function renderPausados(){
         <div class="ticket-proj" style="font-size:12px;">Última actividad: ${escapeHtml(haceTexto(d.actualizado))}${d.actualizadoPor ? ' por ' + escapeHtml(d.actualizadoPor) : ''}</div>
         ${estadoPausadoHtml(d, uso)}
         ${viejo ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;">Lleva más de 2 días parado</div>` : ''}
-        <div style="text-align:right; display:flex; justify-content:flex-end; gap:16px;">
-          ${d.fase==='bip' && !bloqueado ? `<button class="btn btn-outline" style="width:auto; padding:8px 14px; font-size:13px; margin:0;" onclick="hojaParcialDePausado('${escapeAtributo(d.id)}', event)">Ver hoja parcial</button>` : ''}
-          ${bloqueado ? '' : `<span class="link-action" style="color:#B33A3A; font-size:12px;" onclick="event.stopPropagation(); descartarPausado('${escapeAtributo(d.id)}')">Descartar</span>`}
+        <div class="acciones-tarjeta">
+          ${d.fase==='bip' && !bloqueado ? botonTarjeta('Ver hoja parcial', `hojaParcialDePausado('${escapeAtributo(d.id)}')`) : ''}
+          ${bloqueado ? '' : botonTarjeta('Descartar', `descartarPausado('${escapeAtributo(d.id)}')`, '#B33A3A')}
         </div>
       </div>`;
     }).join('')}
@@ -14267,13 +14247,7 @@ function recomendarHueco(cfg, est){
   if(!h) return null;
   return { codigo:h.codigo, motivo: ultMenor>=0 && h.codigo===ORDEN_HUECOS[ultMenor] ? 'Junto al proyecto ' + nombreMenor + ', por orden de proyectos' : ultMenor>=0 ? 'Por orden de proyectos, después de ' + nombreMenor + ' (' + ORDEN_HUECOS[ultMenor] + ')' : 'Primer hueco con sitio, por orden de proyectos' };
 }
-function miniEstanterias(est, rec, k){
-  return '<div class="mini-est">' + HUECO_ESTANTERIAS.map(e=>'<div class="mini-rack">' + HUECO_ALTURAS.map(a=>{
-    const c = codigoHueco(e,a), h = est[c];
-    const cls = c===rec ? 'me' : (k && h && h.porProy[k] ? 'p' : '');
-    return '<i class="'+cls+'"></i>';
-  }).join('') + '</div>').join('') + '</div>';
-}
+
 function abrirSelectorUbicacion(cfg){
   selUbic = cfg;
   const ocup = ocupacionUbicaciones(cfg.excluirId);
@@ -14510,20 +14484,8 @@ function itemsParaUbicar(){
   Object.keys(fueraSeleccion).forEach(k=>{ if(fueraSeleccion[k]) items.push(k); });
   return items;
 }
-function toggleUbicacionItem(el){
-  const item = el.dataset.item;
-  const label = el.dataset.label;
-  ubicacionesSeleccion[item] = label;
-  document.querySelectorAll(`#ubicacionesContainer .loc-chip[data-item="${item}"]`).forEach(p=>p.classList.remove('active'));
-  el.classList.add('active');
-}
-function abrirAnadirUbicacion(item){
-  itemPendienteUbicacion = item;
-  mostrarSheet(`<h3>Añadir ubicación para "${item}"</h3>
-    <label>Nombre</label>
-    <input type="text" id="nuevaUbicacion" placeholder="Ej. Z0102A">
-    <button class="btn btn-primary" onclick="confirmarAnadirUbicacion()">Añadir y elegir</button>`);
-}
+
+
 function confirmarAnadirUbicacion(){
   const val = document.getElementById('nuevaUbicacion').value.trim();
   if(!val || !itemPendienteUbicacion) return;
@@ -14755,13 +14717,14 @@ function reabrirDetalleSeguro(id){
 function entrarAEntregados(){
   renderEntregados();
   cargarEntregadosYActualizar().then(renderEntregados).catch(()=>{});
+  cargarExtrasEntregados().then(renderEntregados).catch(()=>{});
 }
 
 async function actualizarEntregados(){
   const btn = document.getElementById('btnActualizarEntregados');
   if(btn){ marcarEsperando(btn, 'Actualizando…'); }
   try{
-    await cargarEntregadosYActualizar();
+    await Promise.all([cargarEntregadosYActualizar(), cargarExtrasEntregados()]);
     renderEntregados();
   } catch(err){
     toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error desconocido'));
@@ -14787,16 +14750,65 @@ function entregadoTieneHoja(r){
   const p = (DB||[]).find(x=>x && String(x.id)===id);
   return !!(p && p.hojasEscaneadas && p.hojasEscaneadas.length);
 }
+// Tarjeta de un picking planificado entregado (la misma en Entregados y en Buscar OF)
+function tarjetaEntregadoHtml(r){
+  const id = r['ID'] ? String(r['ID']) : '';
+  const onclick = id ? `onclick="verPickingEntregado('${id.replace(/'/g,"\\'")}')"` : '';
+  return `
+    <div class="ticket" ${onclick} style="${id ? '' : 'cursor:default;'}">
+      <div class="ticket-top">
+        <span class="ticket-of">OF ${r['OF']}</span>
+        <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
+      </div>
+      <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
+      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}${r['Hoja de picking URL'] ? iconoDigitalHtml() : ''}</div>
+      <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
+    </div>`;
+}
+// Pickings extra entregados (firmados): se ven junto a los planificados, con etiqueta "Extra"
+let extrasEntregadosCache = [];
+function cargarExtrasEntregados(){
+  return llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'extEnt_' + Date.now(), 30000).then(r => {
+    extrasEntregadosCache = ((r && r.pickings) || []).filter(p => p.estado === 'entregado');
+    return extrasEntregadosCache;
+  }).catch(() => extrasEntregadosCache);
+}
+// Un extra con la misma forma que una fila de Entregados, para pintarlo y ordenarlo igual
+function extraComoEntregado(p){
+  return { 'ID': '', extra: true, obj: p, 'OF': p.of, 'Proyecto': p.proyecto, 'Subproyecto': p.subproyecto,
+    'Fecha de entrega': (p.fecha || '') + 'T' + (p.hora || '00:00') };
+}
+function tarjetaExtraEntregadoHtml(r){
+  const p = r.obj;
+  return `
+    <div class="ticket" onclick="verExtraEntregado('${escapeAtributo(p.id)}')">
+      <div class="ticket-top">
+        <span class="ticket-of">OF ${escapeHtml(p.of)}</span>
+        <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
+      </div>
+      <div class="ticket-proj">${escapeHtml(p.proyecto || '—')}${p.subproyecto ? ' · '+escapeHtml(p.subproyecto) : ''}</div>
+      <div class="ticket-meta"><span class="chip done">Entregado</span><span class="chip" style="background:#FFF4D6; border-color:#E0B54A; color:#7A5300; font-weight:600;">Extra</span></div>
+      <div class="hint" style="margin-top:8px;">Hecho por ${escapeHtml(p.hechoPor || p.creadoPor)} · firmado por ${escapeHtml(p.firmadoPor || '—')} el ${fechaCorta(r['Fecha de entrega'])}.</div>
+    </div>`;
+}
+// Abre un extra entregado con los mismos botones que en la lista de firmados (PDF, Excel, editar si toca)
+function verExtraEntregado(id){
+  const p = extrasEntregadosCache.find(x => String(x.id) === String(id));
+  if(!p){ toast('No encuentro ese picking'); return; }
+  mostrarSheet(`<h3>Picking extra entregado</h3>${tarjetaFirmado(p)}
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+}
 function renderEntregados(){
   const cont = document.getElementById('entregadosList');
   if(!cont) return;
-  if(!entregadosCache.length){
+  const todos = entregadosCache.concat(extrasEntregadosCache.map(extraComoEntregado));
+  if(!todos.length){
     cont.innerHTML = `<div class="empty">No hay pickings entregados todavía</div>`;
     return;
   }
   const campoBusq = document.getElementById('entregadosBuscarInput');
   const val = campoBusq ? campoBusq.value.trim().toLowerCase() : '';
-  const filtrados = !val ? entregadosCache : entregadosCache.filter(r=>
+  const filtrados = !val ? todos : todos.filter(r=>
     String(r['OF']||'').toLowerCase().includes(val) ||
     String(r['Proyecto']||'').toLowerCase().includes(val) ||
     String(r['Subproyecto']||'').toLowerCase().includes(val)
@@ -14807,22 +14819,11 @@ function renderEntregados(){
   }
   const ordenados = [...filtrados].sort((a,b)=> new Date(b['Fecha de entrega']) - new Date(a['Fecha de entrega']));
   const leyenda = val
-    ? `<div class="hint" style="margin-bottom:10px;">${ordenados.length} de ${entregadosCache.length} — toca uno para ver el detalle o corregir su entrega</div>`
+    ? `<div class="hint" style="margin-bottom:10px;">${ordenados.length} de ${todos.length} — toca uno para ver el detalle o corregir su entrega</div>`
     : `<div class="hint" style="margin-bottom:10px;">${ordenados.length} picking${ordenados.length===1?'':'s'} entregado${ordenados.length===1?'':'s'} — toca uno para ver el detalle o corregir su entrega</div>`;
   cont.innerHTML = leyenda + ordenados.map(r=>{
-    const id = r['ID'] ? String(r['ID']) : '';
-    const onclick = id ? `onclick="verPickingEntregado('${id.replace(/'/g,"\\'")}')"` : '';
-    return `
-    <div class="ticket" ${onclick} style="${id ? '' : 'cursor:default;'}">
-      <div class="ticket-top">
-        <span class="ticket-of">OF ${r['OF']}</span>
-        <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
-      </div>
-      <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
-      <div class="ticket-meta"><span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}${r['Hoja de picking URL'] ? iconoDigitalHtml() : ''}</div>
-      <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
-    </div>
-  `;}).join('');
+    return r.extra ? tarjetaExtraEntregadoHtml(r) : tarjetaEntregadoHtml(r);
+  }).join('');
 }
 
 function csvEscape(v){
@@ -16436,20 +16437,7 @@ async function confirmarEdicion(){
 function itemsParaUbicarDe(p){
   return [...(p.cajas>0 ? ['Cajas'] : []), ...fueraActivas(p)];
 }
-function abrirEntregarProduccion(id){
-  const p = DB.find(x=>x.id===id);
-  if(!p) return;
-  if(!puedeGestionar(p)){ toast('Solo quien registró este picking, o un administrador, pueden hacer esto'); return; }
-  mostrarSheet(`
-    <h3>Entregar a producción</h3>
-    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
-      La OF <b>${escapeHtml(p.of)}</b> se deja en <b>Producción</b> sin persona de DHV que firme en el momento.
-      Sigue pendiente ("Por ubicación → Producción") hasta que registres la entrega firmada.
-    </p>
-    <button class="btn btn-primary" onclick="confirmarEntregarProduccion('${p.id}')">Confirmar</button>
-    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
-  `);
-}
+
 async function confirmarEntregarProduccion(id){
   const p = DB.find(x=>x.id===id);
   if(!p) return;
@@ -16680,30 +16668,25 @@ async function buscarOF(){
 
   if(resultados.length===0){
     cont.innerHTML = `<div class="empty">Buscando en entregados…</div>`;
+    // Los extra se piden a la vez que la búsqueda en el servidor, no después
+    const extrasPedidos = cargarExtrasEntregados().then(lista => lista.filter(p =>
+      String(p.of||'').trim().toLowerCase() === valBusq.trim() ||
+      (pareceProyecto(val) && String(p.proyecto||'').toLowerCase().indexOf(valBusq) !== -1)));
+    const pintarExtras = extras => extras.map(p => tarjetaExtraEntregadoHtml(extraComoEntregado(p))).join('');
     try{
       const res = await fetchConLimite(GAS_URL + '?buscarEntregado=' + encodeURIComponent(val), {}, 25000);
       const datos = await res.json();
       const entregados = datos.entregados || [];
-      if(entregados.length){
-        cont.innerHTML = entregados.map(r=>{
-          const id = r['ID'] ? String(r['ID']) : '';
-          const onclick = id ? `onclick="verPickingEntregado('${id.replace(/'/g,"\\'")}')"` : '';
-          return `
-          <div class="ticket" ${onclick} style="${id ? '' : 'cursor:default;'}">
-            <div class="ticket-top">
-              <span class="ticket-of">OF ${r['OF']}</span>
-              <span class="ticket-date">${fechaCorta(r['Fecha de entrega'])}</span>
-            </div>
-            <div class="ticket-proj">${r['Proyecto'] || '—'}${r['Subproyecto'] ? ' · '+r['Subproyecto'] : ''}</div>
-            <div class="ticket-meta">
-              <span class="chip done">Entregado</span>${entregadoTieneHoja(r) ? iconoHojaHtml() : ''}${r['Hoja de picking URL'] ? iconoDigitalHtml() : ''}
-            </div>
-            <div class="hint" style="margin-top:8px;">Entregado por ${r['Entregado por']} a ${r['Entregado a']} el ${fechaCorta(r['Fecha de entrega'])}.</div>
-          </div>
-        `;}).join('');
+      const extrasCoinciden = await extrasPedidos;
+      const htmlExtras = pintarExtras(extrasCoinciden);
+      if(entregados.length || extrasCoinciden.length){
+        cont.innerHTML = entregados.map(tarjetaEntregadoHtml).join('') + htmlExtras;
         return;
       }
-    } catch(err){}
+    } catch(err){
+      const extrasCoinciden = await extrasPedidos;
+      if(extrasCoinciden.length){ cont.innerHTML = pintarExtras(extrasCoinciden); return; }
+    }
     cont.innerHTML = `<div class="empty">No se ha encontrado ningún picking con esa OF</div>`;
     return;
   }
@@ -17183,19 +17166,7 @@ function realizarDesdeEscaner(of){
   if(campo) campo.value = of;
 }
 
-function resumenEscaneoEncontrado(p){
-  const ubic = Object.entries(p.ubicaciones||{}).map(([k,v])=>`${k==='Cajas' ? 'Cajas de picking' : k}: ${v}`).join(' · ');
-  return `
-    <div class="obs-box">
-      <b>OF ${p.of}</b> ya está registrada — ${p.proyecto || '—'}${p.subproyecto ? ' · '+p.subproyecto : ''}<br>
-      ${textoCajas(p.cajas)}${ubic ? ' · '+ubic : ''}<br>
-      Registrado por ${escapeHtml(quienesHicieron(p))} · ${fechaCorta(p.fecha)}
-    </div>
-    <button class="btn btn-primary" onclick="irAAmpliarDesdeEscaner('${p.id}')" style="margin-top:10px;">Meter en su misma caja</button>
-    <button class="btn btn-outline" onclick="verDetalleDesdeEscaner('${p.id}')" style="margin-top:8px;">Ver detalle completo</button>
-    <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:8px;">Seguir escaneando</button>
-  `;
-}
+
 
 function seguirEscaneando(){
   // la cámara se apagó al mostrar el resultado — se vuelve a encender aquí
@@ -18318,18 +18289,7 @@ function materialFaltanteAgrupadoHtml(lista){
   });
   return orden.map(m => `<div style="padding:3px 0;">${grupos[m].map(c => escapeHtml(c)).join(', ')} (${escapeHtml(m)})</div>`).join('');
 }
-function registrarPickingRealizado(){
-  if(!sesionPicking) return;
-  if(!sesionPicking.componentes.length){
-    if(!confirm('No se ha escaneado ningún componente todavía. ¿Confirmas que quieres continuar de todas formas?')) return;
-  }
-  const datosHoja = {
-    of: sesionPicking.of, proyecto: sesionPicking.proyecto, subproyecto: sesionPicking.subproyecto,
-    semana: semanaISO(new Date()), hechoPor: usuarioActual || 'Sin identificar',
-    componentes: sesionPicking.componentes, incidencias: sesionPicking.incidencias
-  };
-  mostrarHojaPicking(datosHoja, 'previo', 'realizar-resumen');
-}
+
 
 // ---- añadir componentes a un picking YA registrado (no uno nuevo) ----
 function preguntarComoActualizarHoja(){
@@ -18739,16 +18699,7 @@ function elegirSegundaPersona(btn){
     c.style.background = on ? '#2B4C7E' : ''; c.style.color = on ? '#fff' : ''; c.style.borderColor = on ? '#2B4C7E' : '';
   });
 }
-function abrirCambiarSegundaPersona(id){
-  const p = DB.find(x=>x.id===id); if(!p) return;
-  segundaCambioId = id; segundaModo = 'cambio'; segundaElegida = p.segundaPersonaPicking || '';
-  const quien = p.registradoPor || '';
-  mostrarSheet(`<h3>Otra persona que lo hizo</h3>
-    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">Lo registró <b>${escapeHtml(quien)}</b>. Toca una persona para elegirla; si la tocas otra vez, se quita.</p>
-    <div id="segundaPersonaBurbujas" style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px;">${burbujasSegundaPersona(segundaElegida, quien)}</div>
-    <button class="btn btn-primary" onclick="guardarSegundaPersona()">Guardar</button>
-    <button class="btn btn-ghost" onclick="cerrarSheet()">Cancelar</button>`);
-}
+
 function guardarSegundaPersona(){
   const p = DB.find(x=>x.id===segundaCambioId); if(!p) return;
   p.segundaPersonaPicking = segundaElegida || '';
@@ -18849,17 +18800,7 @@ function imprimirHojaPicking(){
 // No todos los pickings van a un sitio del almacén — a veces se hacen y
 // se entregan directamente en mano, sin necesidad de guardar nada. Por
 // eso, antes de forzar a elegir ubicación, se pregunta.
-function preguntarUbicarPickingRealizado(){
-  if(!rpDocDatosActuales) return;
-  mostrarSheet(`
-    <h3>¿Terminar el picking?</h3>
-    <p class="hint" style="margin:0 0 10px;">
-      Terminar registra la OF ya, sin ubicación. La caja se puede ubicar ahora o después (desde la OF, con «Ubicar la caja»).
-    </p>
-    <button class="btn btn-primary" onclick="cerrarSheet(); preguntarEntregaInmediataSinUbicar();">✓ Terminar el picking</button>
-    <button class="btn btn-outline" onclick="cerrarSheet(); continuarARegistroDesdeDoc();">Ubicar la caja ahora</button>
-  `);
-}
+
 function preguntarEntregaInmediataSinUbicar(){
   mostrarSheet(`
     <h3>¿Se entrega ahora mismo?</h3>
