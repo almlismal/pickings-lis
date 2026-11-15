@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1317</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1320</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11108,6 +11108,14 @@ function registrarEvento(tipo, datos){
 window.addEventListener('error', e => registrarEvento('error', { a: 'js', msg: String(e.message || '').slice(0, 200) }));
 window.addEventListener('unhandledrejection', e => registrarEvento('error', { a: 'promesa', msg: String((e.reason && e.reason.message) || e.reason || '').slice(0, 200) }));
 registrarEvento('movil', { a: navigator.userAgent.slice(0, 160), ancho: window.innerWidth, alto: window.innerHeight, pixeles: window.devicePixelRatio, online: navigator.onLine });
+// Tiempos de picking (silencioso, sin pantalla): cada escaneo, pausa, reanudación y final.
+// Viaja con el mismo envío de diagnóstico, en la pestaña Diagnostico, con la OF como mensaje.
+function registrarTiempoPicking(accion){
+  try{
+    if(!sesionPicking || sesionPicking.extra) return;
+    registrarEvento('picking', { a: accion, msg: String(sesionPicking.of || '') });
+  }catch(e){}
+}
 function etiquetaPeticion(url, opciones){
   try{ if(opciones && opciones.body) return String(JSON.parse(opciones.body).accion || 'post'); }catch(e){}
   const m = String(url).match(/[?&](\w+)=/);
@@ -11773,6 +11781,7 @@ function descartarPausado(id){
 // ---- pausar y retomar ----
 function pausarPicking(){
   if(!sesionPicking){ ir('realizar-inicio'); return; }
+  registrarTiempoPicking('pausa');
   detenerBipCamara();
   guardarBorradorBip('bip');
   const d = borradorActivoId ? buscarPausado(borradorActivoId) : null;
@@ -12261,11 +12270,11 @@ function rangoInformeExtras(){
   if(desde > hasta){ toast('La fecha de inicio es posterior a la de fin'); return null; }
   return { desde: desde, hasta: hasta };
 }
-function verInforme(tipo){
+function verInforme(tipo, contId){
   const c = INFORMES[tipo];
   const rango = rangoInformeExtras(); if(!rango) return;
   llamarBackend(c.accion, Object.assign({ quien: usuarioActual || '' }, rango), c.clave + '_' + Date.now(), 60000).then(r => {
-    const cont = document.getElementById('infResultado'); if(!cont) return;
+    const cont = document.getElementById(contId || 'infResultado'); if(!cont) return;
     if(!r || r.ok === false){ cont.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo cargar el informe')}</div>`; return; }
     if(!(r.dias || []).length){ cont.innerHTML = `<div class="hint" style="margin-top:10px;">${c.vacio}</div>`; return; }
     const filas = r.dias.map(x => `<tr><td>${escapeHtml(x.fecha)}</td><td style="text-align:right;">${x.ofs}</td><td style="text-align:right;">${x.lineas}</td></tr>`).join('');
@@ -12481,6 +12490,7 @@ function retomarPausado(id, confirmado){
   programarSincPausados(1500);
   if(d.fase === 'bip' && d.sesion){
     sesionPicking = JSON.parse(JSON.stringify(d.sesion));
+    registrarTiempoPicking('reanudar');
     if(!Array.isArray(sesionPicking.parciales)) sesionPicking.parciales = parcialesDe(d.sesion, d.creadoPor).slice();
     sesionPicking.soloMias = soloMias;
     resetIncidenciasEnCurso();
@@ -13456,9 +13466,11 @@ function entrarAAdmin(){
     adminBoton('', 'Historial de cambios', "abrirRegistroAdmin('Historial')") +
     adminBoton('', 'Eliminados', "abrirRegistroAdmin('Eliminados')") +
     adminBoton('', 'Acciones de administradores', "abrirRegistroAdmin('Registro admin')") +
-    sec('Pruebas') +
+    sec('Informes') +
     adminBoton('', 'Pickings extra (informe)', "abrirInformeExtras()") +
     adminBoton('', 'Pickings planificados (informe)', "abrirInformePlanificados()") +
+    adminBoton('', 'Tiempos de picking', "abrirTiemposPicking()") +
+    adminBoton('', 'Informe completo', "abrirInformeCompleto()") +
     sec('Personas y seguridad') +
     adminBoton('', 'Usuarios', "ir('admin-usuarios')") +
     adminBoton('', 'Tiempos de respuesta (diagnóstico)', "abrirTiemposDiag()") +
@@ -13762,6 +13774,88 @@ function abrirTiemposDiag(){
     <button class="btn btn-outline" onclick="try{localStorage.removeItem(LS_TIEMPOS);localStorage.removeItem(LS_EVENTOS);}catch(e){} abrirTiemposDiag();">Borrar datos</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
 }
+// ---- Tiempos de picking: se calculan a partir de los eventos (escaneo, pausa, reanudación, terminar) ----
+const HUECO_MIN = 15;   // minutos sin actividad que se marcan como hueco
+function calcularTiemposPicking(filas, rango){
+  const ev = filas.filter(f => f.tipo === 'picking' && f.msg && f.t)
+    .map(f => ({ t: new Date(f.t).getTime(), a: f.a, of: String(f.msg), u: f.usuario || '' }))
+    .filter(e => !isNaN(e.t)).sort((x, y) => x.t - y.t);
+  // Agrupa por OF: cada "terminar" cierra un picking; lo que venga después es otro picking
+  const abiertos = {}, terminados = [];
+  ev.forEach(e => {
+    let p = abiertos[e.of];
+    if(!p){ p = abiertos[e.of] = { of: e.of, eventos: [] }; }
+    p.eventos.push(e);
+    if(e.a === 'terminar'){ terminados.push(p); delete abiertos[e.of]; }
+  });
+  const picks = terminados.map(p => {
+    const es = p.eventos, ini = es[0].t, fin = es[es.length - 1].t;
+    let pausa = 0, huecos = 0, pausaDesde = null;
+    for(let i = 1; i < es.length; i++){
+      const gap = (es[i].t - es[i-1].t) / 60000;
+      if(es[i-1].a === 'pausa' && es[i].a === 'reanudar'){ pausa += gap; }
+      else if(gap > HUECO_MIN) huecos++;
+    }
+    return { of: p.of, dia: new Date(ini).toLocaleDateString('sv-SE'), inicio: ini, fin: fin,
+      total: (fin - ini) / 60000, pausa: pausa, huecos: huecos, personas: [...new Set(es.map(e => e.u).filter(Boolean))] };
+  }).filter(p => !rango || (p.dia >= rango.desde && p.dia <= rango.hasta));
+  if(!picks.length) return { picks: [], normales: 0, media: 0, atipicos: [], umbral: 0 };
+  const orden = picks.map(p => p.total).sort((a, b) => a - b);
+  const mediana = orden[Math.floor(orden.length / 2)];
+  const umbral = Math.max(2 * mediana, 1);     // atípico: más del doble de la mediana del periodo
+  const normales = picks.filter(p => p.total <= umbral);
+  const media = normales.length ? normales.reduce((a, p) => a + p.total, 0) / normales.length : 0;
+  return { picks, normales: normales.length, media, atipicos: picks.filter(p => p.total > umbral).sort((a, b) => b.total - a.total), umbral };
+}
+function abrirTiemposPicking(){
+  const hoy = new Date().toISOString().slice(0, 10);
+  mostrarSheet(`<h3>Tiempos de picking</h3>
+    <p class="hint" style="margin:0 0 8px;">Media de los pickings normales. Un picking es atípico si dura más del doble de la mediana del periodo.</p>
+    <label>Desde</label><input type="date" id="infDesde" value="${hoy.slice(0,8)}01">
+    <label>Hasta</label><input type="date" id="infHasta" value="${hoy}">
+    <button class="btn btn-primary" onclick="verTiemposPicking('infResultado')">Ver</button>
+    <div id="infResultado"></div>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+}
+function verTiemposPicking(contId){
+  const rango = rangoInformeExtras(); if(!rango) return;
+  const cont = document.getElementById(contId); if(!cont) return;
+  cont.innerHTML = '<div class="hint" style="margin-top:10px;">Calculando…</div>';
+  llamarBackend('leerDiagnostico', { quien: usuarioActual || '' }, 'tp_' + Date.now(), 60000).then(r => {
+    const c = document.getElementById(contId); if(!c) return;
+    if(!r || r.ok === false){ c.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo calcular')}</div>`; return; }
+    const res = calcularTiemposPicking(r.filas || [], rango);
+    if(!res.picks.length){ c.innerHTML = '<div class="hint" style="margin-top:10px;">No hay pickings terminados en ese rango.</div>'; return; }
+    const filas = res.atipicos.map(p => `<tr><td>${escapeHtml(p.dia)}</td><td>${escapeHtml(p.of)}</td><td>${escapeHtml(p.personas.join(', ') || '—')}</td><td style="text-align:right;">${Math.round(p.total)} min</td><td style="text-align:right;">${Math.round(p.pausa)} min</td><td style="text-align:right;">${p.huecos}</td></tr>`).join('');
+    c.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
+      <tr><th style="text-align:left;">Pickings normales</th><td style="text-align:right;"><b>${res.normales}</b></td></tr>
+      <tr><th style="text-align:left;">Tiempo medio (normales)</th><td style="text-align:right;"><b>${Math.round(res.media)} min</b></td></tr>
+      <tr><th style="text-align:left;">Atípicos (más de ${Math.round(res.umbral)} min)</th><td style="text-align:right;"><b>${res.atipicos.length}</b></td></tr>
+    </table>
+    ${res.atipicos.length ? `<div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Atípicos</div>
+    <table style="width:100%; font-size:13px;"><tr><th style="text-align:left;">Día</th><th style="text-align:left;">OF</th><th style="text-align:left;">Personas</th><th style="text-align:right;">Total</th><th style="text-align:right;">Pausas</th><th style="text-align:right;">Huecos</th></tr>${filas}</table>` : ''}`;
+  }).catch(() => { const c = document.getElementById(contId); if(c) c.textContent = 'No se pudo calcular.'; });
+}
+
+// ---- Informe completo: las tres estadísticas juntas, con el mismo periodo ----
+function abrirInformeCompleto(){
+  const hoy = new Date().toISOString().slice(0, 10);
+  mostrarSheet(`<h3>Informe completo</h3>
+    <label>Desde</label><input type="date" id="infDesde" value="${hoy.slice(0,8)}01">
+    <label>Hasta</label><input type="date" id="infHasta" value="${hoy}">
+    <button class="btn btn-primary" onclick="verInformeCompleto()">Ver informe completo</button>
+    <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Pickings extra</div><div id="icExtra"></div>
+    <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Pickings planificados</div><div id="icPlanificados"></div>
+    <div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Tiempos de picking</div><div id="icTiempos"></div>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
+}
+function verInformeCompleto(){
+  const rango = rangoInformeExtras(); if(!rango) return;
+  verInforme('extra', 'icExtra');
+  verInforme('planificados', 'icPlanificados');
+  verTiemposPicking('icTiempos');
+}
+
 // Diagnóstico de todos los móviles, leído de la hoja (solo administradores)
 function verDiagnosticoTodos(){
   mostrarSheet(`<h3>Todos los móviles</h3><div id="diagTodos" class="hint">Cargando…</div>
@@ -13769,7 +13863,7 @@ function verDiagnosticoTodos(){
   llamarBackend('leerDiagnostico', { quien: usuarioActual || '' }, 'leerDiag_' + Date.now(), 60000).then(r => {
     const cont = document.getElementById('diagTodos'); if(!cont) return;
     // Respuesta tal cual la devuelve el servidor, para ver la causa si no aparece nada
-    const crudo = `<div style="font-size:11px; color:#5B6573; word-break:break-all; margin-top:10px;">Respuesta del servidor: ${escapeHtml(JSON.stringify(r).slice(0, 300))}</div>`;
+    const crudo = `<div style="font-size:11px; color:#5B6573; word-break:break-all; margin-top:10px;">Respuesta del servidor: ${escapeHtml(JSON.stringify(r).slice(0, 700))}</div>`;
     if(!r || r.ok === false){ cont.innerHTML = escapeHtml((r && r.error) || 'No se pudo cargar') + crudo; return; }
     const filas = r.filas || [];
     if(!filas.length){ cont.innerHTML = 'No hay filas que mostrar.' + crudo; return; }
@@ -17579,6 +17673,7 @@ async function guardarEnEsperaPickingRealizado(btnPulsado){
       componentes: conDescripciones(datos.componentes), incidencias: conDescripciones(datos.incidencias)
     }, id, 120000);
     if(!res || res.ok === false) throw new Error((res && res.error) || 'Respuesta inesperada');
+    registrarTiempoPicking('terminar');
     sesionPicking = null; rpDocDatosActuales = null;
     resetIncidenciasEnCurso();
     borrarBorradorBip();
@@ -17997,6 +18092,7 @@ function confirmarLineaBip(){
   const lote = document.getElementById('lineaLote').value.trim().toUpperCase() || 'N/A';
   const cantidad = leerCantidadLinea();
   sesionPicking.componentes.push({ codigo: rpLineaPendiente.codigo, lote, cantidad, por: usuarioActual || '' });
+  registrarTiempoPicking('escaneo');
   recordarLoteUso(rpLineaPendiente.codigo, lote);
   rpLineaPendiente = null;
   cerrarSheet();
