@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-2015</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-2045</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -823,7 +823,7 @@
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline solo-planificado" onclick="pausarPicking()">Pausar</button>
     <button class="btn btn-outline" id="btnPdaBip" onclick="abrirPantallaPda()" style="display:none; margin-top:18px;">Escanear con PDA</button>
-    <button class="btn btn-outline" onclick="pickingParcial(this)">Guardar mi parte</button>
+    <button class="btn btn-outline btn-parte" onclick="pickingParcial(this)">Guardar mi parte</button>
     <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
   </section>
 
@@ -840,7 +840,7 @@
     <div id="pdaBloqueIncidencias"></div>
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:14px;">Registrar incidencia (falta / no se encuentra)</button>
     <button class="btn btn-outline" id="pdaTecladoBtn" onclick="pdaTecladoAlternar()" style="margin-top:14px;">Escribir con teclado</button>
-    <button class="btn btn-outline" onclick="pickingParcial(this)">Guardar mi parte</button>
+    <button class="btn btn-outline btn-parte" onclick="pickingParcial(this)">Guardar mi parte</button>
     <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
   </section>
 
@@ -11760,6 +11760,7 @@ function guardarBorradorBip(fase, extra){
       let d = buscarPausado(borradorActivoId);
       if(!d){ d = { id: borradorActivoId, creadoPor: usuarioActual||'', creado: ahoraISO }; pausados.push(d); }
       d.fase = 'bip'; d.of = sesionPicking.of; d.proyecto = sesionPicking.proyecto||''; d.subproyecto = sesionPicking.subproyecto||'';
+      if(!Array.isArray(sesionPicking.parciales)) sesionPicking.parciales = [];   // nadie ha guardado su parte todavía
       d.sesion = JSON.parse(JSON.stringify(sesionPicking)); delete d.pendiente; d.borrado = false;
       d.actualizadoPor = usuarioActual||''; d.actualizado = ahoraISO; d.enUsoPor = usuarioActual||''; d.enUsoDesde = d.enUsoDesde || ahoraISO; d.sync = 'sucio';
     } else if(fase === 'registro' && pickingPendienteDatos){
@@ -12415,7 +12416,31 @@ function pickingParcial(btnPulsado){
     finally{ if(btnPulsado.isConnected){ btnPulsado.disabled = false; btnPulsado.innerHTML = textoBoton; } }
   }, 300);
 }
-function pickingParcialAhora(){
+// Nombres de las otras personas que ya han guardado su parte de este picking
+function partesGuardadasDeOtros(){
+  if(!sesionPicking || sesionPicking.extra) return [];
+  const yo = normalizarNombre(usuarioActual || '');
+  const base = borradorActivoId ? buscarPausado(borradorActivoId) : null;
+  const creador = (base && base.creadoPor) || usuarioActual || '';
+  return parcialesDe(sesionPicking, creador).filter(n => normalizarNombre(n) !== yo);
+}
+// ¿Tengo líneas mías en este picking?
+function tengoLineasEnSesion(){
+  if(!sesionPicking) return false;
+  const yo = normalizarNombre(usuarioActual || '');
+  const base = borradorActivoId ? buscarPausado(borradorActivoId) : null;
+  const autorDe = x => x.por || (base && base.creadoPor) || usuarioActual || '';
+  return sesionPicking.componentes.concat(sesionPicking.incidencias)
+    .some(x => normalizarNombre(autorDe(x)) === yo);
+}
+// "Guardar mi parte" solo aparece si estoy solo en el picking, o si ya tengo líneas mías en él.
+// Si otra persona ya guardó su parte y yo no tengo líneas, solo se ve "Terminar".
+function actualizarBotonesParte(){
+  const mostrar = !!sesionPicking && !sesionPicking.extra && !sesionPicking.soloLectura && !sesionPicking.idRealizado &&
+    (partesGuardadasDeOtros().length === 0 || tengoLineasEnSesion());
+  document.querySelectorAll('.btn-parte').forEach(b => { b.style.display = mostrar ? '' : 'none'; });
+}
+function pickingParcialAhora(sinAviso){
   if(!sesionPicking){ toast('No hay picking abierto'); return; }
   const yo = usuarioActual || '';
   if(!yo){ toast('Identifícate primero'); return; }
@@ -12425,6 +12450,17 @@ function pickingParcialAhora(){
     .some(x => normalizarNombre(autorDe(x)) === normalizarNombre(yo));
   if(!hayMias){ toast('Todavía no tienes líneas en este picking'); return; }
   if(sesionPicking.extra){ toast('Los pickings extra se entregan al terminar'); return; }
+  // Si otra persona ya ha guardado su parte, se pregunta antes: seguir luego o terminar y emitir
+  const otros = partesGuardadasDeOtros();
+  if(otros.length && !sinAviso){
+    mostrarSheet(`
+      <h3>Otra persona ya ha guardado su parte</h3>
+      <p style="font-size:14px; color:var(--ink-soft); margin:0 0 12px;"><b>${escapeHtml(otros.join(' y '))}</b> ya ha terminado su parte de este picking. ¿Quieres guardar para seguir luego o terminar el picking para emitirlo y ubicarlo?</p>
+      <button class="btn btn-primary" onclick="cerrarSheet(); pickingParcialAhora(true)">Guardar para seguir luego</button>
+      <button class="btn btn-outline" onclick="cerrarSheet(); terminarPicking()">Terminar y emitir</button>
+      <button class="btn btn-outline" onclick="cerrarSheet()">Volver</button>`);
+    return;
+  }
   // Guardar solo mi parte: queda marcada como guardada y la OF sigue abierta.
   // La OF no se puede terminar hasta que todas las partes estén guardadas (ver terminarPicking).
   const idParte = borradorActivoId || (sesionPicking && sesionPicking.draftId);
@@ -13299,6 +13335,7 @@ function ir(pantalla, esVolver){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+pantalla).classList.add('active');
   if(pantalla === 'realizar-inicio') aplicarVisibilidadPda();
+  if(pantalla === 'realizar-bip' || pantalla === 'realizar-pda') actualizarBotonesParte();
   // esVolver=true: se usa al volver atrás desde el Detalle — no se vuelve a
   // cargar/limpiar nada, se deja la pantalla tal cual estaba (misma lista,
   // mismos resultados de búsqueda) y solo se restaura el scroll.
@@ -17655,7 +17692,9 @@ function empezarBipadoParaRealizado(id, conPda){
     of: x.of, proyecto: x.proyecto, subproyecto: x.subproyecto,
     componentes: JSON.parse(JSON.stringify((x.datos && x.datos.componentes) || [])),
     incidencias: JSON.parse(JSON.stringify((x.datos && x.datos.incidencias) || [])),
-    idRealizado: id
+    idRealizado: id,
+    // La hoja ya está terminada: todas las personas que tienen líneas ya han guardado su parte
+    parciales: autoresDeSesion({ componentes: (x.datos && x.datos.componentes) || [], incidencias: (x.datos && x.datos.incidencias) || [] }, x.hechoPor || '')
   };
   document.getElementById('rpBipOf').textContent = x.of;
   const campoManual = document.getElementById('rp_codigoManual');
@@ -18345,6 +18384,7 @@ function esMiaSesion(x){
 }
 function renderLineasBip(){
   aplicarVisibilidadPda();
+  actualizarBotonesParte();
   const cont = document.getElementById('rpListaLineas');
   const num = document.getElementById('rpNumLineas');
   if(!sesionPicking || !cont) return;
@@ -18727,6 +18767,9 @@ function preguntarComoActualizarHoja(){
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 10px;">
       Vas a añadir ${sesionPicking.componentes.length} línea${sesionPicking.componentes.length===1?'':'s'} más a la OF ${escapeHtml(sesionPicking.of)}.
     </p>
+    <div class="hint" style="margin:0 0 12px; padding:10px; border-left:4px solid var(--warn-ink, #8a6100);">
+      <b>Atención:</b> la OF ya está registrada. Se actualiza su hoja de picking (PDF) y el cambio lo ven todos. Queda anotado quién lo hace. Si la OF ya está firmada, no se puede cambiar.
+    </div>
     <button class="btn btn-primary" onclick="confirmarAgregarComponentesExistente('regenerar')">Rehacer la hoja entera (antes + esto junto)</button>
     <button class="btn btn-outline" onclick="confirmarAgregarComponentesExistente('anexo')">Dejar la hoja original y generar una aparte solo con esto</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
