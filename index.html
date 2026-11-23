@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1610</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1625</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13786,7 +13786,7 @@ const HUECO_MIN = 15;   // minutos sin actividad que se marcan como hueco
 function calcularTiemposPicking(filas, rango){
   const ahora = Date.now();
   const ev = filas.filter(f => f.tipo === 'picking' && f.msg && f.t)
-    .map(f => ({ t: new Date(f.t).getTime(), a: f.a, of: String(f.msg), u: f.usuario || '', m: f.motivo || '' }))
+    .map(f => ({ t: new Date(f.t).getTime(), a: f.a, of: String(f.msg), u: normalizarNombre(f.usuario || ''), m: f.motivo || '' }))
     .filter(e => !isNaN(e.t)).sort((x, y) => x.t - y.t);
   // Agrupa por OF: el "terminar" de la OF cierra su picking; lo que queda abierto está en curso
   const abiertos = {}, terminados = [];
@@ -13845,7 +13845,7 @@ function calcularTiemposPicking(filas, rango){
     const total = (finEf - ini) / 60000;
     const trabajoMin = Math.min(trabajo / 60000, total);
     const suma = orden.reduce((acc, t) => acc + (t.b - t.a), 0) / 60000;
-    const personas = [...new Set(orden.map(t => t.u).filter(u => u !== '—'))];
+    const personas = [...new Set(orden.map(t => t.u).filter(u => u && u !== '—'))].map(u => u.charAt(0).toUpperCase() + u.slice(1));
     return { inicio: ini, fin: fin, total: total, trabajo: trabajoMin, pausa: Math.max(0, total - trabajoMin),
       suma: suma, huecos: huecos, personas: personas, dosPersonas: personas.length > 1, motivos: motivos };
   }
