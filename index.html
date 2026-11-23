@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1820</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1830</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -780,7 +780,7 @@
     </div>
     <div id="rpPausados"></div>
     <div id="extraPendientes"></div>
-    <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
+    <div class="hint" style="margin-bottom:10px;">Escanea cada componente.</div>
     <label>OF</label>
     <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
     <div class="row2">
@@ -11873,7 +11873,7 @@ function renderExtrasPendientes(){
     return `<div class="ticket" style="cursor:pointer;" onclick="abrirDetalleExtra('${escapeAtributo(p.id)}')">
       <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${p.lineas} línea${p.lineas===1?'':'s'}</span></div>
       <div class="ticket-proj">${escapeHtml(p.proyecto||'—')} · hecho el ${escapeHtml(p.fecha)} a las ${escapeHtml(p.hora)} por ${escapeHtml(p.creadoPor)}</div>
-      <div class="ticket-proj" style="font-size:12px;">${String(p.ubicacion||'').trim() ? 'Ubicado en ' + escapeHtml(p.ubicacion) + (p.bultos ? ' · ' + escapeHtml(p.bultos) : '') : '<b>Sin ubicar</b>'}</div>
+      <div class="ticket-proj" style="font-size:12px;">${String(p.ubicacion||'').trim() ? 'Ubicado en ' + escapeHtml(String(p.ubicacion||'').trim() || 'Soporte') : 'Ubicado en Soporte'}</div>
       ${p.observaciones ? `<div class="ticket-proj" style="font-size:12px;">${escapeHtml(p.observaciones)}</div>` : ''}
       <div class="acciones-tarjeta">
         ${p.hojaUrl ? botonTarjeta('Ver hoja', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : ''}
@@ -12603,7 +12603,7 @@ function estadoPausadoHtml(d, uso){
   if(uso) return `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><b>● Lo está haciendo ${escapeHtml(d.enUsoPor)} ahora</b></div>`;
   if(d.fase !== 'bip' || !d.sesion) return '';
   const hechas = parcialesDe(d.sesion, d.creadoPor);
-  if(!hechas.length) return `<div class="ticket-proj" style="color:var(--ink-soft); font-size:12px;"><b>❚❚ Pausado</b></div>`;
+  if(!hechas.length) return `<div class="ticket-proj" style="color:var(--ink-soft); font-size:12px;"><b>❚❚ En pausa</b></div>`;
   const faltan = partesPendientesDe(d.sesion, d.creadoPor);
   let html = `<div class="ticket-proj" style="color:#2F7A4A; font-size:12px;"><b>✔ Guardado por ${escapeHtml(hechas.join(' y '))}</b></div>`;
   if(faltan.length) html += `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;"><b>Falta que ${escapeHtml(faltan.join(' y '))} guarde su parte</b></div>`;
