@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-2045</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-2050</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -18210,7 +18210,7 @@ function recordarLoteUso(codigo, lote){
   const l = String(lote || '').trim().toUpperCase();
   if(!codigo || !l || l === 'N/A') return;
   const previos = (lotesRecordados[codigo] || []).filter(x => x !== l);
-  lotesRecordados[codigo] = [l].concat(previos).slice(0, 20);
+  lotesRecordados[codigo] = [l].concat(previos).slice(0, 200);
   guardarLotesRecordados();
   lotePendienteAnadir(codigo, l);
   enviarLotesPendientes();
@@ -18252,7 +18252,7 @@ async function sincronizarLotesCodigo(codigo){
     const juntos = [];
     // Primero los de este móvil (ya se ven al instante), después los que vienen de otros móviles
     propios.concat(delServidor).forEach(l => { if(l && juntos.indexOf(l) === -1) juntos.push(l); });
-    lotesRecordados[codigo] = juntos.slice(0, 20);
+    lotesRecordados[codigo] = juntos.slice(0, 200);
     guardarLotesRecordados();
     if(rpLineaPendiente && rpLineaPendiente.codigo === codigo){
       const pistas = document.getElementById('lotePistas');
