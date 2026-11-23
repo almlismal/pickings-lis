@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1939</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-2000</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12165,6 +12165,18 @@ function quitarBorradorExtraTrasEntregar(of){
   });
   guardarPausadosLocal(); renderPausados(); actualizarBadgePausados(); programarSincPausados(500);
 }
+// Al guardar una OF como terminada o ampliar su hoja, se cierran TODAS las copias en curso de esa OF
+// (de cualquiera), para que no quede una copia desfasada que siga pidiendo "guardar su parte".
+function cerrarCopiasEnCursoDeOF(of){
+  pausados.forEach(d => {
+    if(String(d.of) === String(of) && d.fase === 'bip' && !d.borrado){
+      d.borrado = true; d.sync = 'sucio'; d.actualizado = new Date().toISOString(); d.actualizadoPor = usuarioActual || '';
+      delete d.sesion; delete d.pendiente;
+      if(borradorActivoId === d.id) borradorActivoId = null;
+    }
+  });
+  guardarPausadosLocal(); renderPausados(); actualizarBadgePausados(); programarSincPausados(500);
+}
 function extraEnviar(datos, firma){
   if(!datos || extraEnviando) return;
   extraEnviando = true;
@@ -17699,6 +17711,7 @@ async function confirmarAmpliarRealizado(){
     sesionPicking = null;
     resetIncidenciasEnCurso();
     borrarBorradorBip();
+    cerrarCopiasEnCursoDeOF(x.of);
     await cargarRealizadosEspera();
     toast('Hoja en espera actualizada: OF ' + x.of);
     ir('realizar-inicio');
@@ -17808,6 +17821,7 @@ async function guardarEnEsperaPickingRealizado(btnPulsado){
     sesionPicking = null; rpDocDatosActuales = null;
     resetIncidenciasEnCurso();
     borrarBorradorBip();
+    cerrarCopiasEnCursoDeOF(datos.of);
     toast('Picking terminado: la hoja queda en espera hasta registrar la OF');
     ir('realizar-inicio');
   }catch(err){
