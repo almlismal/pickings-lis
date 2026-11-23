@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1135</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1155</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11110,12 +11110,41 @@ window.addEventListener('unhandledrejection', e => registrarEvento('error', { a:
 registrarEvento('movil', { a: navigator.userAgent.slice(0, 160), ancho: window.innerWidth, alto: window.innerHeight, pixeles: window.devicePixelRatio, online: navigator.onLine });
 // Tiempos de picking (silencioso, sin pantalla): cada escaneo, pausa, reanudación y final.
 // Viaja con el mismo envío de diagnóstico, en la pestaña Diagnostico, con la OF como mensaje.
+// Tiempos de picking: cola propia en el móvil, con ID por evento; se envía a la hoja "Tiempos de picking".
+const LS_TIEMPOS_PICKING = 'lis_tiempos_picking';
+let enviandoTiempos = false, timerTiempos = null;
 function registrarTiempoPicking(accion){
   try{
     if(!sesionPicking || sesionPicking.extra) return;
-    registrarEvento('picking', { a: accion, msg: String(sesionPicking.of || '') });
+    const lista = JSON.parse(localStorage.getItem(LS_TIEMPOS_PICKING) || '[]');
+    lista.push({ id: 'ev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      t: new Date().toISOString(), of: String(sesionPicking.of || ''), u: usuarioActual || '', a: accion });
+    localStorage.setItem(LS_TIEMPOS_PICKING, JSON.stringify(lista.slice(-5000)));
   }catch(e){}
+  programarEnvioTiempos();
 }
+function programarEnvioTiempos(){ clearTimeout(timerTiempos); timerTiempos = setTimeout(enviarTiemposPicking, 1500); }
+function enviarTiemposPicking(){
+  if(enviandoTiempos || !usuarioActual || navigator.onLine === false) return;
+  let lista = [];
+  try{ lista = JSON.parse(localStorage.getItem(LS_TIEMPOS_PICKING) || '[]'); }catch(e){}
+  if(!lista.length) return;
+  enviandoTiempos = true;
+  const lote = lista.slice(0, 200);
+  llamarBackend('enviarTiemposPicking', { usuario: usuarioActual, filas: lote }, 'tpk_' + Date.now(), 30000)
+    .then(r => {
+      if(!r || r.ok === false) return;
+      const enviados = new Set(lote.map(x => x.id));
+      try{
+        const resto = JSON.parse(localStorage.getItem(LS_TIEMPOS_PICKING) || '[]').filter(x => !enviados.has(x.id));
+        localStorage.setItem(LS_TIEMPOS_PICKING, JSON.stringify(resto));
+      }catch(e){}
+      if(lista.length > lote.length) programarEnvioTiempos();
+    })
+    .catch(() => {})
+    .finally(() => { enviandoTiempos = false; });
+}
+window.addEventListener('online', () => setTimeout(enviarTiemposPicking, 1000));
 function etiquetaPeticion(url, opciones){
   try{ if(opciones && opciones.body) return String(JSON.parse(opciones.body).accion || 'post'); }catch(e){}
   const m = String(url).match(/[?&](\w+)=/);
@@ -13871,7 +13900,7 @@ function verTiemposPicking(contId){
   const rango = rangoInformeExtras(); if(!rango) return;
   const cont = document.getElementById(contId); if(!cont) return;
   cont.innerHTML = '<div class="hint" style="margin-top:10px;">Calculando…</div>';
-  llamarBackend('leerDiagnostico', { quien: usuarioActual || '' }, 'tp_' + Date.now(), 60000).then(r => {
+  llamarBackend('leerTiemposPicking', { quien: usuarioActual || '', desde: rango.desde, hasta: rango.hasta }, 'tpl_' + Date.now(), 60000).then(r => {
     const c = document.getElementById(contId); if(!c) return;
     if(!r || r.ok === false){ c.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo calcular')}</div>`; return; }
     const res = calcularTiemposPicking(r.filas || [], rango);
@@ -20154,6 +20183,7 @@ function enviarDiagnosticoSiToca(){
 async function iniciar(){
   window.__appListo = true;
   setTimeout(enviarDiagnosticoSiToca, 8000);
+  setTimeout(enviarTiemposPicking, 5000);
   try{ iniciarCatalogo(); }catch(e){}
   try{ cargarPausados(); actualizarBadgePausados(); programarSincPausados(3000); }catch(e){}
   try{ setTimeout(procesarRegenHojas, 5000); }catch(e){}
