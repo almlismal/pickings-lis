@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v11nov-1320</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1135</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13777,10 +13777,11 @@ function abrirTiemposDiag(){
 // ---- Tiempos de picking: se calculan a partir de los eventos (escaneo, pausa, reanudación, terminar) ----
 const HUECO_MIN = 15;   // minutos sin actividad que se marcan como hueco
 function calcularTiemposPicking(filas, rango){
+  const ahora = Date.now();
   const ev = filas.filter(f => f.tipo === 'picking' && f.msg && f.t)
     .map(f => ({ t: new Date(f.t).getTime(), a: f.a, of: String(f.msg), u: f.usuario || '' }))
     .filter(e => !isNaN(e.t)).sort((x, y) => x.t - y.t);
-  // Agrupa por OF: cada "terminar" cierra un picking; lo que venga después es otro picking
+  // Agrupa por OF: el "terminar" de la OF cierra su picking; lo que queda abierto está en curso
   const abiertos = {}, terminados = [];
   ev.forEach(e => {
     let p = abiertos[e.of];
@@ -13788,24 +13789,73 @@ function calcularTiemposPicking(filas, rango){
     p.eventos.push(e);
     if(e.a === 'terminar'){ terminados.push(p); delete abiertos[e.of]; }
   });
+  // Mide un picking. Cada persona trabaja desde su escaneo o reanudación hasta su pausa o terminar.
+  // Tiempo de trabajo = reloj con al menos una persona trabajando (los tramos solapados cuentan una vez).
+  // Tiempo de pausa = el resto del tiempo entre el primer evento y el final.
+  // Suma = tiempo de cada persona sumado (si hay dos personas trabajando a la vez, sale más que el reloj).
+  function medir(es, fin){
+    const finEf = fin != null ? fin : ahora;
+    const ini = es[0].t;
+    const porPersona = {};
+    es.forEach(e => { const k = e.u || '—'; (porPersona[k] = porPersona[k] || []).push(e); });
+    const tramos = []; let huecos = 0;
+    Object.keys(porPersona).forEach(u => {
+      let activo = null, ultimo = null;
+      porPersona[u].forEach(e => {
+        if(e.a === 'escaneo' || e.a === 'reanudar'){
+          if(activo === null){ activo = e.t; }
+          else if((e.t - ultimo) / 60000 > HUECO_MIN){
+            // Hueco sin pausar: solo se cuentan HUECO_MIN minutos tras el último evento
+            tramos.push({ u: u, a: activo, b: ultimo + HUECO_MIN * 60000 }); huecos++; activo = e.t;
+          }
+          ultimo = e.t;
+        } else if(e.a === 'pausa' || e.a === 'terminar'){
+          if(activo !== null){ tramos.push({ u: u, a: activo, b: e.t }); activo = null; }
+          ultimo = e.t;
+        }
+      });
+      if(activo !== null){
+        // Sigue activa sin pausar ni terminar: cuenta hasta ahora si su última actividad es reciente
+        const b = Math.min(ultimo + HUECO_MIN * 60000, finEf);
+        if(finEf - ultimo > HUECO_MIN * 60000) huecos++;
+        if(b > activo) tramos.push({ u: u, a: activo, b: b });
+      }
+    });
+    // Reloj con al menos una persona trabajando
+    const orden = tramos.filter(t => t.b > t.a).sort((x, y) => x.a - y.a);
+    let trabajo = 0, cur = null;
+    orden.forEach(t => {
+      if(!cur){ cur = { a: t.a, b: t.b }; }
+      else if(t.a <= cur.b){ cur.b = Math.max(cur.b, t.b); }
+      else { trabajo += cur.b - cur.a; cur = { a: t.a, b: t.b }; }
+    });
+    if(cur) trabajo += cur.b - cur.a;
+    const total = (finEf - ini) / 60000;
+    const trabajoMin = Math.min(trabajo / 60000, total);
+    const suma = orden.reduce((acc, t) => acc + (t.b - t.a), 0) / 60000;
+    const personas = [...new Set(orden.map(t => t.u).filter(u => u !== '—'))];
+    return { inicio: ini, fin: fin, total: total, trabajo: trabajoMin, pausa: Math.max(0, total - trabajoMin),
+      suma: suma, huecos: huecos, personas: personas, dosPersonas: personas.length > 1 };
+  }
   const picks = terminados.map(p => {
-    const es = p.eventos, ini = es[0].t, fin = es[es.length - 1].t;
-    let pausa = 0, huecos = 0, pausaDesde = null;
-    for(let i = 1; i < es.length; i++){
-      const gap = (es[i].t - es[i-1].t) / 60000;
-      if(es[i-1].a === 'pausa' && es[i].a === 'reanudar'){ pausa += gap; }
-      else if(gap > HUECO_MIN) huecos++;
-    }
-    return { of: p.of, dia: new Date(ini).toLocaleDateString('sv-SE'), inicio: ini, fin: fin,
-      total: (fin - ini) / 60000, pausa: pausa, huecos: huecos, personas: [...new Set(es.map(e => e.u).filter(Boolean))] };
+    const fin = p.eventos[p.eventos.length - 1].t;
+    const m = medir(p.eventos, fin);
+    return Object.assign({ of: p.of, dia: new Date(m.inicio).toLocaleDateString('sv-SE') }, m);
   }).filter(p => !rango || (p.dia >= rango.desde && p.dia <= rango.hasta));
-  if(!picks.length) return { picks: [], normales: 0, media: 0, atipicos: [], umbral: 0 };
-  const orden = picks.map(p => p.total).sort((a, b) => a - b);
-  const mediana = orden[Math.floor(orden.length / 2)];
-  const umbral = Math.max(2 * mediana, 1);     // atípico: más del doble de la mediana del periodo
-  const normales = picks.filter(p => p.total <= umbral);
-  const media = normales.length ? normales.reduce((a, p) => a + p.total, 0) / normales.length : 0;
-  return { picks, normales: normales.length, media, atipicos: picks.filter(p => p.total > umbral).sort((a, b) => b.total - a.total), umbral };
+  // En curso o pausados: sin terminar todavía, no cuentan para la media
+  const enCurso = Object.values(abiertos).map(p => {
+    const m = medir(p.eventos, null);
+    return Object.assign({ of: p.of, dia: new Date(m.inicio).toLocaleDateString('sv-SE') }, m);
+  }).sort((x, y) => x.inicio - y.inicio);
+  if(!picks.length) return { picks: [], enCurso: enCurso, normales: 0, media: 0, atipicos: [], umbral: 0 };
+  // Atípico: el tiempo de trabajo supera el doble de la mediana del periodo
+  const orden2 = picks.map(p => p.trabajo).sort((x, y) => x - y);
+  const mediana = orden2[Math.floor(orden2.length / 2)];
+  const umbral = Math.max(2 * mediana, 1);
+  const normales = picks.filter(p => p.trabajo <= umbral);
+  const media = normales.length ? normales.reduce((acc, p) => acc + p.trabajo, 0) / normales.length : 0;
+  return { picks: picks, enCurso: enCurso, normales: normales.length, media: media,
+    atipicos: picks.filter(p => p.trabajo > umbral).sort((x, y) => y.trabajo - x.trabajo), umbral: umbral };
 }
 function abrirTiemposPicking(){
   const hoy = new Date().toISOString().slice(0, 10);
@@ -13825,18 +13875,26 @@ function verTiemposPicking(contId){
     const c = document.getElementById(contId); if(!c) return;
     if(!r || r.ok === false){ c.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo calcular')}</div>`; return; }
     const res = calcularTiemposPicking(r.filas || [], rango);
-    if(!res.picks.length){ c.innerHTML = '<div class="hint" style="margin-top:10px;">No hay pickings terminados en ese rango.</div>'; return; }
-    const filas = res.atipicos.map(p => `<tr><td>${escapeHtml(p.dia)}</td><td>${escapeHtml(p.of)}</td><td>${escapeHtml(p.personas.join(', ') || '—')}</td><td style="text-align:right;">${Math.round(p.total)} min</td><td style="text-align:right;">${Math.round(p.pausa)} min</td><td style="text-align:right;">${p.huecos}</td></tr>`).join('');
+    const fila = (p) => `<tr><td>${escapeHtml(p.dia)}</td><td>${escapeHtml(p.of)}</td><td>${escapeHtml(p.personas.join(', ') || '—')}${p.dosPersonas ? '<br><span style="font-size:11px; color:var(--ink-soft);">Trabajo de 2 personas · suma ' + Math.round(p.suma) + ' min</span>' : ''}</td><td style="text-align:right;">${Math.round(p.total)} min</td><td style="text-align:right;">${Math.round(p.pausa)} min</td><td style="text-align:right;">${Math.round(p.trabajo)} min</td><td style="text-align:right;">${p.huecos}</td></tr>`;
+    const cabecera = '<tr><th style="text-align:left;">Día</th><th style="text-align:left;">OF</th><th style="text-align:left;">Personas</th><th style="text-align:right;">Total</th><th style="text-align:right;">Pausas</th><th style="text-align:right;">Trabajo</th><th style="text-align:right;">Huecos</th></tr>';
+    const bloqueEnCurso = res.enCurso.length ? `<div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">En curso o pausados</div>
+      <table style="width:100%; font-size:13px;">${cabecera}${res.enCurso.map(fila).join('')}</table>
+      <div class="hint" style="margin-top:4px;">No cuentan para la media hasta que se terminen.</div>` : '';
+    if(!res.picks.length){
+      c.innerHTML = '<div class="hint" style="margin-top:10px;">No hay pickings terminados en ese rango.</div>' + bloqueEnCurso;
+      return;
+    }
     c.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
+      <tr><th style="text-align:left;">Pickings terminados</th><td style="text-align:right;"><b>${res.picks.length}</b></td></tr>
       <tr><th style="text-align:left;">Pickings normales</th><td style="text-align:right;"><b>${res.normales}</b></td></tr>
-      <tr><th style="text-align:left;">Tiempo medio (normales)</th><td style="text-align:right;"><b>${Math.round(res.media)} min</b></td></tr>
-      <tr><th style="text-align:left;">Atípicos (más de ${Math.round(res.umbral)} min)</th><td style="text-align:right;"><b>${res.atipicos.length}</b></td></tr>
+      <tr><th style="text-align:left;">Tiempo medio de trabajo (normales)</th><td style="text-align:right;"><b>${Math.round(res.media)} min</b></td></tr>
+      <tr><th style="text-align:left;">Atípicos (trabajo más de ${Math.round(res.umbral)} min)</th><td style="text-align:right;"><b>${res.atipicos.length}</b></td></tr>
     </table>
     ${res.atipicos.length ? `<div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Atípicos</div>
-    <table style="width:100%; font-size:13px;"><tr><th style="text-align:left;">Día</th><th style="text-align:left;">OF</th><th style="text-align:left;">Personas</th><th style="text-align:right;">Total</th><th style="text-align:right;">Pausas</th><th style="text-align:right;">Huecos</th></tr>${filas}</table>` : ''}`;
+      <table style="width:100%; font-size:13px;">${cabecera}${res.atipicos.map(fila).join('')}</table>` : ''}
+    ${bloqueEnCurso}`;
   }).catch(() => { const c = document.getElementById(contId); if(c) c.textContent = 'No se pudo calcular.'; });
 }
-
 // ---- Informe completo: las tres estadísticas juntas, con el mismo periodo ----
 function abrirInformeCompleto(){
   const hoy = new Date().toISOString().slice(0, 10);
