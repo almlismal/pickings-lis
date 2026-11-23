@@ -11760,7 +11760,6 @@ function guardarBorradorBip(fase, extra){
       let d = buscarPausado(borradorActivoId);
       if(!d){ d = { id: borradorActivoId, creadoPor: usuarioActual||'', creado: ahoraISO }; pausados.push(d); }
       d.fase = 'bip'; d.of = sesionPicking.of; d.proyecto = sesionPicking.proyecto||''; d.subproyecto = sesionPicking.subproyecto||'';
-      if(!Array.isArray(sesionPicking.parciales)) sesionPicking.parciales = [];
       d.sesion = JSON.parse(JSON.stringify(sesionPicking)); delete d.pendiente; d.borrado = false;
       d.actualizadoPor = usuarioActual||''; d.actualizado = ahoraISO; d.enUsoPor = usuarioActual||''; d.enUsoDesde = d.enUsoDesde || ahoraISO; d.sync = 'sucio';
     } else if(fase === 'registro' && pickingPendienteDatos){
