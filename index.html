@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1235</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1610</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12171,50 +12171,26 @@ function abrirDetalleExtra(id){
   if(!p){ toast('No encuentro ese picking, actualiza la pantalla'); return; }
   const yo = normalizarNombre(usuarioActual || '');
   const puede = normalizarNombre(p.creadoPor) === yo || yo === 'maria';
-  const ubicado = !!String(p.ubicacion || '').trim();
+  const ubicacionTxt = String(p.ubicacion || '').trim() || 'Soporte';
   mostrarSheet(`
     <h3>Picking extra · OF ${escapeHtml(p.of)}</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">${escapeHtml(p.proyecto || '—')} · hecho por ${escapeHtml(p.creadoPor)}</p>
-    <p style="font-size:14px; margin:0 0 12px;"><b>Ubicación:</b> ${ubicado ? escapeHtml(p.ubicacion) + (p.bultos ? ' · ' + escapeHtml(p.bultos) : '') : 'sin ubicar'}</p>
-    ${puede ? `<button class="btn btn-outline" onclick="ubicarExtraPendiente('${escapeAtributo(p.id)}')">${ubicado ? 'Cambiar ubicación' : 'Ubicar'}</button>` : ''}
-    ${puede ? (ubicado
-      ? `<button class="btn btn-primary" onclick="extraEntregarPendiente('${escapeAtributo(p.id)}')">Firmar y entregar</button>`
-      : `<div class="hint" style="margin:6px 0 10px;">Ubícalo antes de firmar y entregar.</div>`) : ''}
+    <p style="font-size:14px; margin:0 0 12px;"><b>Ubicación:</b> ${escapeHtml(ubicacionTxt)}</p>
+    ${puede ? `<button class="btn btn-outline" onclick="ubicarExtraPendiente('${escapeAtributo(p.id)}')">Cambiar ubicación</button>` : ''}
+    ${puede ? `<button class="btn btn-primary" onclick="extraEntregarPendiente('${escapeAtributo(p.id)}')">Firmar y entregar</button>` : ''}
     ${(puede || esAdminSheet(usuarioActual)) ? `<button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="borrarExtraPendienteAdmin('${escapeAtributo(p.id)}')">Borrar picking pendiente</button>` : ''}
     <button class="btn btn-outline" onclick="cerrarSheet()">Cerrar</button>`);
 }
-// Primero qué lleva (caja o bolsas y cuántas) y después el mismo selector de ubicación
+// Cambiar la ubicación de un extra: texto libre, por defecto Soporte (sin caja ni bolsas)
 function ubicarExtraPendiente(id){
   const p = (extrasPendientesCache || []).find(x => x.id === id);
   if(!p) return;
   mostrarSheet(`
-    <h3>¿Qué lleva el picking extra?</h3>
-    <div style="display:flex; gap:10px; margin-bottom:10px;">
-      <button class="btn btn-primary" onclick="ubicarExtraTipo('${escapeAtributo(id)}', 'Caja')">Caja</button>
-      <button class="btn btn-primary" onclick="ubicarExtraTipo('${escapeAtributo(id)}', 'Bolsas')">Bolsas</button>
-    </div>
+    <h3>Cambiar ubicación</h3>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">OF ${escapeHtml(p.of)}. Por defecto está en Soporte.</p>
+    <input type="text" id="extraUbicacionNueva" value="${escapeAtributo(String(p.ubicacion || '').trim() || 'Soporte')}" style="font-size:18px;">
+    <button class="btn btn-primary" onclick="guardarUbicacionExtra('${escapeAtributo(id)}', (document.getElementById('extraUbicacionNueva').value || '').trim() || 'Soporte', '')">Guardar ubicación</button>
     <button class="btn btn-outline" onclick="abrirDetalleExtra('${escapeAtributo(id)}')">Volver</button>`);
-}
-function ubicarExtraTipo(id, tipo){
-  const p = (extrasPendientesCache || []).find(x => x.id === id);
-  if(!p) return;
-  mostrarSheet(`
-    <h3>¿Cuántas ${tipo === 'Caja' ? 'cajas' : 'bolsas'}?</h3>
-    <input type="number" id="extraNumBultos" min="1" value="1" inputmode="numeric" style="font-size:20px; text-align:center;">
-    <button class="btn btn-primary" onclick="ubicarExtraCantidad('${escapeAtributo(id)}', '${tipo}')">Seguir</button>
-    <button class="btn btn-outline" onclick="ubicarExtraPendiente('${escapeAtributo(id)}')">Volver</button>`);
-}
-function ubicarExtraCantidad(id, tipo){
-  const p = (extrasPendientesCache || []).find(x => x.id === id);
-  const n = Math.max(1, parseInt((document.getElementById('extraNumBultos') || {}).value, 10) || 1);
-  if(!p) return;
-  const bultos = n + ' ' + (tipo === 'Caja' ? (n === 1 ? 'caja' : 'cajas') : (n === 1 ? 'bolsa' : 'bolsas'));
-  abrirSelectorUbicacion({
-    item: tipo === 'Caja' ? 'Cajas' : 'Bolsas', proyecto: p.proyecto, of: p.of, actual: p.ubicacion || '',
-    titulo: 'picking extra OF ' + p.of + ' · ' + bultos, cajas: tipo === 'Caja' ? n : 0,
-    cb: v => guardarUbicacionExtra(id, v, bultos),
-    alCancelar: () => abrirDetalleExtra(id)
-  });
 }
 async function guardarUbicacionExtra(id, v, bultos){
   const r = await llamarBackend('ubicarPickingExtra', { id, quien: usuarioActual || '', ubicacion: v, bultos: bultos || '' }, 'uxt_' + Date.now(), 60000);
@@ -12227,7 +12203,6 @@ async function guardarUbicacionExtra(id, v, bultos){
 }
 function extraEntregarPendiente(id){
   const pend = (extrasPendientesCache || []).find(x => x.id === id);
-  if(pend && !String(pend.ubicacion || '').trim()){ toast('Primero hay que ubicar el picking'); return; }
   extraPendienteId = id;
   mostrarSheet(`
     <h3>Firma digital</h3>
