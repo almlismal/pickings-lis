@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-2000</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-2015</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -18146,6 +18146,7 @@ function continuarLineaBip(codigo){
     <button class="btn btn-primary" onclick="confirmarLineaBip()">Añadir a la lista</button>
     <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Cancelar</button>
   `);
+  sincronizarLotesCodigo(codigo);   // trae los lotes que otros móviles han usado para este código
 }
 
 // Campo de lote (se escribe a mano).
@@ -18163,13 +18164,66 @@ function cargarLotesRecordados(){
 function guardarLotesRecordados(){
   try{ localStorage.setItem(LS_LOTES_RECORDADOS, JSON.stringify(lotesRecordados)); }catch(e){}
 }
-// Un lote usado para un PN queda recordado en este móvil (los 5 más recientes)
+// Un lote usado para un PN queda recordado (los 20 más recientes) y se guarda también en el servidor,
+// para que lo vean todos los móviles. Si no hay conexión, queda pendiente y se envía después.
+const LS_LOTES_PENDIENTES = 'pickings_lis_lotes_pendientes_v1';
 function recordarLoteUso(codigo, lote){
   const l = String(lote || '').trim().toUpperCase();
   if(!codigo || !l || l === 'N/A') return;
   const previos = (lotesRecordados[codigo] || []).filter(x => x !== l);
-  lotesRecordados[codigo] = [l].concat(previos).slice(0, 5);
+  lotesRecordados[codigo] = [l].concat(previos).slice(0, 20);
   guardarLotesRecordados();
+  lotePendienteAnadir(codigo, l);
+  enviarLotesPendientes();
+}
+function lotesPendientesLeer(){
+  try{ const v = JSON.parse(localStorage.getItem(LS_LOTES_PENDIENTES) || '[]'); return Array.isArray(v) ? v : []; }
+  catch(e){ return []; }
+}
+function lotesPendientesGuardar(lista){
+  try{ localStorage.setItem(LS_LOTES_PENDIENTES, JSON.stringify(lista.slice(-200))); }catch(e){}
+}
+function lotePendienteAnadir(codigo, lote){
+  const lista = lotesPendientesLeer();
+  if(!lista.some(x => x.codigo === codigo && x.lote === lote)) lista.push({ codigo, lote });
+  lotesPendientesGuardar(lista);
+}
+let enviandoLotesPendientes = false;
+async function enviarLotesPendientes(){
+  if(enviandoLotesPendientes || navigator.onLine === false) return;
+  enviandoLotesPendientes = true;
+  try{
+    let lista = lotesPendientesLeer();
+    for(const x of lista.slice()){
+      try{
+        const r = await llamarBackend('guardarLoteUso', { codigo: x.codigo, lote: x.lote }, '', 20000);
+        if(r && r.ok !== false){ lista = lista.filter(y => !(y.codigo === x.codigo && y.lote === x.lote)); lotesPendientesGuardar(lista); }
+      }catch(e){ break; }   // sin conexión: se intenta de nuevo la próxima vez
+    }
+  } finally { enviandoLotesPendientes = false; }
+}
+// Trae los lotes que otros móviles han usado para esta referencia y los junta con los de este móvil.
+async function sincronizarLotesCodigo(codigo){
+  if(!codigo || navigator.onLine === false) return;
+  try{
+    const r = await llamarBackend('leerLotesUso', { codigos: [codigo] }, '', 15000);
+    if(!r || r.ok === false || !r.lotes) return;
+    const delServidor = Array.isArray(r.lotes[String(codigo).toUpperCase()]) ? r.lotes[String(codigo).toUpperCase()] : [];
+    const propios = lotesRecordados[codigo] || [];
+    const juntos = [];
+    // Primero los de este móvil (ya se ven al instante), después los que vienen de otros móviles
+    propios.concat(delServidor).forEach(l => { if(l && juntos.indexOf(l) === -1) juntos.push(l); });
+    lotesRecordados[codigo] = juntos.slice(0, 20);
+    guardarLotesRecordados();
+    if(rpLineaPendiente && rpLineaPendiente.codigo === codigo){
+      const pistas = document.getElementById('lotePistas');
+      const campo = document.getElementById('lineaLote');
+      if(pistas){
+        lotePistasActuales = lotesAnterioresCodigo(codigo);
+        pistas.innerHTML = pistasLoteHtml(campo ? campo.value : '', lotePistasActuales);
+      }
+    }
+  }catch(e){ /* sin conexión: se queda con los lotes de este móvil */ }
 }
 function lotesAnterioresCodigo(codigo){
   const out = [];
