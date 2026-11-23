@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1810</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1820</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11864,7 +11864,7 @@ function tituloListaPickings(texto, margen){
 function renderExtrasPendientes(){
   const cont = document.getElementById('extraPendientes');
   if(!cont) return;
-  const botonFirmados = botonFirmadosExtra();
+  const botonFirmados = '';   // el botón de firmados va al final de la pantalla (extraFirmadosBoton)
   if(!extrasPendientesCache.length){ cont.innerHTML = botonFirmados; return; }
   const yo = normalizarNombre(usuarioActual || '');
   const lista = extrasPendientesCache.filter(p => coincideFiltroPickings(filtroPickingsTexto, p.of, [p.creadoPor, p.hechoPor]));
