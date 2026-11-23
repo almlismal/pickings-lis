@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1210</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1235</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11113,12 +11113,12 @@ registrarEvento('movil', { a: navigator.userAgent.slice(0, 160), ancho: window.i
 // Tiempos de picking: cola propia en el móvil, con ID por evento; se envía a la hoja "Tiempos de picking".
 const LS_TIEMPOS_PICKING = 'lis_tiempos_picking';
 let enviandoTiempos = false, timerTiempos = null;
-function registrarTiempoPicking(accion){
+function registrarTiempoPicking(accion, motivo){
   try{
     if(!sesionPicking || sesionPicking.extra) return;
     const lista = JSON.parse(localStorage.getItem(LS_TIEMPOS_PICKING) || '[]');
     lista.push({ id: 'ev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
-      t: new Date().toISOString(), of: String(sesionPicking.of || ''), u: usuarioActual || '', a: accion });
+      t: new Date().toISOString(), of: String(sesionPicking.of || ''), u: usuarioActual || '', a: accion, m: String(motivo || '') });
     localStorage.setItem(LS_TIEMPOS_PICKING, JSON.stringify(lista.slice(-5000)));
   }catch(e){}
   programarEnvioTiempos();
@@ -11808,9 +11808,12 @@ function descartarPausado(id){
 }
 
 // ---- pausar y retomar ----
-function pausarPicking(){
+// Pausar. El motivo (MOTIVOS_PAUSA) está preparado pero oculto: la pregunta se activará cuando lo decidamos.
+const MOTIVOS_PAUSA = ['Cambio de OF', 'Sala o fuera del almacén', 'Falta material', 'Buscando ubicación', 'Descanso', 'Otro'];
+function pausarPicking(){ pausarPickingAhora(''); }
+function pausarPickingAhora(motivo){
   if(!sesionPicking){ ir('realizar-inicio'); return; }
-  registrarTiempoPicking('pausa');
+  registrarTiempoPicking('pausa', motivo);
   detenerBipCamara();
   guardarBorradorBip('bip');
   const d = borradorActivoId ? buscarPausado(borradorActivoId) : null;
@@ -12414,7 +12417,7 @@ function pickingParcialAhora(){
   const creador = (base && base.creadoPor) || yo;
   if(!Array.isArray(sesionPicking.parciales)) sesionPicking.parciales = parcialesDe(sesionPicking, creador).slice();
   if(!yaGuardoParte(sesionPicking, yo, creador)) sesionPicking.parciales.push(yo);
-  pausarPicking();
+  pausarPickingAhora('Parte guardada');
   if(idParte) hojaParcialDePausado(idParte);
 }
 
@@ -13808,7 +13811,7 @@ const HUECO_MIN = 15;   // minutos sin actividad que se marcan como hueco
 function calcularTiemposPicking(filas, rango){
   const ahora = Date.now();
   const ev = filas.filter(f => f.tipo === 'picking' && f.msg && f.t)
-    .map(f => ({ t: new Date(f.t).getTime(), a: f.a, of: String(f.msg), u: f.usuario || '' }))
+    .map(f => ({ t: new Date(f.t).getTime(), a: f.a, of: String(f.msg), u: f.usuario || '', m: f.motivo || '' }))
     .filter(e => !isNaN(e.t)).sort((x, y) => x.t - y.t);
   // Agrupa por OF: el "terminar" de la OF cierra su picking; lo que queda abierto está en curso
   const abiertos = {}, terminados = [];
@@ -13819,19 +13822,24 @@ function calcularTiemposPicking(filas, rango){
     if(e.a === 'terminar'){ terminados.push(p); delete abiertos[e.of]; }
   });
   // Mide un picking. Cada persona trabaja desde su escaneo o reanudación hasta su pausa o terminar.
-  // Tiempo de trabajo = reloj con al menos una persona trabajando (los tramos solapados cuentan una vez).
-  // Tiempo de pausa = el resto del tiempo entre el primer evento y el final.
-  // Suma = tiempo de cada persona sumado (si hay dos personas trabajando a la vez, sale más que el reloj).
+  // Trabajo = reloj con al menos una persona trabajando (tramos solapados cuentan una vez).
+  // Pausa = el resto del tiempo (nadie trabajando). Suma = tiempo de cada persona sumado.
   function medir(es, fin){
     const finEf = fin != null ? fin : ahora;
     const ini = es[0].t;
     const porPersona = {};
     es.forEach(e => { const k = e.u || '—'; (porPersona[k] = porPersona[k] || []).push(e); });
-    const tramos = []; let huecos = 0;
+    const tramos = []; let huecos = 0; const motivos = {};
+    const sumarMotivo = (m, min) => {
+      const k = m || 'Sin motivo';
+      motivos[k] = motivos[k] || { min: 0, veces: 0 };
+      motivos[k].min += min; motivos[k].veces++;
+    };
     Object.keys(porPersona).forEach(u => {
-      let activo = null, ultimo = null;
+      let activo = null, ultimo = null, pausaDesde = null, pausaMotivo = '';
       porPersona[u].forEach(e => {
         if(e.a === 'escaneo' || e.a === 'reanudar'){
+          if(pausaDesde !== null){ sumarMotivo(pausaMotivo, (e.t - pausaDesde) / 60000); pausaDesde = null; }
           if(activo === null){ activo = e.t; }
           else if((e.t - ultimo) / 60000 > HUECO_MIN){
             // Hueco sin pausar: solo se cuentan HUECO_MIN minutos tras el último evento
@@ -13840,17 +13848,17 @@ function calcularTiemposPicking(filas, rango){
           ultimo = e.t;
         } else if(e.a === 'pausa' || e.a === 'terminar'){
           if(activo !== null){ tramos.push({ u: u, a: activo, b: e.t }); activo = null; }
+          if(e.a === 'pausa'){ pausaDesde = e.t; pausaMotivo = e.m; }
           ultimo = e.t;
         }
       });
+      if(pausaDesde !== null) sumarMotivo(pausaMotivo, (finEf - pausaDesde) / 60000);
       if(activo !== null){
-        // Sigue activa sin pausar ni terminar: cuenta hasta ahora si su última actividad es reciente
         const b = Math.min(ultimo + HUECO_MIN * 60000, finEf);
         if(finEf - ultimo > HUECO_MIN * 60000) huecos++;
         if(b > activo) tramos.push({ u: u, a: activo, b: b });
       }
     });
-    // Reloj con al menos una persona trabajando
     const orden = tramos.filter(t => t.b > t.a).sort((x, y) => x.a - y.a);
     let trabajo = 0, cur = null;
     orden.forEach(t => {
@@ -13864,27 +13872,41 @@ function calcularTiemposPicking(filas, rango){
     const suma = orden.reduce((acc, t) => acc + (t.b - t.a), 0) / 60000;
     const personas = [...new Set(orden.map(t => t.u).filter(u => u !== '—'))];
     return { inicio: ini, fin: fin, total: total, trabajo: trabajoMin, pausa: Math.max(0, total - trabajoMin),
-      suma: suma, huecos: huecos, personas: personas, dosPersonas: personas.length > 1 };
+      suma: suma, huecos: huecos, personas: personas, dosPersonas: personas.length > 1, motivos: motivos };
   }
   const picks = terminados.map(p => {
     const fin = p.eventos[p.eventos.length - 1].t;
     const m = medir(p.eventos, fin);
     return Object.assign({ of: p.of, dia: new Date(m.inicio).toLocaleDateString('sv-SE') }, m);
   }).filter(p => !rango || (p.dia >= rango.desde && p.dia <= rango.hasta));
-  // En curso o pausados: sin terminar todavía, no cuentan para la media
   const enCurso = Object.values(abiertos).map(p => {
     const m = medir(p.eventos, null);
     return Object.assign({ of: p.of, dia: new Date(m.inicio).toLocaleDateString('sv-SE') }, m);
   }).sort((x, y) => x.inicio - y.inicio);
-  if(!picks.length) return { picks: [], enCurso: enCurso, normales: 0, media: 0, atipicos: [], umbral: 0 };
-  // Atípico: el tiempo de trabajo supera el doble de la mediana del periodo
+  // Pausas por motivo: terminados del rango + en curso/pausados (sus pausas ya son reales)
+  const motivosTot = {};
+  picks.concat(enCurso).forEach(p => Object.keys(p.motivos).forEach(k => {
+    motivosTot[k] = motivosTot[k] || { min: 0, veces: 0 };
+    motivosTot[k].min += p.motivos[k].min; motivosTot[k].veces += p.motivos[k].veces;
+  }));
+  // Bloques por día: de la primera hora a la última de los pickings terminados ese día
+  const porDia = {};
+  picks.forEach(p => { (porDia[p.dia] = porDia[p.dia] || []).push(p); });
+  const bloques = Object.keys(porDia).sort().map(d => {
+    const ps = porDia[d];
+    const ini = Math.min(...ps.map(p => p.inicio)), fin = Math.max(...ps.map(p => p.fin));
+    return { dia: d, n: ps.length, trabajoMedio: ps.reduce((acc, p) => acc + p.trabajo, 0) / ps.length,
+      inicio: ini, fin: fin, duracion: (fin - ini) / 60000 };
+  });
+  if(!picks.length) return { picks: [], enCurso: enCurso, normales: 0, media: 0, atipicos: [], umbral: 0, bloques: [], motivos: motivosTot };
   const orden2 = picks.map(p => p.trabajo).sort((x, y) => x - y);
   const mediana = orden2[Math.floor(orden2.length / 2)];
   const umbral = Math.max(2 * mediana, 1);
   const normales = picks.filter(p => p.trabajo <= umbral);
   const media = normales.length ? normales.reduce((acc, p) => acc + p.trabajo, 0) / normales.length : 0;
   return { picks: picks, enCurso: enCurso, normales: normales.length, media: media,
-    atipicos: picks.filter(p => p.trabajo > umbral).sort((x, y) => y.trabajo - x.trabajo), umbral: umbral };
+    atipicos: picks.filter(p => p.trabajo > umbral).sort((x, y) => y.trabajo - x.trabajo), umbral: umbral,
+    bloques: bloques, motivos: motivosTot };
 }
 function abrirTiemposPicking(){
   const hoy = new Date().toISOString().slice(0, 10);
@@ -13922,12 +13944,22 @@ function verTiemposPicking(contId){
       c.innerHTML = '<div class="hint" style="margin-top:10px;">No hay pickings terminados en ese rango.</div>' + bloqueEnCurso;
       return;
     }
+    const bloquesHtml = res.bloques.length ? `<div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Bloques por día</div>
+      <div style="overflow-x:auto;"><table style="width:100%; font-size:13px;"><tr><th style="text-align:left;">Día</th><th style="text-align:right; white-space:nowrap;">OF</th><th style="text-align:right; white-space:nowrap;">Trabajo medio</th><th style="text-align:right; white-space:nowrap;">Horas</th><th style="text-align:right; white-space:nowrap;">Duración</th></tr>
+      ${res.bloques.map(b => `<tr><td style="white-space:nowrap;">${escapeHtml(b.dia)}</td><td style="text-align:right;">${b.n}</td><td style="text-align:right; white-space:nowrap;">${Math.round(b.trabajoMedio)} min</td><td style="text-align:right; white-space:nowrap;">${hora(b.inicio)}–${hora(b.fin)}</td><td style="text-align:right; white-space:nowrap;">${Math.round(b.duracion)} min</td></tr>`).join('')}
+      </table></div>` : '';
+    const motivosOrden = Object.keys(res.motivos).sort((x, y) => res.motivos[y].min - res.motivos[x].min);
+    const motivosHtml = motivosOrden.length ? `<div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Pausas por motivo</div>
+      <div style="overflow-x:auto;"><table style="width:100%; font-size:13px;"><tr><th style="text-align:left;">Motivo</th><th style="text-align:right; white-space:nowrap;">Veces</th><th style="text-align:right; white-space:nowrap;">Minutos</th></tr>
+      ${motivosOrden.map(k => `<tr><td>${escapeHtml(k)}</td><td style="text-align:right;">${res.motivos[k].veces}</td><td style="text-align:right; white-space:nowrap;">${Math.round(res.motivos[k].min)} min</td></tr>`).join('')}
+      </table></div>` : '';
     c.innerHTML = `<table style="width:100%; font-size:14px; margin-top:10px;">
       <tr><th style="text-align:left;">Pickings terminados</th><td style="text-align:right;"><b>${res.picks.length}</b></td></tr>
       <tr><th style="text-align:left;">Pickings normales</th><td style="text-align:right;"><b>${res.normales}</b></td></tr>
       <tr><th style="text-align:left;">Tiempo medio de trabajo (normales)</th><td style="text-align:right;"><b>${Math.round(res.media)} min</b></td></tr>
       <tr><th style="text-align:left;">Atípicos (trabajo más de ${Math.round(res.umbral)} min)</th><td style="text-align:right;"><b>${res.atipicos.length}</b></td></tr>
     </table>
+    ${bloquesHtml}${motivosHtml}
     ${res.atipicos.length ? `<div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Atípicos</div>
       <div style="overflow-x:auto;"><table style="width:100%; font-size:13px;">${cabecera}${res.atipicos.map(fila).join('')}</table></div>` : ''}
     ${bloqueEnCurso}`;
