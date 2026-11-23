@@ -526,12 +526,13 @@
   .btn:focus-visible, .home-btn:focus-visible, .ticket:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   .acciones-tarjeta .btn{ min-height:38px; }
   .ticket-proj{ line-height:1.35; }
+.modo-extra .solo-planificado{display:none !important;}
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1625</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1810</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -777,7 +778,6 @@
       <button class="back" onclick="ir('realizar-menu')">←</button>
       <h2 id="rpInicioTitulo">Pickings planificados</h2>
     </div>
-    <input type="text" id="filtroPickings" placeholder="Buscar por OF o por nombre" oninput="filtrarPickingsEnCurso(this.value)" style="margin-bottom:10px;">
     <div id="rpPausados"></div>
     <div id="extraPendientes"></div>
     <div class="hint" style="margin-bottom:10px;">Escanea la etiqueta de cada componente a medida que lo incorpores a la caja. Al finalizar se genera la hoja de picking y continúas con el registro habitual.</div>
@@ -790,6 +790,7 @@
     <button class="btn btn-outline" onclick="escanearParaInicio()" style="margin-top:12px;">Escanear QR de la etiqueta para leer la OF</button>
     <button class="btn btn-primary" onclick="continuarInicioPicking()" style="margin-top:10px;">Continuar</button>
     <div class="hint" id="rpCatInfo" style="margin-top:14px; text-align:center;"></div>
+    <div id="extraFirmadosBoton"></div>
   </section>
 
   <section class="screen" id="screen-realizar-bip">
@@ -821,7 +822,7 @@
     <div id="rpBloqueIncidencias"></div>
 
     <button class="btn btn-outline" onclick="abrirIncidencia()" style="margin-top:18px;">Registrar incidencia (falta / no se encuentra)</button>
-    <button class="btn btn-outline" onclick="pausarPicking()">Pausar</button>
+    <button class="btn btn-outline solo-planificado" onclick="pausarPicking()">Pausar</button>
     <button class="btn btn-outline" id="btnPdaBip" onclick="abrirPantallaPda()" style="display:none; margin-top:18px;">Escanear con PDA</button>
     <button class="btn btn-outline" onclick="pickingParcial(this)">Guardar mi parte</button>
     <button class="btn btn-primary" onclick="terminarPicking()">Terminar picking →</button>
@@ -11751,6 +11752,7 @@ function buscarPausado(id){ return pausados.find(d=>d.id===id); }
 // Guarda (o actualiza) el picking que se está trabajando.
 function guardarBorradorBip(fase, extra){
   if(sesionPicking && sesionPicking.soloLectura) return;   // vista de administrador: no se guarda nada
+  if(sesionPicking && sesionPicking.extra && fase === 'bip') return;   // los extras no se pausan: no hay borrador
   try{
     const ahoraISO = new Date().toISOString();
     if(fase === 'bip' && sesionPicking){
@@ -11810,7 +11812,10 @@ function descartarPausado(id){
 // ---- pausar y retomar ----
 // Pausar. El motivo (MOTIVOS_PAUSA) está preparado pero oculto: la pregunta se activará cuando lo decidamos.
 const MOTIVOS_PAUSA = ['Cambio de OF', 'Sala o fuera del almacén', 'Falta material', 'Buscando ubicación', 'Descanso', 'Otro'];
-function pausarPicking(){ pausarPickingAhora(''); }
+function pausarPicking(){
+  if(sesionPicking && sesionPicking.extra){ toast('Los pickings extra no se pausan: termínalo o guárdalo sin firmar'); return; }
+  pausarPickingAhora('');
+}
 function pausarPickingAhora(motivo){
   if(!sesionPicking){ ir('realizar-inicio'); return; }
   registrarTiempoPicking('pausa', motivo);
@@ -11840,12 +11845,13 @@ function actualizarInicioExtra(){
   const cont = document.getElementById('extraPendientes');
   if(!cont) return;
   if(!rpModoExtra){ cont.innerHTML = ''; return; }
-  cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">Cargando los pendientes de firma…</div>' + botonFirmadosExtra();
+  const fb = document.getElementById('extraFirmadosBoton'); if(fb) fb.innerHTML = botonFirmadosExtra();
+  cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">Cargando los pendientes de firma…</div>';
   llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'lista_ext_' + Date.now(), 30000).then(r => {
     if(!rpModoExtra) return;
     extrasPendientesCache = ((r && r.pickings) || []).filter(p => p.estado === 'pendiente');
     renderExtrasPendientes();
-  }).catch(() => { cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">No se pudo cargar la lista de pendientes.</div>' + botonFirmadosExtra(); });
+  }).catch(() => { cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">No se pudo cargar la lista de pendientes.</div>'; });
 }
 function botonFirmadosExtra(){
   return `<button class="btn btn-outline" onclick="abrirFirmadosExtra()" style="margin-top:10px;">Ver pickings extra firmados</button>`;
@@ -12149,14 +12155,35 @@ function extraFirmaGuardar(btn){
   marcarEsperando(btn, 'Entregando y firmando');
   extraEnviar(Object.assign({}, extraDatosPendientes, { observaciones: obs }), { png: c.toDataURL('image/png'), nombre: nombre });
 }
+// Al entregar y firmar un extra, su borrador pausado de esa OF (de quien lo hizo) ya no debe seguir en la lista
+function quitarBorradorExtraTrasEntregar(of){
+  const yo = normalizarNombre(usuarioActual || '');
+  pausados.forEach(d => {
+    if(String(d.of) === String(of) && normalizarNombre(d.creadoPor || '') === yo){
+      d.borrado = true; d.sync = 'sucio'; d.actualizado = new Date().toISOString(); d.actualizadoPor = usuarioActual || '';
+      delete d.sesion; delete d.pendiente;
+      if(borradorActivoId === d.id) borradorActivoId = null;
+    }
+  });
+  guardarPausadosLocal(); renderPausados(); actualizarBadgePausados(); programarSincPausados(500);
+}
 function extraEnviar(datos, firma){
   if(!datos || extraEnviando) return;
   extraEnviando = true;
   const payload = Object.assign({}, datos, firma ? { firma: firma } : {});
   llamarBackend('guardarPickingExtra', payload, 'ext_' + payload.id + '_' + Date.now(), 120000).then(r => {
     extraEnviando = false;
+    if(r && r.requiereConfirmar && !datos.confirmarDuplicado){
+      mostrarSheet(`
+        <h3>¿Otro picking igual?</h3>
+        <p style="font-size:14px; color:var(--ink-soft); margin:0 0 12px;">${escapeHtml(r.error || '')}</p>
+        <button class="btn btn-primary" onclick="cerrarSheet(); extraEnviar(Object.assign({}, datos, { confirmarDuplicado: true }), firma)">Sí, es otro</button>
+        <button class="btn btn-outline" onclick="cerrarSheet()">No, cancelar</button>`);
+      return;
+    }
     if(!r || r.ok === false){ cerrarSheet(); toast((r && r.error) || 'No se guardó. Revisa la conexión y vuelve a intentarlo'); return; }
     cerrarSheet();
+    if(firma) quitarBorradorExtraTrasEntregar(payload.of);
     sesionPicking = null; extraDatosPendientes = null;
     resetIncidenciasEnCurso();
     toast(firma ? 'Entregado y firmado' : 'Guardado. Queda pendiente de firma');
@@ -12228,6 +12255,8 @@ function extraFirmaPendienteGuardar(btn){
   llamarBackend('entregarPickingExtra', { id: extraPendienteId, quien: usuarioActual || '', observaciones: obs, firma: { png: c.toDataURL('image/png'), nombre: nombre } }, 'entx_' + Date.now(), 120000).then(r => {
     if(!r || r.ok === false){ cerrarSheet(); toast((r && r.error) || 'No se pudo entregar. Revisa la conexión'); return; }
     cerrarSheet();
+    const pendEntregado = (extrasPendientesCache || []).find(x => x.id === extraPendienteId);
+    if(pendEntregado) quitarBorradorExtraTrasEntregar(pendEntregado.of);
     toast('Entregado y firmado');
     actualizarInicioExtra();
   });
@@ -12445,7 +12474,7 @@ function salirDeBipado(){
   mostrarSheet(`
     <h3>¿Qué hacemos con este picking?</h3>
     <p style="font-size:14px; color:var(--ink-soft); margin:0 0 10px;">Lleva ${sesionPicking.componentes.length} línea${sesionPicking.componentes.length===1?'':'s'} escaneada${sesionPicking.componentes.length===1?'':'s'}.</p>
-    <button class="btn btn-primary" onclick="cerrarSheet(); pausarPicking()">Pausar — lo sigo luego (o lo sigue otra persona)</button>
+    ${sesionPicking.extra ? '' : '<button class="btn btn-primary" onclick="cerrarSheet(); pausarPicking()">Pausar — lo sigo luego (o lo sigue otra persona)</button>'}
     <button class="btn btn-outline" style="color:#B33A3A; border-color:#B33A3A;" onclick="cerrarSheet(); cancelarBipado(true)">Descartar lo escaneado</button>
     <button class="btn btn-outline" onclick="cerrarSheet()">Seguir escaneando</button>
   `);
@@ -13253,6 +13282,7 @@ function cargarNombres(){
 /* ---------- navegación ---------- */
 function ir(pantalla, esVolver){
   registrarEvento('pantalla', { a: pantalla });
+  document.body.classList.toggle('modo-extra', !!(sesionPicking && sesionPicking.extra));
   const anterior = document.querySelector('.screen.active');
   if(anterior && anterior.id==='screen-escanear' && pantalla!=='escanear'){ detenerEscaner(); escanerParaInicio = false; }
   if(anterior && anterior.id==='screen-realizar-bip' && pantalla!=='realizar-bip') detenerBipCamara();
