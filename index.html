@@ -531,7 +531,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1155</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v23nov-1210</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -13904,11 +13904,20 @@ function verTiemposPicking(contId){
     const c = document.getElementById(contId); if(!c) return;
     if(!r || r.ok === false){ c.innerHTML = `<div class="obs-box">${escapeHtml((r && r.error) || 'No se pudo calcular')}</div>`; return; }
     const res = calcularTiemposPicking(r.filas || [], rango);
-    const fila = (p) => `<tr><td>${escapeHtml(p.dia)}</td><td>${escapeHtml(p.of)}</td><td>${escapeHtml(p.personas.join(', ') || '—')}${p.dosPersonas ? '<br><span style="font-size:11px; color:var(--ink-soft);">Trabajo de 2 personas · suma ' + Math.round(p.suma) + ' min</span>' : ''}</td><td style="text-align:right;">${Math.round(p.total)} min</td><td style="text-align:right;">${Math.round(p.pausa)} min</td><td style="text-align:right;">${Math.round(p.trabajo)} min</td><td style="text-align:right;">${p.huecos}</td></tr>`;
-    const cabecera = '<tr><th style="text-align:left;">Día</th><th style="text-align:left;">OF</th><th style="text-align:left;">Personas</th><th style="text-align:right;">Total</th><th style="text-align:right;">Pausas</th><th style="text-align:right;">Trabajo</th><th style="text-align:right;">Huecos</th></tr>';
+    // Redondeo coherente: la pausa es el total redondeado menos el trabajo redondeado, para que las cifras cuadren
+    const trab = p => Math.round(p.trabajo);
+    const pausa = p => Math.max(0, Math.round(p.total) - Math.round(p.trabajo));
+    const celda = (t, extra) => `<td style="text-align:right; white-space:nowrap; ${extra || ''}">${t}</td>`;
+    const cabecera = '<tr><th style="text-align:left;">Día</th><th style="text-align:left;">OF</th><th style="text-align:left;">Personas</th><th style="text-align:right; white-space:nowrap;">Total</th><th style="text-align:right; white-space:nowrap;">Pausas</th><th style="text-align:right; white-space:nowrap;">Trabajo</th><th style="text-align:right; white-space:nowrap;">Huecos</th></tr>';
+    const fila = (p) => `<tr><td style="white-space:nowrap;">${escapeHtml(p.dia)}</td><td style="white-space:nowrap;">${escapeHtml(p.of)}</td><td>${escapeHtml(p.personas.join(', ') || '—')}${p.dosPersonas ? '<br><span style="font-size:11px; color:var(--ink-soft);">Trabajo de 2 personas · suma ' + Math.round(p.suma) + ' min</span>' : ''}</td>${celda(Math.round(p.total) + ' min')}${celda(pausa(p) + ' min')}${celda(trab(p) + ' min')}${celda(p.huecos)}</tr>`;
+    // En curso: sin fecha repetida ni huecos (todavía no se usan); hora de inicio en su lugar
+    const hora = ms => new Date(ms).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const filaEnCurso = (p) => `<tr><td style="white-space:nowrap;">${escapeHtml(p.of)}</td><td>${escapeHtml(p.personas.join(', ') || '—')}</td>${celda(hora(p.inicio))}${celda(trab(p) + ' min')}${celda(pausa(p) + ' min')}</tr>`;
+    const cabeceraEnCurso = '<tr><th style="text-align:left;">OF</th><th style="text-align:left;">Persona</th><th style="text-align:right; white-space:nowrap;">Inicio</th><th style="text-align:right; white-space:nowrap;">Trabajo</th><th style="text-align:right; white-space:nowrap;">Pausas</th></tr>';
+    const leyenda = '<div class="hint" style="margin-top:6px; font-size:12px;">Trabajo = tiempo con alguien trabajando el picking. Pausas = tiempo sin nadie trabajándolo.</div>';
     const bloqueEnCurso = res.enCurso.length ? `<div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">En curso o pausados</div>
-      <table style="width:100%; font-size:13px;">${cabecera}${res.enCurso.map(fila).join('')}</table>
-      <div class="hint" style="margin-top:4px;">No cuentan para la media hasta que se terminen.</div>` : '';
+      <div style="overflow-x:auto;"><table style="width:100%; font-size:13px;">${cabeceraEnCurso}${res.enCurso.map(filaEnCurso).join('')}</table></div>
+      <div class="hint" style="margin-top:4px; font-size:12px;">No cuentan para la media hasta que se terminen.</div>${leyenda}` : '';
     if(!res.picks.length){
       c.innerHTML = '<div class="hint" style="margin-top:10px;">No hay pickings terminados en ese rango.</div>' + bloqueEnCurso;
       return;
@@ -13920,7 +13929,7 @@ function verTiemposPicking(contId){
       <tr><th style="text-align:left;">Atípicos (trabajo más de ${Math.round(res.umbral)} min)</th><td style="text-align:right;"><b>${res.atipicos.length}</b></td></tr>
     </table>
     ${res.atipicos.length ? `<div class="hint" style="margin:14px 0 4px; font-weight:700; text-transform:uppercase; font-size:11px;">Atípicos</div>
-      <table style="width:100%; font-size:13px;">${cabecera}${res.atipicos.map(fila).join('')}</table>` : ''}
+      <div style="overflow-x:auto;"><table style="width:100%; font-size:13px;">${cabecera}${res.atipicos.map(fila).join('')}</table></div>` : ''}
     ${bloqueEnCurso}`;
   }).catch(() => { const c = document.getElementById(contId); if(c) c.textContent = 'No se pudo calcular.'; });
 }
