@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v24nov-1140</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v24nov-1715</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -17365,6 +17365,9 @@ function iniciarEscaner(){
   const estadoEl = document.getElementById('escanerEstado');
   const resultadoEl = document.getElementById('escanerResultado');
   if(resultadoEl) resultadoEl.innerHTML = '';
+  // Al volver a escanear, el botón fijo "Escribir la OF a mano" vuelve a verse si estamos leyendo la OF al empezar
+  const manualFijo = document.getElementById('escanearManualBtn');
+  if(manualFijo && escanerParaInicio) manualFijo.style.display = '';
   detenerEscaner();
 
   if(typeof jsQR !== 'function'){
@@ -17459,6 +17462,9 @@ function procesarTextoQR(texto){
       toast('OF leída: ' + of + '. Revisa los datos y pulsa Empezar');
       return;
     }
+    // El resultado ya trae su propio botón "Escribir la OF a mano": se oculta el de fijo para no duplicarlo
+    const manualFijo = document.getElementById('escanearManualBtn');
+    if(manualFijo) manualFijo.style.display = 'none';
     if(resultadoEl) resultadoEl.innerHTML = `
       <div class="obs-box">No se reconoce la OF en esa etiqueta.</div>
       <button class="btn btn-outline" onclick="seguirEscaneando()" style="margin-top:10px;">Volver a escanear</button>
@@ -18166,17 +18172,46 @@ function procesarCodigoBipado(codigo, ofLeida){
 
   const yaEsta = sesionPicking.componentes.some(c=>c.codigo===codigo);
   if(yaEsta){
-    detenerBipCamara();
-    rpCodigoConflicto = codigo;
-    mostrarSheet(`
-      <div class="attn-banner"><span class="dot">!</span><span>El código <b>${escapeHtml(codigo)}</b> ya está en la lista. ¿Se repitió sin querer, o es otra cantidad más de lo mismo?</span></div>
-      <button class="btn btn-primary" onclick="anadirCodigoConflictoDeTodasFormas()">Es otra línea (añadir de nuevo)</button>
-      <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Fue sin querer, no añadir</button>
-    `);
+    // Si la línea ya la bipó otra persona del mismo picking, se dice quién (mismas dos respuestas)
+    const ajena = sesionPicking.componentes.find(c => c.codigo===codigo && lineaDeOtro(c));
+    mostrarAvisoRepetido(codigo, ajena ? ajena.por : '');
     return;
   }
 
   continuarLineaBip(codigo);
+  // Mientras se escribe el lote, se pregunta al servidor si otra persona ya ha bipado este código en este picking
+  comprobarOtroPreparaCodigo(codigo);
+}
+// Aviso de código repetido: el mismo cartel para repetido por mí o preparado por otra persona
+function mostrarAvisoRepetido(codigo, porOtro){
+  detenerBipCamara();
+  rpCodigoConflicto = codigo;
+  const texto = porOtro
+    ? `El código <b>${escapeHtml(codigo)}</b> ya lo ha preparado <b>${escapeHtml(porOtro)}</b>. ¿Se repitió sin querer, o es otra cantidad más de lo mismo?`
+    : `El código <b>${escapeHtml(codigo)}</b> ya está en la lista. ¿Se repitió sin querer, o es otra cantidad más de lo mismo?`;
+  mostrarSheet(`
+    <div class="attn-banner"><span class="dot">!</span><span>${texto}</span></div>
+    <button class="btn btn-primary" onclick="anadirCodigoConflictoDeTodasFormas()">Es otra línea (añadir de nuevo)</button>
+    <button class="btn btn-outline" onclick="cerrarSheet(); iniciarBipCamara();">Fue sin querer, no añadir</button>
+  `);
+}
+// Consulta al servidor sin frenar el bipado: si otra persona ya tiene este código en el picking, sale el aviso.
+let turnoComprobacionOtros = 0;
+function comprobarOtroPreparaCodigo(codigo){
+  if(!sesionPicking || !borradorActivoId || navigator.onLine === false) return;
+  const turno = ++turnoComprobacionOtros;
+  llamarBackend('lineasDeOtrosEnBorrador', { id: borradorActivoId, codigo: codigo, quien: usuarioActual || '' }, '', 10000)
+    .then(r => {
+      if(turno !== turnoComprobacionOtros) return;          // ya se ha bipado otro código después
+      if(!r || r.ok === false || !r.otros || !r.otros.length || !sesionPicking) return;
+      const porOtro = r.otros[0].por;
+      if(rpLineaPendiente && rpLineaPendiente.codigo === codigo){
+        mostrarAvisoRepetido(codigo, porOtro);               // sustituye al formulario del lote, que aún no tenía nada
+      } else {
+        toast('Ojo: ' + codigo + ' ya lo ha preparado ' + porOtro);
+      }
+    })
+    .catch(() => { /* sin conexión o error: el bipado sigue como siempre */ });
 }
 function anadirCodigoConflictoDeTodasFormas(){
   cerrarSheet();
@@ -18728,10 +18763,57 @@ function pdaTecladoAlternar(){
 }
 
 /* ---- resumen final y confirmación ---- */
-function irAResumenPicking(){
+// Líneas repetidas: mismo código, lote y S/N. Se revisa al guardar la parte y al terminar.
+function claveLineaDup(c){
+  return [String(c.codigo || '').toUpperCase(), String(c.lote || 'N/A').toUpperCase(), String(c.sn || '').toUpperCase()].join('|');
+}
+function gruposDuplicados(){
+  if(!sesionPicking) return [];
+  const mapa = {};
+  sesionPicking.componentes.forEach((c, i) => { const k = claveLineaDup(c); (mapa[k] = mapa[k] || []).push(i); });
+  return Object.keys(mapa).filter(k => mapa[k].length > 1).map(k => mapa[k]);
+}
+let dupAlSeguir = null;
+function mostrarDuplicados(alSeguir){
+  const grupos = gruposDuplicados();
+  if(!grupos.length){ cerrarSheet(); alSeguir(); return; }
+  dupAlSeguir = alSeguir;
+  const bloques = grupos.map(idxs => idxs.map(i => {
+    const c = sesionPicking.componentes[i];
+    return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin:6px 0;">
+      <span style="font-size:14px;">${escapeHtml(c.codigo)} · ${escapeHtml(c.por || 'Sin autor')} · lote ${escapeHtml(c.lote || 'N/A')}${c.sn ? ' · S/N ' + escapeHtml(c.sn) : ''} · x${escapeHtml(String(c.cantidad))}</span>
+      <button class="btn btn-outline" style="margin:0; padding:6px 10px; min-height:0; color:#B33A3A; border-color:#B33A3A;" onclick="quitarLineaDuplicada(${i})">Quitar esta</button>
+    </div>`;
+  }).join('<div class="hint" style="margin:0; text-align:center;">— repetida con —</div>')).join('<hr style="border:0; border-top:1px solid #D5DCE4; margin:10px 0;">');
+  mostrarSheet(`
+    <h3>Líneas repetidas</h3>
+    <p style="font-size:14px; color:var(--ink-soft); margin:0 0 8px;">Estas líneas tienen el mismo código, lote y S/N. Quita la que sobra, o confirma que son distintas.</p>
+    ${bloques}
+    <button class="btn btn-primary" onclick="dupSeguir()">Son distintas, seguir</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Volver al picking</button>`);
+}
+function quitarLineaDuplicada(i){
+  const c = sesionPicking.componentes[i];
+  if(!c) return;
+  if(lineaDeOtro(c) && !confirm('La bipó ' + c.por + '. ¿Seguro que quieres quitarla?')) return;
+  sesionPicking.componentes.splice(i, 1);
+  refrescarBipUI();
+  mostrarDuplicados(dupAlSeguir);   // si quedan repetidas, se vuelve a mostrar; si no, sigue
+}
+function dupSeguir(){
+  const f = dupAlSeguir;
+  dupAlSeguir = null;
+  cerrarSheet();
+  if(f) f();
+}
+function irAResumenPicking(omitirDuplicados){
   if(!sesionPicking) return;
   detenerBipCamara();
   if(sesionPicking.extra){ finalizarPickingExtra(); return; }
+  if(!omitirDuplicados && gruposDuplicados().length){
+    mostrarDuplicados(() => irAResumenPicking(true));
+    return;
+  }
   ir('realizar-resumen');
   document.getElementById('rpResumenContenido').innerHTML = resumenPickingHtml();
 }
