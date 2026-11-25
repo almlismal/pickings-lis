@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v24nov-1715</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v25nov-1530</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -12051,13 +12051,13 @@ function anadirLineaExtraAdmin(){
 // Excel para emitir de un firmado, con las líneas que están en pantalla (incluidas las cambiadas sin guardar)
 function descargarExcelExtraFirmadoEditando(btn){
   if(!extraAdminActual) return;
-  descargarExcelPicking(extraAdminActual.of, (extraAdminActual.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || extraAdminActual.creadoPor })), btn);
+  descargarExcelPicking(extraAdminActual.of, (extraAdminActual.componentes || []).map(c => (filaExcelDe(c, c.por || extraAdminActual.creadoPor))), btn);
 }
 // Excel para emitir desde la lista de firmados
 function descargarExcelFirmado(id, btn){
   const p = (firmadosExtraCache || []).find(x => x.id === id);
   if(!p){ toast('No encuentro ese picking, actualiza la lista'); return; }
-  descargarExcelPicking(p.of, (p.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || p.creadoPor })), btn);
+  descargarExcelPicking(p.of, (p.componentes || []).map(c => (filaExcelDe(c, c.por || p.creadoPor))), btn);
 }
 // Administrador: borra un pendiente (sirve para quitar duplicados que no se entregaron)
 function borrarExtraPendienteAdmin(id){
@@ -19078,15 +19078,19 @@ function descargarExcelRealizado(id, btn, persona){
   if(!x){ toast('No encuentro esa OF, actualiza la pantalla'); return; }
   const k = normalizarNombre(persona || '');
   const lineas = ((x.datos && x.datos.componentes) || []).filter(c => !persona || normalizarNombre(c.por || x.hechoPor || '') === k);
-  descargarExcelPicking(x.of, lineas.map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || x.hechoPor })), btn);
+  descargarExcelPicking(x.of, lineas.map(c => (filaExcelDe(c, c.por || x.hechoPor))), btn);
 }
 // Excel de un extra pendiente de firma
 function descargarExcelExtra(id, btn){
   const p = (extrasPendientesCache || []).find(x => x.id === id);
   if(!p){ toast('No encuentro ese picking, actualiza la pantalla'); return; }
-  descargarExcelPicking(p.of, (p.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || p.hechoPor })), btn);
+  descargarExcelPicking(p.of, (p.componentes || []).map(c => (filaExcelDe(c, c.por || p.hechoPor))), btn);
 }
 // Excel para emitir: se abre por enlace (Drive). Se abre la pestaña antes para que el móvil no la bloquee.
+// Una fila del Excel con su lote, S/N y observaciones (vacíos si no los tiene)
+function filaExcelDe(c, quien){
+  return { part: c.codigo, cantidad: c.cantidad, quien: quien || '', lote: c.lote || 'N/A', sn: c.sn || '', obs: c.obs || '' };
+}
 async function descargarExcelPicking(of, filas, btn){
   const ventana = window.open('', '_blank');
   if(btn) btn.disabled = true;
@@ -19363,7 +19367,7 @@ function volverDesdeHojaPicking(){
 function excelHojaActual(btn){
   const d = rpDocDatosActuales;
   if(!d) return;
-  descargarExcelPicking(d.of, (d.componentes || []).map(c => ({ part: c.codigo, cantidad: c.cantidad, quien: c.por || d.hechoPor })), btn);
+  descargarExcelPicking(d.of, (d.componentes || []).map(c => (filaExcelDe(c, c.por || d.hechoPor))), btn);
 }
 function imprimirHojaPicking(){
   if(!rpDocDatosActuales) return;
