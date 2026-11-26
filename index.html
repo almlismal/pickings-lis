@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Picking LIS-DHV</title>
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -11,16 +11,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Picking LIS-DHV">
 <meta name="color-scheme" content="light">
-<meta name="theme-color" content="#1C2430">
+<meta name="theme-color" content="#152735">
 <style>
   :root{
     color-scheme: light;
-    --bg: #F1F3F5;
+    --bg: #F2F5F6;
     --panel: #FFFFFF;
-    --ink: #1C2430;
+    --ink: #152735;
     --ink-soft: #5B6573;
-    --line: #D3D9E0;
-    --accent: #1F4E79;      /* azul LIS */
+    --line: #D1DCE1;
+    --accent: #14556A;      /* azul LIS */
     --accent-ink: #FFFFFF;
     --ok: #0F5257;          /* verde-azulado, entregado/completo */
     --warn-bg: #FCEFC7;
@@ -527,13 +527,37 @@
   .acciones-tarjeta .btn{ min-height:38px; }
   .ticket-proj{ line-height:1.35; }
 .modo-extra .solo-planificado{display:none !important;}
+
+  /* Pantallas de trabajo */
+  main{ max-width:560px; padding:16px; }
+  header{ padding:13px max(16px, calc((100% - 528px) / 2)); gap:12px; }
+  header .user{ min-height:40px; border-radius:8px; font:inherit; font-size:13px; }
+  .home-grid{ gap:10px; }
+  .home-btn{ width:100%; min-height:76px; border-radius:12px; padding-top:15px; padding-bottom:15px; }
+  #btnRealizarPickingHome{ min-height:106px; justify-content:center; background:var(--accent); color:#fff; border-color:var(--accent); }
+  #btnRealizarPickingHome b{ font-size:22px; }
+  #btnRealizarPickingHome span, #btnRealizarPickingHome::after{ color:#E4F4F7; }
+  .screen-title{ gap:10px; }
+  .screen-title .back{ width:44px; height:44px; flex:none; border-radius:9px; }
+  .btn{ border-radius:9px; }
+  .ticket, .detail-block{ border-radius:10px; }
+  .screen input, .sheet input, .screen textarea, .sheet textarea{ font-size:16px; }
+  .inicio-picking{ background:var(--panel); padding:14px; border:1px solid var(--line); border-radius:12px; }
+  .inicio-picking > label:first-child{ margin-top:0; }
+  .opciones-bipado{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; }
+  .opciones-bipado .btn{ margin:0; padding:12px 6px; }
+  .estado-borrador{ margin-top:6px; font-size:13px; font-weight:650; }
+  .estado-borrador.pendiente{ color:var(--warn-ink); }
+  .estado-borrador.enviado{ color:var(--ok); }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  @media (max-width:360px){ main{ padding:12px; } .inicio-picking{ padding:10px; } }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v25nov-1530</span></div>
-  <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v25nov-1530.3 · Pruebas</span></div>
+  <button type="button" class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</button>
 </header>
 
 <div id="pending-sync-banner" class="pending-banner" style="display:none;">
@@ -548,15 +572,15 @@
     <div class="home-grid">
       <button class="home-btn" id="btnRealizarPickingHome" onclick="ir('realizar-menu')">
         <b>Realizar picking</b>
-        <span>Planificados o extra: escanear los componentes del picking</span>
+        <span>Bipa componentes o retoma un picking</span>
       </button>
       <button class="home-btn alt" onclick="nuevoPicking()">
         <b>Ubicar OF</b>
-        <span>OF terminada: cajas y componentes fuera de caja</span>
+        <span>Registra las cajas y su ubicación</span>
       </button>
       <button class="home-btn alt" onclick="ir('buscar')">
-        <b>Buscar / Entregar</b>
-        <span>Buscar una OF registrada y gestionar su entrega</span>
+        <b>Buscar o entregar OF</b>
+        <span>Consulta una OF registrada o anota su entrega</span>
       </button>
     </div>
   </section>
@@ -780,14 +804,21 @@
     </div>
     <div id="rpPausados"></div>
     <div id="extraPendientes"></div>
-    <label>OF</label>
-    <input type="text" class="mono" id="rp_of" placeholder="Ej. 20260912" inputmode="numeric">
-    <div class="row2">
-      <div><label>Proyecto <span style="color:#C62828;">*</span></label><input type="text" id="rp_proyecto" list="listaProyectos" onfocus="refrescarListaProyectos()" placeholder="Ej. 2024-275"></div>
-      <div><label>Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
+    <div class="inicio-picking">
+      <label for="rp_of">OF</label>
+      <div class="row2" style="align-items:center;">
+        <div><input type="text" class="mono" id="rp_of" placeholder="8 dígitos" inputmode="numeric"></div>
+        <div style="flex:0 0 auto;"><button class="btn btn-outline" onclick="escanearParaInicio()" style="margin:0;">Leer QR</button></div>
+      </div>
+      <div class="row2">
+        <div><label for="rp_proyecto">Proyecto <span style="color:#C62828;">*</span></label><input type="text" id="rp_proyecto" list="listaProyectos" onfocus="refrescarListaProyectos()" placeholder="Ej. 2024-275"></div>
+        <div><label for="rp_subproyecto">Subproyecto (FM)</label><input type="text" id="rp_subproyecto" placeholder="Opcional"></div>
+      </div>
+      <div class="opciones-bipado">
+        <button class="btn btn-primary" onclick="continuarInicioPicking(false)">Bipar con cámara</button>
+        <button class="btn btn-outline" onclick="continuarInicioPicking(true)">Bipar con PDA</button>
+      </div>
     </div>
-    <button class="btn btn-outline" onclick="escanearParaInicio()" style="margin-top:12px;">Escanear QR de la etiqueta para leer la OF</button>
-    <button class="btn btn-primary" onclick="continuarInicioPicking()" style="margin-top:10px;">Continuar</button>
     <div class="hint" id="rpCatInfo" style="margin-top:14px; text-align:center; display:none;"></div>
     <div id="extraFirmadosBoton"></div>
   </section>
@@ -11042,7 +11073,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
    llamarBackend() y luego vuelve a sincronizar().
    ========================================================= */
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxAkEfLd0_xRtm_2b2uWUl0MdarkCwpQqcbVgoiW4KiVKuoxn6hAwo9tzLSKy4Ssww-Qw/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxmSJDOOjP2MRsB4hV6Ai3BYjKFlhmg9VkiT2urQJPCGpo9xN3-rRs_JjIb2Xje__130w/exec';
 const LS_USER = 'pickings_lis_usuario';
 const LS_PERIODO_SESION = 'pickings_lis_periodo_sesion';
 
@@ -11230,7 +11261,8 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
   const id = (row['ID'] && String(row['ID']).trim())
     ? row['ID']
     : 'legacy_' + String(row['OF']||'').trim() + '_' + String(row['Fecha']||'').trim();
-  const entregasDe = entregas.filter(e=>String(e['ID del picking'])===String(id)).map(e=>({
+  const movimientos = entregas instanceof Map ? entregas.get(String(id)) || [] : entregas.filter(e=>String(e['ID del picking'])===String(id));
+  const entregasDe = movimientos.map(e=>({
     tipo: e['Tipo'], entregadoPor: e['Entregado por'], entregadoA: e['Entregado a'],
     nota: e['Nota'] || '', fecha: e['Fecha']
   }));
@@ -11241,7 +11273,7 @@ function construirPickingDesdeRow(row, entregas, historial, previo){
   }
   let ediciones, deshechas, ampliaciones;
   if(historial){
-    const historialDe = historial.filter(h=>h['ID del picking']===id);
+    const historialDe = historial instanceof Map ? historial.get(id) || [] : historial.filter(h=>h['ID del picking']===id);
     ediciones = historialDe.filter(h=>h['Tipo']==='Edición').map(h=>({
       editadoPor: h['Autor'], fecha: h['Fecha'], motivo: h['Motivo'] || '',
       cambios: h['Detalle'] ? h['Detalle'].split(' · ').filter(Boolean) : []
@@ -11378,6 +11410,16 @@ function fusionarConPendientes(nuevaDB){
   return resultado;
 }
 
+function agruparMovimientosPorPicking(filas, comoTexto){
+  const porId = new Map();
+  filas.forEach(fila => {
+    const id = comoTexto ? String(fila['ID del picking']) : fila['ID del picking'];
+    if(!porId.has(id)) porId.set(id, []);
+    porId.get(id).push(fila);
+  });
+  return porId;
+}
+
 async function cargarLigeroYActualizarDB(){
   const res = await fetchConLimite(GAS_URL + '?ligero=1', {}, 25000);
   const datos = await res.json();
@@ -11385,7 +11427,8 @@ async function cargarLigeroYActualizarDB(){
   const anteriores = {};
   DB.forEach(p=>{ anteriores[p.id] = p; });
   guardarCachePendientes(datos.pickings, entregas);
-  const nueva = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, null, anteriores[row['ID']]));
+  const entregasPorId = agruparMovimientosPorPicking(entregas, true);
+  const nueva = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregasPorId, null, anteriores[row['ID']]));
   DB = fusionarConPendientes(nueva);
   guardarDBLocal();
 }
@@ -11393,7 +11436,9 @@ function construirDB(datos){
   const entregas = datos.entregas || [];
   const historial = datos.historial || [];
   guardarCachePendientes(datos.pickings, entregas);
-  const nueva = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregas, historial));
+  const entregasPorId = agruparMovimientosPorPicking(entregas, true);
+  const historialPorId = agruparMovimientosPorPicking(historial, false);
+  const nueva = (datos.pickings || []).filter(noEsEliminado).map(row=> construirPickingDesdeRow(row, entregasPorId, historialPorId));
   return fusionarConPendientes(nueva);
 }
 async function cargarEntregadosYActualizar(){
@@ -11826,7 +11871,7 @@ function pausarPickingAhora(motivo){
   borradorActivoId = null;
   actualizarBadgePausados();
   programarSincPausados(500);
-  toast('Picking en pausa — lo retomas desde aquí');
+  toast(d ? 'En pausa · pendiente de enviar' : 'Picking en pausa');
   ir('realizar-inicio');
   renderPausados();
 }
@@ -11843,8 +11888,9 @@ function actualizarInicioExtra(){
   if(titulo) titulo.textContent = rpModoExtra ? 'Pickings extra' : 'Pickings planificados';
   const cont = document.getElementById('extraPendientes');
   if(!cont) return;
+  const fb = document.getElementById('extraFirmadosBoton');
+  if(fb) fb.innerHTML = rpModoExtra ? botonFirmadosExtra() : '';
   if(!rpModoExtra){ cont.innerHTML = ''; return; }
-  const fb = document.getElementById('extraFirmadosBoton'); if(fb) fb.innerHTML = botonFirmadosExtra();
   cont.innerHTML = '<div class="hint" style="margin:0 0 8px;">Cargando los pendientes de firma…</div>';
   llamarBackend('listarPickingsExtra', { quien: usuarioActual || '' }, 'lista_ext_' + Date.now(), 30000).then(r => {
     if(!rpModoExtra) return;
@@ -11862,9 +11908,8 @@ function tituloListaPickings(texto, margen){
 }
 function renderExtrasPendientes(){
   const cont = document.getElementById('extraPendientes');
-  if(!cont) return;
-  const botonFirmados = '';   // el botón de firmados va al final de la pantalla (extraFirmadosBoton)
-  if(!extrasPendientesCache.length){ cont.innerHTML = botonFirmados; return; }
+  if(!cont || !rpModoExtra) return;
+  if(!extrasPendientesCache.length){ cont.innerHTML = ''; return; }
   const yo = normalizarNombre(usuarioActual || '');
   const lista = extrasPendientesCache.filter(p => coincideFiltroPickings(filtroPickingsTexto, p.of, [p.creadoPor, p.hechoPor]));
   const tarjetas = lista.length ? lista.map(p => {
@@ -11877,11 +11922,11 @@ function renderExtrasPendientes(){
       <div class="acciones-tarjeta">
         ${p.hojaUrl ? botonTarjeta('Ver hoja', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : ''}
         ${botonTarjeta('Excel para emitir', `descargarExcelExtra('${escapeAtributo(p.id)}', this)`, '#2E7D32')}
-        ${puede ? botonTarjeta('Borrar', `borrarExtraUsuario('${escapeAtributo(p.id)}', false)`, '#B33A3A') : ''}
+        ${puede ? botonTarjeta('Borrar', `borrarExtraUsuario('${escapeAtributo(p.id)}')`, '#B33A3A') : ''}
       </div>
     </div>`;
   }).join('') : `<div class="hint">Ninguno coincide con la búsqueda</div>`;
-  cont.innerHTML = tituloListaPickings(`Pendientes de firma (${lista.length})`) + tarjetas + botonFirmados;
+  cont.innerHTML = tituloListaPickings(`Pendientes de firma (${lista.length})`) + tarjetas;
 }
 // ---- búsqueda en las listas: por número de OF o por nombre de cualquiera que tenga líneas ----
 let filtroPickingsTexto = '';
@@ -11906,16 +11951,12 @@ function nombresDePausado(d){
   return nombres.filter(Boolean);
 }
 // Hojas firmadas: María ve todas; cada persona, solo las que hizo (lo filtra el servidor).
-let firmadosExtraCache = [], extraAdminActual = null;
+let firmadosExtraCache = [];
 // Botón pequeño (para listas y pantallas de edición)
 // Botón de acción de las tarjetas de pickings: mismo tamaño y estilo en planificados, extra y firmados
 function botonTarjeta(texto, accionJs, color){
   const estilo = color ? `color:${color}; border-color:${color};` : '';
   return `<button type="button" class="btn btn-outline" style="width:auto; padding:8px 14px; font-size:13px; margin:0; ${estilo}" onclick="event.stopPropagation(); ${accionJs}">${texto}</button>`;
-}
-function botonMini(texto, accionJs, color, fondo){
-  const c = color || '#1F4E79', f = fondo || '#fff';
-  return `<button type="button" style="padding:6px 10px; font-size:13px; font-weight:600; line-height:1.2; border-radius:8px; border:1px solid ${c}; background:${f}; color:${c}; cursor:pointer;" onclick="${accionJs}">${texto}</button>`;
 }
 function marcarEmitidoExtra(id, emitido){
   const p = (firmadosExtraCache || []).find(x => x.id === id);
@@ -11929,14 +11970,11 @@ function marcarEmitidoExtra(id, emitido){
 }
 // Una tarjeta de picking extra firmado
 function tarjetaFirmado(p){
-    const esAdmin = esAdminSheet(usuarioActual);
-        const yo = normalizarNombre(p.creadoPor) === normalizarNombre(usuarioActual || '');
-        const botones = [
-          (esAdmin || yo) ? botonTarjeta('Ver y editar', `abrirPickingExtraAdmin('${escapeAtributo(p.id)}')`) : '',
-          p.hojaUrl ? botonTarjeta('PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : '',
-          botonTarjeta('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32'),
-          (esAdmin || normalizarNombre(usuarioActual || '') === 'maria' || yo) ? botonTarjeta('Borrar', `borrarExtraUsuario('${escapeAtributo(p.id)}', true)`, '#B33A3A') : '',
-        ].join('');
+    const botones = [
+      botonTarjeta('Ver detalle', `verExtraFirmado('${escapeAtributo(p.id)}')`),
+      p.hojaUrl ? botonTarjeta('PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : '',
+      botonTarjeta('Excel', `descargarExcelFirmado('${escapeAtributo(p.id)}', this)`, '#2E7D32')
+    ].join('');
     return `<div class="ticket" style="padding:10px 12px;">
         <div class="ticket-top"><span class="ticket-of">OF ${escapeHtml(p.of)}</span><span class="ticket-date">${escapeHtml(p.fecha)}</span></div>
         <div class="ticket-proj">${escapeHtml(p.proyecto || '—')} · ${p.lineas} línea${p.lineas === 1 ? '' : 's'} · hecho por ${escapeHtml(p.creadoPor)}</div>
@@ -11977,81 +12015,18 @@ function pintarFirmadosDia(dia){
   cont.innerHTML = lista.length ? lista.map(tarjetaFirmado).join('') : `<div class="hint">No hay pickings firmados ese día.</div>`;
 }
 let extraDatosPendientes = null, extraEnviando = false, extraPendienteId = null;
-// Administrador: ver, editar o borrar un extra firmado
-function abrirPickingExtraAdmin(id){
-  const p = (firmadosExtraCache || []).find(x => x.id === id);
+function verExtraFirmado(id){
+  const p = firmadosExtraCache.find(x => x.id === id);
   if(!p){ toast('No encuentro ese picking, actualiza la lista'); return; }
-  extraAdminActual = JSON.parse(JSON.stringify(p));
-  pintarPickingExtraAdmin();
-}
-let sugerenciasExtraAdmin = [];
-function pintarPickingExtraAdmin(){
-  const p = extraAdminActual;
-  if(!p) return;
-  const filas = (p.componentes || []).map((c,i)=>`<div class="ticket" style="padding:10px 12px;">
-      <div class="ticket-top"><span class="ticket-of" style="font-size:15px;">${escapeHtml(c.codigo)}</span>${botonMini('Quitar', 'quitarLineaExtraAdmin(' + i + ')', '#B33A3A')}</div>
-      <div style="display:flex; gap:8px; margin-top:6px;">
-        <input type="number" min="0" step="any" value="${escapeAtributo(String(c.cantidad || ''))}" onchange="extraAdminActual.componentes[${i}].cantidad=this.value" style="width:110px;">
-        <input type="text" value="${escapeAtributo(c.lote || '')}" onchange="extraAdminActual.componentes[${i}].lote=this.value" style="flex:1;">
-      </div>
-    </div>`).join('') || '<div class="hint">Sin líneas</div>';
-  const esAdm = esAdminSheet(usuarioActual);
-  mostrarSheet(`
-    <h3>Picking extra · OF ${escapeHtml(p.of)}</h3>
-    <p class="hint" style="margin:0 0 8px;">${escapeHtml(p.proyecto || '—')} · hecho por ${escapeHtml(p.creadoPor)} · firmado por ${escapeHtml(p.firmadoPor || '—')}</p>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-      ${p.hojaUrl ? botonMini('Ver PDF', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : ''}
-      ${botonMini('Excel', 'descargarExcelExtraFirmadoEditando(this)', '#2E7D32')}
-    </div>
-    <div style="max-height:34vh; overflow:auto;">${filas}</div>
-    <label>Añadir línea</label>
-    <input type="text" id="extraAdminCodigo" placeholder="Código, ej. SPC-MC-6370" oninput="sugerirCodigoExtraAdmin()" autocomplete="off">
-    <div id="extraAdminSugerencias" style="max-height:24vh; overflow:auto;"></div>
-    <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
-      <input type="number" id="extraAdminCantidad" min="0" step="any" placeholder="Cantidad" style="width:120px;">
-      ${botonMini('Añadir línea', 'anadirLineaExtraAdmin()')}
-    </div>
-    <label>Observación</label>
-    <input type="text" value="${escapeAtributo(p.observaciones || '')}" onchange="extraAdminActual.observaciones=this.value">
-    <button class="btn btn-primary" onclick="guardarPickingExtraAdmin(this)">Guardar cambios</button>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
-      ${(esAdm || normalizarNombre(usuarioActual || '') === 'maria' || normalizarNombre(p.creadoPor) === normalizarNombre(usuarioActual || '')) ? botonMini('Borrar picking', 'borrarPickingExtraAdmin()', '#B33A3A') : ''}
-      ${botonMini('Volver', 'abrirFirmadosExtra()', '#5A6573')}
-    </div>`);
-}
-function sugerirCodigoExtraAdmin(){
-  const campo = document.getElementById('extraAdminCodigo');
-  const cont = document.getElementById('extraAdminSugerencias');
-  if(!campo || !cont) return;
-  const r = sugerenciasCatalogo(campo.value.split(';')[0].trim(), 8);
-  sugerenciasExtraAdmin = r.lista;
-  cont.innerHTML = r.lista.map((e,i)=>`<div class="ticket" style="cursor:pointer; padding:8px 10px; margin-top:6px;" onclick="elegirCodigoExtraAdmin(${i})">
-      <div class="ticket-of" style="font-size:14px;">${escapeHtml(e.c)}</div>
-      <div class="ticket-proj" style="font-size:12px;">${e.d ? escapeHtml(e.d) : ''}</div>
-    </div>`).join('');
-}
-function elegirCodigoExtraAdmin(i){
-  const e = sugerenciasExtraAdmin[i]; if(!e) return;
-  const campo = document.getElementById('extraAdminCodigo'); if(campo) campo.value = e.c;
-  const cont = document.getElementById('extraAdminSugerencias'); if(cont) cont.innerHTML = '';
-  const cant = document.getElementById('extraAdminCantidad'); if(cant) cant.focus();
-}
-function anadirLineaExtraAdmin(){
-  if(!extraAdminActual) return;
-  const codigo = ((document.getElementById('extraAdminCodigo') || {}).value || '').trim();
-  const cant = ((document.getElementById('extraAdminCantidad') || {}).value || '').trim();
-  if(!codigo){ toast('Escribe el código'); return; }
-  if(!cant || Number(cant) <= 0){ toast('Pon la cantidad'); return; }
-  const r = sugerenciasCatalogo(codigo, 50);
-  const e = r.lista.find(x => x.c === codigo);
-  if(catalogoListo() && !e && !confirm('Ese código no está en el catálogo. ¿Añadirlo igualmente?')) return;
-  extraAdminActual.componentes.push({ codigo: codigo, cantidad: cant, lote: '', por: usuarioActual || '', descripcion: e ? (e.d || '') : '' });
-  pintarPickingExtraAdmin();
-}
-// Excel para emitir de un firmado, con las líneas que están en pantalla (incluidas las cambiadas sin guardar)
-function descargarExcelExtraFirmadoEditando(btn){
-  if(!extraAdminActual) return;
-  descargarExcelPicking(extraAdminActual.of, (extraAdminActual.componentes || []).map(c => (filaExcelDe(c, c.por || extraAdminActual.creadoPor))), btn);
+  const filas = (p.componentes || []).map(c => `<div class="ticket">
+    <div class="ticket-of">${escapeHtml(c.codigo)} · ${escapeHtml(String(c.cantidad ?? ''))}</div>
+    <div class="ticket-proj">Lote ${escapeHtml(c.lote || 'N/A')}${c.sn ? ' · S/N ' + escapeHtml(c.sn) : ''}</div>
+    ${c.obs ? '<div class="ticket-proj">' + escapeHtml(c.obs) + '</div>' : ''}
+  </div>`).join('') || '<div class="hint">Sin líneas</div>';
+  mostrarSheet(`<h3>Picking extra firmado · OF ${escapeHtml(p.of)}</h3>
+    ${p.observaciones ? '<p>' + escapeHtml(p.observaciones) + '</p>' : ''}
+    <div style="max-height:50vh; overflow:auto;">${filas}</div>
+    <button class="btn btn-outline" onclick="abrirFirmadosExtra()">Volver a firmados</button>`);
 }
 // Excel para emitir desde la lista de firmados
 function descargarExcelFirmado(id, btn){
@@ -12069,40 +12044,13 @@ function borrarExtraPendienteAdmin(id){
     actualizarInicioExtra();
   });
 }
-function quitarLineaExtraAdmin(i){
-  if(!extraAdminActual) return;
-  extraAdminActual.componentes.splice(i, 1);
-  pintarPickingExtraAdmin();
-}
-function guardarPickingExtraAdmin(btn){
-  if(!extraAdminActual) return;
-  if(!extraAdminActual.componentes.length){ toast('Deja al menos una línea'); return; }
-  marcarEsperando(btn, 'Guardando');
-  llamarBackend('adminEditarExtra', { id: extraAdminActual.id, quien: usuarioActual || '', componentes: extraAdminActual.componentes, observaciones: extraAdminActual.observaciones || '' }, 'aedx_' + Date.now(), 120000).then(r => {
-    if(!r || r.ok === false){ toast((r && r.error) || 'No se guardaron los cambios'); pintarPickingExtraAdmin(); return; }
-    toast('Cambios guardados');
-    abrirFirmadosExtra();
-  });
-}
-// Borrar un picking extra: lo puede hacer quien lo registró, María o un administrador
-function borrarExtraUsuario(id, volverAFirmados){
-  if(!confirm('¿Borrar este picking extra? Se borran su hoja y su firma, y deja de salir en los informes. No se puede deshacer.')) return;
+function borrarExtraUsuario(id){
+  if(!confirm('¿Borrar este picking extra pendiente? Se borra su hoja. No se puede deshacer.')) return;
   llamarBackend('adminBorrarExtra', { id: id, quien: usuarioActual || '' }, 'adex_' + Date.now(), 120000).then(r => {
     if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo borrar'); return; }
     cerrarSheet();
-    extraAdminActual = null;
     toast('Picking borrado');
-    if(volverAFirmados) abrirFirmadosExtra(); else actualizarInicioExtra();
-  });
-}
-function borrarPickingExtraAdmin(){
-  if(!extraAdminActual) return;
-  if(!confirm('¿Borrar este picking extra? Se borran su hoja y su firma, y deja de salir en los informes.')) return;
-  llamarBackend('adminBorrarExtra', { id: extraAdminActual.id, quien: usuarioActual || '' }, 'adex_' + Date.now(), 120000).then(r => {
-    if(!r || r.ok === false){ toast((r && r.error) || 'No se pudo borrar'); return; }
-    extraAdminActual = null;
-    toast('Picking borrado');
-    abrirFirmadosExtra();
+    actualizarInicioExtra();
   });
 }
 function finalizarPickingExtra(){
@@ -12622,7 +12570,7 @@ function renderPausados(){
     .filter(d => (!!(d.sesion && d.sesion.extra)) === !!rpModoExtra)
     .filter(d => coincideFiltroPickings(filtroPickingsTexto, d.of, nombresDePausado(d)));
   if(!lista.length){ cont.innerHTML = ''; return; }
-  cont.innerHTML = `${tituloListaPickings(`Pickings en curso (${lista.length}) — toca uno para seguir`)}
+  cont.innerHTML = `${tituloListaPickings(`En curso (${lista.length})`)}
     ${lista.map(d=>{
       const nLin = d.fase==='bip' ? ((d.sesion&&d.sesion.componentes)||[]).length : ((d.pendiente&&d.pendiente.componentes)||[]).length;
       const nInc = d.fase==='bip' ? ((d.sesion&&d.sesion.incidencias)||[]).length : ((d.pendiente&&d.pendiente.incidencias)||[]).length;
@@ -12635,6 +12583,9 @@ function renderPausados(){
         <div class="ticket-proj" style="font-size:14px; margin-top:4px;"><b>Iniciado por:</b> ${escapeHtml(d.creadoPor||'—')}</div>
         <div class="ticket-proj" style="font-size:12px;">Última actividad: ${escapeHtml(haceTexto(d.actualizado))}${d.actualizadoPor ? ' por ' + escapeHtml(d.actualizadoPor) : ''}</div>
         ${estadoPausadoHtml(d, uso)}
+        ${d.sync === 'sucio'
+          ? `<div class="estado-borrador pendiente">${d.errorSync ? 'Pendiente de enviar · ' + escapeHtml(d.errorSync) : 'En este móvil · pendiente de enviar'}</div>`
+          : '<div class="estado-borrador enviado">Guardado en la hoja</div>'}
         ${viejo ? `<div class="ticket-proj" style="color:var(--warn-ink); font-size:12px;">Lleva más de 2 días parado</div>` : ''}
         <div class="acciones-tarjeta">
           ${d.fase==='bip' && !bloqueado ? botonTarjeta('Ver hoja parcial', `hojaParcialDePausado('${escapeAtributo(d.id)}')`) : ''}
@@ -12642,7 +12593,7 @@ function renderPausados(){
         </div>
       </div>`;
     }).join('')}
-    ${tituloListaPickings('O empieza otro', '12px 0 4px')}`;
+    ${tituloListaPickings('Nuevo picking', '14px 0 6px')}`;
 }
 // Etiqueta informativa del estado de un picking en curso (solo informa)
 function estadoPausadoHtml(d, uso){
@@ -12693,10 +12644,16 @@ async function sincronizarPausados(){
         if(r && r.ok !== false){
           if(d.actualizado === marca){
             if(d.borrado){ pausados = pausados.filter(x=>x.id!==d.id); }
-            else { d.sync = 'ok'; }
+            else {
+              d.sync = 'ok';
+              delete d.errorSync;
+              if(d.fase === 'bip' && d.id !== borradorActivoId && r.datos){
+                d.sesion = JSON.parse(r.datos);
+              }
+            }
           }
           // si la hoja ya tenía algo más nuevo (r.ignorado), se recoge en el paso 2
-          if(r.ignorado) d.sync = 'ok';
+          if(r.ignorado && d.actualizado === marca) d.sync = 'ok';
         } else if(r && r.error){
           d.errorSync = r.error;
         }
@@ -13899,7 +13856,12 @@ function calcularTiemposPicking(filas, rango){
           }
           ultimo = e.t;
         } else if(e.a === 'pausa' || e.a === 'terminar'){
-          if(activo !== null){ tramos.push({ u: u, a: activo, b: e.t }); activo = null; }
+          const finTrabajo = activo === null ? e.t : Math.min(e.t, ultimo + HUECO_MIN * 60000);
+          if(activo !== null){
+            tramos.push({ u: u, a: activo, b: finTrabajo });
+            if(finTrabajo < e.t) huecos++;
+            activo = null;
+          }
           if(e.a === 'pausa'){ pausaDesde = e.t; pausaMotivo = e.m; }
           ultimo = e.t;
         }
@@ -18019,7 +17981,7 @@ function elegirModoEscaneo(fn, id, notaFn){
 }
 
 // Pulsar "Continuar": valida OF y proyecto y luego pregunta con qué escanear.
-function continuarInicioPicking(){
+function continuarInicioPicking(conPda){
   const of = document.getElementById('rp_of').value.trim();
   const proyecto = document.getElementById('rp_proyecto').value.trim();
   if(!of){ toast('Falta el número de OF'); return; }
@@ -18036,12 +17998,7 @@ function continuarInicioPicking(){
     `);
     return;
   }
-  mostrarSheet(`
-    <h3>¿Con qué escaneas?</h3>
-    <button class="btn btn-primary" onclick="cerrarSheet(); empezarBipado(false)">Escanear con móvil</button>
-    <button class="btn btn-outline" onclick="cerrarSheet(); empezarBipado(true)">Escanear con PDA</button>
-    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
-  `);
+  empezarBipado(conPda === true);
 }
 
 function cancelarBipado(sinPreguntar){
