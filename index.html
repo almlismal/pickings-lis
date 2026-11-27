@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v25nov-1530</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v27nov-1040</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -814,6 +814,8 @@
     </div>
 
     <div id="rpSugerencias"></div>
+
+    <button class="btn btn-outline" id="btnCopiarOF" onclick="copiarDeOFAnterior()" style="display:none; margin-top:10px;">Copiar de la OF anterior</button>
 
     <label>Líneas escaneadas (<span id="rpNumLineas">0</span>)</label>
     <div id="rpListaLineas"></div>
@@ -12354,6 +12356,14 @@ function enviarInformeMail(tipo, btn){
 // Si la OF tiene partes de otras personas, el resumen muestra las hojas y ubicar.
 function terminarPicking(){
   if(!sesionPicking) return;
+  const sinConfirmar = lineasCopiadasPendientes();
+  if(sinConfirmar){
+    mostrarSheet(`
+      <h3>Quedan líneas sin confirmar</h3>
+      <p style="font-size:14px; color:var(--ink-soft); margin:0 0 12px;">Hay <b>${sinConfirmar}</b> línea${sinConfirmar === 1 ? '' : 's'} copiada${sinConfirmar === 1 ? '' : 's'} de la OF anterior. Confirma cada una con «OK, es igual» o bipándola, o cámbiala, antes de terminar.</p>
+      <button class="btn btn-primary" onclick="cerrarSheet()">Entendido</button>`);
+    return;
+  }
   if(!sesionPicking.extra){
     const yo = usuarioActual || '';
     const base = sesionPicking.draftId ? buscarPausado(sesionPicking.draftId) : null;
@@ -12369,6 +12379,7 @@ function terminarPicking(){
       return;
     }
   }
+  guardarUltimaOFParaCopiar();
   irAResumenPicking();
 }
 
@@ -18170,6 +18181,14 @@ function procesarCodigoBipado(codigo, ofLeida){
     return;
   }
 
+  // Si el código ya viene copiado de la OF anterior, bipar sirve para confirmarlo
+  const copiada = sesionPicking.componentes.find(c => c.codigo===codigo && c.pendiente);
+  if(copiada){
+    confirmarLineaCopiada(sesionPicking.componentes.indexOf(copiada));
+    toast('Confirmada: ' + codigo);
+    return;
+  }
+
   const yaEsta = sesionPicking.componentes.some(c=>c.codigo===codigo);
   if(yaEsta){
     // Si la línea ya la bipó otra persona del mismo picking, se dice quién (mismas dos respuestas)
@@ -18427,6 +18446,7 @@ function guardarEdicionLineaBip(idx){
   if(!c) return;
   c.lote = document.getElementById('lineaLote').value.trim().toUpperCase() || 'N/A';
   c.cantidad = leerCantidadLinea();
+  delete c.pendiente; delete c.copiadaDe;
   const extra = leerSnObs();
   if(extra.sn) c.sn = extra.sn; else delete c.sn;
   if(extra.obs) c.obs = extra.obs; else delete c.obs;
@@ -18445,6 +18465,48 @@ function editarLineaBipDesdeResumen(idx){
   editarLineaBip(idx);
 }
 
+/* ---- Prueba solo para Adrián: copiar la lista de la OF anterior ---- */
+function guardarUltimaOFParaCopiar(){
+  try{
+    if(!sesionPicking || !sesionPicking.componentes || !sesionPicking.componentes.length) return;
+    const lineas = sesionPicking.componentes.filter(c => !c.pendiente).map(c => ({ codigo: c.codigo, cantidad: c.cantidad, lote: c.lote }));
+    localStorage.setItem('lisUltimaOFCopia', JSON.stringify({ of: sesionPicking.of, lineas: lineas }));
+  }catch(e){}
+}
+function leerUltimaOFParaCopiar(){
+  try{
+    const v = JSON.parse(localStorage.getItem('lisUltimaOFCopia') || 'null');
+    return (v && v.lineas && v.lineas.length) ? v : null;
+  }catch(e){ return null; }
+}
+function actualizarBotonCopiarOF(){
+  const b = document.getElementById('btnCopiarOF');
+  if(!b) return;
+  const ultima = leerUltimaOFParaCopiar();
+  const mias = sesionPicking ? sesionPicking.componentes.filter(c => esMiaSesion(c)).length : 0;
+  b.style.display = (esPruebaPda() && ultima && sesionPicking && !mias) ? '' : 'none';
+  if(ultima) b.textContent = 'Copiar de la OF ' + ultima.of;
+}
+function copiarDeOFAnterior(){
+  const ultima = leerUltimaOFParaCopiar();
+  if(!sesionPicking || !ultima) return;
+  const yo = usuarioActual || '';
+  ultima.lineas.forEach(l => {
+    sesionPicking.componentes.push({ codigo: l.codigo, cantidad: l.cantidad, lote: l.lote || 'N/A', por: yo, pendiente: true, copiadaDe: ultima.of });
+  });
+  toast('Copiadas ' + ultima.lineas.length + ' líneas. Confirma cada una o cámbiala.');
+  refrescarBipUI();
+}
+function confirmarLineaCopiada(idx){
+  const c = sesionPicking && sesionPicking.componentes[idx];
+  if(!c) return;
+  delete c.pendiente; delete c.copiadaDe;
+  refrescarBipUI();
+}
+function lineasCopiadasPendientes(){
+  return sesionPicking ? sesionPicking.componentes.filter(c => c.pendiente).length : 0;
+}
+
 // Entrando como parcial solo se ven las líneas propias (las demás se conservan y se unen al ubicar)
 function esMiaSesion(x){
   return !sesionPicking || !sesionPicking.soloMias || normalizarNombre(autorDeLinea(x)) === normalizarNombre(usuarioActual || '');
@@ -18452,6 +18514,7 @@ function esMiaSesion(x){
 function renderLineasBip(){
   aplicarVisibilidadPda();
   actualizarBotonesParte();
+  actualizarBotonCopiarOF();
   const cont = document.getElementById('rpListaLineas');
   const num = document.getElementById('rpNumLineas');
   if(!sesionPicking || !cont) return;
@@ -18472,6 +18535,8 @@ function renderLineasBip(){
       ${catalogoListo() ? `<div class="ticket-proj" style="font-size:12px;">${descripcionCatalogoHtml(c.codigo)}</div>` : ''}
       ${c.por && normalizarNombre(c.por) !== normalizarNombre(usuarioActual || '') ? `<div class="ticket-proj" style="font-size:12px; color:var(--ink-soft);">Bipada por ${escapeHtml(c.por)}</div>` : ''}
       <div class="ticket-proj">Lote:${c.lote==='N/A' ? '<b style="color:#B33A3A;">N/A — falta ponerlo</b>' : escapeHtml(c.lote)}${c.sn ? ' · S/N: ' + escapeHtml(c.sn) : ''}</div>
+      ${c.pendiente ? `<div class="ticket-proj" style="font-size:12px; color:#B36B00; font-weight:bold;">Copiada de la OF ${escapeHtml(c.copiadaDe || '')} · sin confirmar</div>
+        <button class="btn btn-outline" style="margin-top:6px;" onclick="event.stopPropagation(); confirmarLineaCopiada(${i})">OK, es igual</button>` : ''}
       ${c.obs ? `<div class="ticket-proj" style="font-size:12px; color:var(--ink-soft);">Obs: ${escapeHtml(c.obs)}</div>` : ''}
     </div>
   `).join('');
