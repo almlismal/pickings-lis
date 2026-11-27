@@ -532,7 +532,7 @@
 <body>
 
 <header>
-  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v27nov-1125</span></div>
+  <div class="brand"><b>Picking LIS-DHV</b><span>Registro y entrega · v27nov-1140</span></div>
   <div class="user" id="userChip" onclick="abrirCambioUsuario()">Identificarse</div>
 </header>
 
@@ -11876,6 +11876,7 @@ function renderExtrasPendientes(){
       <div class="ticket-proj">${escapeHtml(p.proyecto||'—')} · hecho el ${escapeHtml(p.fecha)} a las ${escapeHtml(p.hora)} por ${escapeHtml(p.creadoPor)}</div>
       <div class="ticket-proj" style="font-size:12px;">${String(p.ubicacion||'').trim() ? 'Ubicado en ' + escapeHtml(String(p.ubicacion||'').trim() || 'Soporte') : 'Ubicado en Soporte'}</div>
       ${p.observaciones ? `<div class="ticket-proj" style="font-size:12px;">${escapeHtml(p.observaciones)}</div>` : ''}
+      ${puedeFirmarExtra(p) ? `<label style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:14px;" onclick="event.stopPropagation()"><input type="checkbox" style="width:20px; height:20px;" ${extrasSeleccion.indexOf(p.id) >= 0 ? 'checked' : ''} onchange="alternarExtraSeleccion('${escapeAtributo(p.id)}')"> Elegir para firmar varios</label>` : ''}
       <div class="acciones-tarjeta">
         ${p.hojaUrl ? botonTarjeta('Ver hoja', `window.open('${escapeAtributo(p.hojaUrl)}','_blank')`) : ''}
         ${botonTarjeta('Excel para emitir', `descargarExcelExtra('${escapeAtributo(p.id)}', this)`, '#2E7D32')}
@@ -11883,7 +11884,72 @@ function renderExtrasPendientes(){
       </div>
     </div>`;
   }).join('') : `<div class="hint">Ninguno coincide con la búsqueda</div>`;
-  cont.innerHTML = tituloListaPickings(`Pendientes de firma (${lista.length})`) + tarjetas + botonFirmados;
+  cont.innerHTML = tituloListaPickings(`Pendientes de firma (${lista.length})`) + barraSeleccionExtra() + tarjetas + botonFirmados;
+}
+// ---- Firmar y entregar varios pickings extra a la vez (solo los que puede firmar cada uno) ----
+let extrasSeleccion = [];
+function puedeFirmarExtra(p){
+  const yo = normalizarNombre(usuarioActual || '');
+  return normalizarNombre(p.creadoPor) === yo || yo === 'maria';
+}
+function alternarExtraSeleccion(id){
+  const i = extrasSeleccion.indexOf(id);
+  if(i >= 0) extrasSeleccion.splice(i, 1); else extrasSeleccion.push(id);
+  renderExtrasPendientes();
+}
+function barraSeleccionExtra(){
+  extrasSeleccion = extrasSeleccion.filter(id => (extrasPendientesCache || []).some(x => x.id === id));
+  const n = extrasSeleccion.length;
+  if(!n) return '';
+  return `<div class="ticket" style="padding:12px; margin-bottom:10px; border-color:#1F4E79;">
+    <div class="ticket-proj" style="font-weight:bold;">${n} picking${n===1?'':'s'} seleccionado${n===1?'':'s'}</div>
+    <button class="btn btn-primary" style="margin-top:8px;" onclick="extraFirmarVarios()">Firmar y entregar ${n===1?'este':'estos'} ${n}</button>
+    <button class="btn btn-outline" style="margin-top:6px;" onclick="extrasSeleccion=[]; renderExtrasPendientes()">Quitar selección</button>
+  </div>`;
+}
+function extrasSeleccionadosFirmables(){
+  return extrasSeleccion.map(id => (extrasPendientesCache || []).find(x => x.id === id)).filter(p => p && puedeFirmarExtra(p));
+}
+function extraFirmarVarios(){
+  const lista = extrasSeleccionadosFirmables();
+  if(!lista.length){ toast('No hay pickings seleccionados que puedas firmar'); return; }
+  mostrarSheet(`
+    <h3>Firma para ${lista.length} picking${lista.length===1?'':'s'}</h3>
+    <p class="hint" style="margin:0 0 8px;">OF ${lista.map(p => escapeHtml(p.of)).join(', ')}. Una sola firma para todos.</p>
+    <canvas id="firmaPad" width="600" height="300" style="width:100%; height:auto; aspect-ratio:600/300; border:2px dashed #9AA6B5; border-radius:10px; background:#fff; touch-action:none;"></canvas>
+    <div style="display:flex; justify-content:flex-end; margin:4px 0 10px;"><span class="link-action" onclick="firmaLimpiar()">Borrar firma</span></div>
+    <label>Nombre de quien firma</label>
+    <input type="text" id="firmaNombre" placeholder="Nombre de la persona de DHV">
+    <button class="btn btn-primary" onclick="extraFirmaVariosGuardar(this)">✓ Entregar y firmar ${lista.length}</button>
+    <button class="btn btn-outline" onclick="cerrarSheet()">Cancelar</button>
+  `);
+  firmaPadIniciar();
+}
+async function extraFirmaVariosGuardar(btn){
+  const c = document.getElementById('firmaPad');
+  const nombre = ((document.getElementById('firmaNombre') || {}).value || '').trim();
+  if(!c || !c.dataset.dibujado){ toast('Firma dentro del recuadro'); return; }
+  if(!nombre){ toast('Escribe el nombre de quien firma'); return; }
+  const lista = extrasSeleccionadosFirmables();
+  const firma = { png: c.toDataURL('image/png'), nombre: nombre };
+  marcarEsperando(btn, 'Entregando');
+  const fallidos = [];
+  let hechos = 0;
+  for(const p of lista){
+    try{
+      const r = await llamarBackend('entregarPickingExtra', { id: p.id, quien: usuarioActual || '', observaciones: p.observaciones || '', firma: firma }, 'entx_' + p.id + '_' + Date.now(), 120000);
+      if(r && r.ok !== false){ hechos++; quitarBorradorExtraTrasEntregar(p.of); }
+      else fallidos.push({ id: p.id, texto: 'OF ' + p.of + ': ' + ((r && r.error) || 'sin respuesta') });
+    }catch(e){
+      fallidos.push({ id: p.id, texto: 'OF ' + p.of + ': sin conexión' });
+    }
+  }
+  cerrarSheet();
+  extrasSeleccion = fallidos.map(f => f.id);
+  let msg = hechos + ' entregado' + (hechos === 1 ? '' : 's') + '.';
+  if(fallidos.length) msg += ' No se pudieron: ' + fallidos.map(f => f.texto).join('; ') + '. Siguen seleccionados para repetir.';
+  toast(msg);
+  actualizarInicioExtra();
 }
 // ---- búsqueda en las listas: por número de OF o por nombre de cualquiera que tenga líneas ----
 let filtroPickingsTexto = '';
